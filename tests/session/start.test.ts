@@ -206,7 +206,9 @@ describe('handleSessionStart', () => {
     });
 
     const output = await handleSessionStart('/home/user/test-project', cache);
-    expect(output).not.toContain('WARNING');
+    // The tool-missing warnings (rtk/jcodemunch) should not appear when both are present.
+    expect(output).not.toContain('rtk is not installed');
+    expect(output).not.toContain('jcodemunch is not installed');
   });
 
   it('emits subagent delegation instructions when jcodemunch available', async () => {
@@ -269,13 +271,16 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    // First call — should warn
+    // First call — tool-missing warnings present
     const output1 = await handleSessionStart('/home/user/test-project', cache);
-    expect(output1).toContain('WARNING');
+    expect(output1).toContain('rtk is not installed');
+    expect(output1).toContain('jcodemunch is not installed');
 
-    // Second call — warning suppressed
+    // Second call — tool-missing warnings suppressed by toolsWarned flag
+    // (the permissions warning is independent and may still fire)
     const output2 = await handleSessionStart('/home/user/test-project', cache);
-    expect(output2).not.toContain('WARNING');
+    expect(output2).not.toContain('rtk is not installed');
+    expect(output2).not.toContain('jcodemunch is not installed');
   });
 
   it('emits active enforcement rules when rules are not all silent', async () => {

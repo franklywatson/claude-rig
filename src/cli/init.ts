@@ -6,6 +6,7 @@ import { renderTemplate } from './renderer.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { stringify as yamlStringify } from 'yaml';
 import { detectEnvironment, type ExecFn } from '../session/environment.js';
+import { REQUIRED_PERMISSIONS } from './permissions.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const TEMPLATES_DIR = resolve(__dirname, '..', '..', 'templates');
@@ -309,29 +310,16 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
   if (!Array.isArray(permissions.allow)) permissions.allow = [];
   if (!Array.isArray(permissions.deny)) permissions.deny = [];
 
-  // Auto-allow: jcodemunch MCP tools (always safe — read-only search)
-  if (!permissions.allow.includes('mcp__jcodemunch__*')) {
-    permissions.allow.push('mcp__jcodemunch__*');
+  // Auto-allow: the always-required set (MCP tools, session cache cat/ls/Read, npx)
+  for (const entry of REQUIRED_PERMISSIONS) {
+    if (!permissions.allow.includes(entry)) {
+      permissions.allow.push(entry);
+    }
   }
 
-  // Auto-allow: graphify MCP tools (read-only graph queries)
-  if (!permissions.allow.includes('mcp__graphify__*')) {
-    permissions.allow.push('mcp__graphify__*');
-  }
-
-  // Auto-allow: rtk binary (only when detected)
+  // Auto-allow: rtk binary (only when detected — not in REQUIRED list because conditional)
   if (rtkAvailable && !permissions.allow.includes('Bash(rtk:*)')) {
     permissions.allow.push('Bash(rtk:*)');
-  }
-
-  // Auto-allow: session cache reads
-  if (!permissions.allow.includes('Bash(cat /tmp/rig-session-*)')) {
-    permissions.allow.push('Bash(cat /tmp/rig-session-*)');
-  }
-
-  // Auto-allow: npx commands
-  if (!permissions.allow.includes('Bash(npx:*)')) {
-    permissions.allow.push('Bash(npx:*)');
   }
 
   // Default deny: secret file patterns

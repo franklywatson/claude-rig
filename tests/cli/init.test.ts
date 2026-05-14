@@ -578,6 +578,20 @@ console.log('stale old hook');
       expect(settings.permissions.allow).toContain('mcp__graphify__*');
     });
 
+    it('adds all session-cache permissions needed by the savings skill', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+      const exec: ExecFn = () => { throw new Error('not found'); };
+      await initCommand(tempDir, { force: false, exec });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      // The savings skill uses cat, ls, and the Read tool against /tmp/rig-session-*.json
+      expect(settings.permissions.allow).toContain('Bash(cat /tmp/rig-session-*)');
+      expect(settings.permissions.allow).toContain('Bash(ls /tmp/rig-session-*)');
+      expect(settings.permissions.allow).toContain('Read(/tmp/rig-session-*.json)');
+    });
+
     it('adds secret file deny list', async () => {
       const claudeDir = join(tempDir, '.claude');
       mkdirSync(claudeDir, { recursive: true });

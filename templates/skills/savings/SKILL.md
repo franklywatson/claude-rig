@@ -15,13 +15,20 @@ Report token savings from rtk and jcodemunch usage during this session.
 
 1. Run `rtk gain --format json` to get current savings data. If rtk is not
    available, skip rtk reporting.
-2. Find the session cache file: `ls /tmp/rig-session-*.json`. For each file,
-   read it and check the `cwd` field. Use the file whose `cwd` matches the
-   current project directory (`$CLAUDE_PROJECT_DIR` or `pwd`). If no file has
-   a matching `cwd`, fall back to the most recent by modification time.
-   The cache file contains `metricsBaseline`, `metricCounters` (rtkCalls,
-   jmCalls, efficientCalls), and `environment` (rtkAvailable,
-   jcodemunchAvailable).
+2. Find the session cache file:
+   - Use `Bash(ls /tmp/rig-session-*.json)` to list candidates (or the Glob tool
+     with pattern `/tmp/rig-session-*.json`).
+   - For each candidate path, use the **Read tool** (not `cat` or `grep`) to load
+     the JSON and check the `cwd` field. Use the file whose `cwd` matches the
+     current project directory (`$CLAUDE_PROJECT_DIR` or `pwd`). If no file has
+     a matching `cwd`, fall back to the most recent by modification time.
+   - The cache file contains `metricsBaseline`, `metricCounters` (rtkCalls,
+     jmCalls, efficientCalls), and `environment` (rtkAvailable,
+     jcodemunchAvailable).
+   - `rig init` auto-allows `Bash(ls /tmp/rig-session-*)` and
+     `Read(/tmp/rig-session-*.json)`, so this flow should not prompt for
+     permission. If it does, `.claude/settings.json` is out of date — re-run
+     `rig init --force`.
 3. Compute the rtk session delta: `current total_saved - baseline totalSaved`.
 4. For jcodemunch: call `mcp__jcodemunch__get_session_stats` and read
    `session_tokens_saved`, `session_calls`, `total_tokens_saved`, and

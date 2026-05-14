@@ -1,5 +1,50 @@
 # Troubleshooting
 
+## Repeated permission prompts for `/tmp/rig-session-*.json`
+
+### Symptom
+
+When running `/savings` or any skill that reads session cache files, you get
+permission prompts for `Bash(ls /tmp/rig-session-*.json)`,
+`Read(/tmp/rig-session-*.json)`, or similar — even after running `rig init`.
+
+### Cause
+
+Earlier versions of `rig init` only auto-allowed `Bash(cat /tmp/rig-session-*)`
+but not the `ls` listing step or `Read` tool reads of those same files. The
+savings skill's own procedure uses all three. The README's claim that this was
+"auto-permissioned" was incomplete.
+
+### Diagnosis
+
+Starting in rig 0.3.5+, the session-start hook emits this warning when
+`.claude/settings.json` is missing any required entries:
+
+```
+[WARNING] .claude/settings.json is missing rig-required permission entries.
+  Missing: Bash(ls /tmp/rig-session-*), Read(/tmp/rig-session-*.json)
+  Fix: rig init --force
+```
+
+To check manually, look at `.claude/settings.json` and confirm `permissions.allow`
+contains all of:
+
+- `mcp__jcodemunch__*`
+- `mcp__graphify__*`
+- `Bash(cat /tmp/rig-session-*)`
+- `Bash(ls /tmp/rig-session-*)`
+- `Read(/tmp/rig-session-*.json)`
+- `Bash(npx:*)`
+
+### Fix
+
+```bash
+rig init --force
+```
+
+`rig init --force` is idempotent — it only adds missing entries and preserves
+existing user customizations (other allow entries, deny rules, hook configs).
+
 ## Graphify MCP not available
 
 ### What's happening
