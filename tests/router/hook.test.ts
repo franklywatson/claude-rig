@@ -206,6 +206,34 @@ describe('handlePreToolUse', () => {
     expect(result).toBeNull();
   });
 
+  it('advises with correct relative path when cwd has a space (backslash-escaped form)', () => {
+    cache.setEnvironment(makeEnv());
+    const result = handlePreToolUse(
+      'Bash',
+      { command: '/Users/bob/Documents/Some\\ Project/app/scripts/foo --flag' },
+      cache,
+      config,
+      '/Users/bob/Documents/Some Project/app',
+    );
+    expect(result).not.toBeNull();
+    expect(result).toContain('ADVISE');
+    expect(result).toContain('./scripts/foo');
+  });
+
+  it('advises with correct relative path when cwd has a space (double-quoted form)', () => {
+    cache.setEnvironment(makeEnv());
+    const result = handlePreToolUse(
+      'Bash',
+      { command: '"/Users/bob/Documents/Some Project/app/scripts/foo" --flag' },
+      cache,
+      config,
+      '/Users/bob/Documents/Some Project/app',
+    );
+    expect(result).not.toBeNull();
+    expect(result).toContain('ADVISE');
+    expect(result).toContain('./scripts/foo');
+  });
+
   it('cwd_path_expand respects block enforcement', () => {
     config.rules.tool_routing!.cwd_path_expand = 'block';
     cache.setEnvironment(makeEnv());

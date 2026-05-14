@@ -160,7 +160,7 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
         if (tool !== 'Bash') return false;
         const command = args.command as string | undefined;
         if (!command || !cwd) return false;
-        if (!command.startsWith(cwd + '/')) return false;
+        if (matchCwdPathPrefix(command, cwd) === null) return false;
         // .venv/bin paths are legitimate — the Python rewrite produces them
         if (command.includes('.venv/')) return false;
         return true;
@@ -176,6 +176,35 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
       enforcement: 'advise',
     },
   ];
+}
+
+/**
+ * Detects whether `command` begins with a reference to the cwd as a
+ * fully-qualified path, accounting for shell-quoting forms that come up when
+ * cwd contains spaces. Returns the length of the cwd prefix in the command
+ * (so the caller can slice the remainder), or null if no prefix matches.
+ *
+ * Forms recognized:
+ *   - bare:               /Users/bob/Some Project/app/foo
+ *   - backslash-escaped:  /Users/bob/Some\ Project/app/foo
+ *   - double-quoted:      "/Users/bob/Some Project/app/foo"
+ *   - single-quoted:      '/Users/bob/Some Project/app/foo'
+ */
+export function matchCwdPathPrefix(command: string, cwd: string): number | null {
+  const bare = cwd + '/';
+  if (command.startsWith(bare)) return bare.length;
+
+  if (cwd.includes(' ')) {
+    const escaped = cwd.replace(/ /g, '\\ ') + '/';
+    if (command.startsWith(escaped)) return escaped.length;
+  }
+
+  for (const quote of ['"', "'"]) {
+    const quoted = quote + cwd + '/';
+    if (command.startsWith(quoted)) return quoted.length;
+  }
+
+  return null;
 }
 
 /**

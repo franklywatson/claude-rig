@@ -268,6 +268,34 @@ describe('cwd_path_expand rule', () => {
     expect(match).toBeUndefined();
   });
 
+  it('matches commands that escape spaces with backslash (paths with spaces)', () => {
+    // Regression: when cwd contains a space, agents typically emit the path
+    // shell-escaped (Some\ Project). The matcher must recognize the backslash-
+    // escaped form as the same path.
+    const cwdWithSpace = '/Users/bob/Documents/Some Project/app';
+    const rules = getDefaultRules(cwdWithSpace);
+    const match = findMatchingRule(
+      'Bash',
+      { command: '/Users/bob/Documents/Some\\ Project/app/scripts/foo' },
+      rules,
+    );
+    expect(match).toBeDefined();
+    expect(match!.intent).toBe('cwd_path_expand');
+  });
+
+  it('matches commands that quote the cwd path (paths with spaces)', () => {
+    // Same regression but using double quotes around the absolute path.
+    const cwdWithSpace = '/Users/bob/Documents/Some Project/app';
+    const rules = getDefaultRules(cwdWithSpace);
+    const match = findMatchingRule(
+      'Bash',
+      { command: '"/Users/bob/Documents/Some Project/app/scripts/foo"' },
+      rules,
+    );
+    expect(match).toBeDefined();
+    expect(match!.intent).toBe('cwd_path_expand');
+  });
+
   it('does not match relative ./path', () => {
     const rules = getDefaultRules(cwd);
     const match = findMatchingRule('Bash', { command: './.venv/bin/pip install pytest' }, rules);

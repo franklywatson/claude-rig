@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import type { HarnessConfig, RewriteResult } from '../types.js';
 import { SessionCache } from '../session/cache.js';
-import { findMatchingRule, getDefaultRules } from './rules.js';
+import { findMatchingRule, getDefaultRules, matchCwdPathPrefix } from './rules.js';
 import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
@@ -170,7 +170,8 @@ export function handlePreToolUse(
   // cwd_path_expand has special output format
   if (match.intent === 'cwd_path_expand' && tool === 'Bash') {
     const command = args.command as string;
-    const relativePart = command.slice(effectiveCwd.length + 1);
+    const prefixLen = matchCwdPathPrefix(command, effectiveCwd) ?? effectiveCwd.length + 1;
+    const relativePart = command.slice(prefixLen);
     const binary = relativePart.split(/\s+/)[0];
     return [
       `${prefix} Tool Router: fully-qualified CWD path detected`,
