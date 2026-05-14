@@ -131,6 +131,7 @@ claude mcp add graphify \
 ```
 
 Where:
+
 - `~/.local/share/uv/tools/graphifyy/bin/python3` — the Python interpreter
   inside graphifyy's uv-tool virtual environment (use this, not system python3,
   to ensure the `mcp` module is on the path)
