@@ -590,6 +590,8 @@ console.log('stale old hook');
       expect(settings.permissions.allow).toContain('Bash(cat /tmp/rig-session-*)');
       expect(settings.permissions.allow).toContain('Bash(ls /tmp/rig-session-*)');
       expect(settings.permissions.allow).toContain('Read(/tmp/rig-session-*.json)');
+      // macOS resolves /tmp -> /private/tmp before permission matching
+      expect(settings.permissions.allow).toContain('Read(/private/tmp/rig-session-*.json)');
     });
 
     it('adds secret file deny list', async () => {

@@ -132,6 +132,12 @@ describe('REQUIRED_PERMISSIONS contract', () => {
     expect(REQUIRED_PERMISSIONS).toContain('Read(/tmp/rig-session-*.json)');
   });
 
+  it('includes the macOS-resolved /private/tmp Read permission', () => {
+    // /tmp -> /private/tmp on macOS; the Read tool resolves symlinks before
+    // matching, so we need both forms to avoid permission prompts cross-platform.
+    expect(REQUIRED_PERMISSIONS).toContain('Read(/private/tmp/rig-session-*.json)');
+  });
+
   it('includes both MCP wildcards', () => {
     expect(REQUIRED_PERMISSIONS).toContain('mcp__jcodemunch__*');
     expect(REQUIRED_PERMISSIONS).toContain('mcp__graphify__*');

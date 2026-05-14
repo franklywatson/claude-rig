@@ -11,7 +11,12 @@ export const REQUIRED_PERMISSIONS = [
   'mcp__graphify__*',
   'Bash(cat /tmp/rig-session-*)',
   'Bash(ls /tmp/rig-session-*)',
+  // The Read tool resolves symlinks before matching. On macOS, /tmp is a
+  // symlink to /private/tmp, so the resolved path doesn't match a /tmp/...
+  // pattern. We include both forms so the same permission set works on
+  // macOS (resolved /private/tmp) and Linux (literal /tmp).
   'Read(/tmp/rig-session-*.json)',
+  'Read(/private/tmp/rig-session-*.json)',
   'Bash(npx:*)',
 ] as const;
 

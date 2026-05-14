@@ -34,6 +34,7 @@ contains all of:
 - `Bash(cat /tmp/rig-session-*)`
 - `Bash(ls /tmp/rig-session-*)`
 - `Read(/tmp/rig-session-*.json)`
+- `Read(/private/tmp/rig-session-*.json)` *(macOS: /tmp resolves to /private/tmp before permission matching)*
 - `Bash(npx:*)`
 
 ### Fix
