@@ -160,7 +160,7 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
         if (tool !== 'Bash') return false;
         const command = args.command as string | undefined;
         if (!command || !cwd) return false;
-        if (matchCwdPathPrefix(command, cwd) === null) return false;
+        if (matchCwdReference(command, cwd) === null) return false;
         // .venv/bin paths are legitimate — the Python rewrite produces them
         if (command.includes('.venv/')) return false;
         return true;
@@ -181,27 +181,75 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
 /**
  * Detects whether `command` begins with a reference to the cwd as a
  * fully-qualified path, accounting for shell-quoting forms that come up when
- * cwd contains spaces. Returns the length of the cwd prefix in the command
- * (so the caller can slice the remainder), or null if no prefix matches.
+ * cwd contains spaces and for the `cd <cwd>...` anti-pattern that agents
+ * frequently emit.
  *
- * Forms recognized:
- *   - bare:               /Users/bob/Some Project/app/foo
- *   - backslash-escaped:  /Users/bob/Some\ Project/app/foo
- *   - double-quoted:      "/Users/bob/Some Project/app/foo"
- *   - single-quoted:      '/Users/bob/Some Project/app/foo'
+ * Returns:
+ *   - `prefixLen`: index into `command` where the cwd reference ends and
+ *     the remainder begins (slice with this to get what follows).
+ *   - `isCdForm`: true when the match was preceded by a leading `cd ` —
+ *     lets callers produce a different advice message.
+ *   - `isExactCwd`: true when the reference was to exactly cwd (no subdir).
+ *     Distinguishes "redundant cd" from "cd to subdir".
+ *
+ * Forms recognized for the cwd reference (with or without leading `cd `):
+ *   - bare:               /abs/some path/foo  (no spaces in cwd)
+ *   - backslash-escaped:  /abs/some\ path/foo
+ *   - double-quoted:      "/abs/some path/foo"
+ *   - single-quoted:      '/abs/some path/foo'
  */
-export function matchCwdPathPrefix(command: string, cwd: string): number | null {
-  const bare = cwd + '/';
-  if (command.startsWith(bare)) return bare.length;
+export function matchCwdReference(
+  command: string,
+  cwd: string,
+): { prefixLen: number; isCdForm: boolean; isExactCwd: boolean } | null {
+  const direct = tryMatchAt(command, 0, cwd);
+  if (direct) return { ...direct, isCdForm: false };
 
-  if (cwd.includes(' ')) {
-    const escaped = cwd.replace(/ /g, '\\ ') + '/';
-    if (command.startsWith(escaped)) return escaped.length;
+  if (command.startsWith('cd ')) {
+    const afterCd = tryMatchAt(command, 3, cwd);
+    if (afterCd) return { ...afterCd, isCdForm: true };
   }
 
-  for (const quote of ['"', "'"]) {
-    const quoted = quote + cwd + '/';
-    if (command.startsWith(quoted)) return quoted.length;
+  return null;
+}
+
+function tryMatchAt(
+  command: string,
+  offset: number,
+  cwd: string,
+): { prefixLen: number; isExactCwd: boolean } | null {
+  // Path-continuation forms first (cwd followed by `/` — i.e. cwd/subdir or
+  // cwd/binary). Return `prefixLen` pointing PAST the `/` so the slice yields
+  // the subdir/binary directly.
+  const continuations: string[] = [cwd + '/'];
+  if (cwd.includes(' ')) continuations.push(cwd.replace(/ /g, '\\ ') + '/');
+  continuations.push('"' + cwd + '/');
+  continuations.push("'" + cwd + '/');
+  for (const text of continuations) {
+    if (command.startsWith(text, offset)) {
+      return { prefixLen: offset + text.length, isExactCwd: false };
+    }
+  }
+
+  // Exact-cwd forms next (cwd followed by end-of-string or a shell boundary
+  // — space, tab, &, ;, |, ). Quoted forms must include the closing quote.
+  const exacts: string[] = [cwd];
+  if (cwd.includes(' ')) exacts.push(cwd.replace(/ /g, '\\ '));
+  exacts.push('"' + cwd + '"');
+  exacts.push("'" + cwd + "'");
+  for (const text of exacts) {
+    if (!command.startsWith(text, offset)) continue;
+    const next = command[offset + text.length];
+    if (
+      next === undefined ||
+      next === ' ' ||
+      next === '\t' ||
+      next === '&' ||
+      next === ';' ||
+      next === '|'
+    ) {
+      return { prefixLen: offset + text.length, isExactCwd: true };
+    }
   }
 
   return null;

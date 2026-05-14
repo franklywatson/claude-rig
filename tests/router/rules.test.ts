@@ -296,6 +296,70 @@ describe('cwd_path_expand rule', () => {
     expect(match!.intent).toBe('cwd_path_expand');
   });
 
+  it('matches `cd <cwd> && cmd` (redundant cd to cwd, escaped form)', () => {
+    // Real-world report: agent kept emitting
+    //   cd /Users/bob/Documents/Some\ Project/app && make test
+    // The previous matcher only checked startsWith(cwd) — the `cd ` prefix
+    // pushed the cwd off position 0, so it missed.
+    const cwdWithSpace = '/Users/bob/Documents/Some Project/app';
+    const rules = getDefaultRules(cwdWithSpace);
+    const match = findMatchingRule(
+      'Bash',
+      { command: 'cd /Users/bob/Documents/Some\\ Project/app && make test' },
+      rules,
+    );
+    expect(match).toBeDefined();
+    expect(match!.intent).toBe('cwd_path_expand');
+  });
+
+  it('matches `cd "<cwd>" && cmd` (redundant cd to cwd, quoted form)', () => {
+    const cwdWithSpace = '/Users/bob/Documents/Some Project/app';
+    const rules = getDefaultRules(cwdWithSpace);
+    const match = findMatchingRule(
+      'Bash',
+      { command: 'cd "/Users/bob/Documents/Some Project/app" && git log --oneline -3' },
+      rules,
+    );
+    expect(match).toBeDefined();
+    expect(match!.intent).toBe('cwd_path_expand');
+  });
+
+  it('matches `cd <cwd>/subdir && cmd` (cd to subdir of cwd)', () => {
+    // Agent using absolute path to address a subdir is still cwd_path_expand;
+    // the relative form `cd ./subdir` (or just `cd subdir`) is preferred.
+    const cwd = '/home/user/project';
+    const rules = getDefaultRules(cwd);
+    const match = findMatchingRule(
+      'Bash',
+      { command: 'cd /home/user/project/src && npm test' },
+      rules,
+    );
+    expect(match).toBeDefined();
+    expect(match!.intent).toBe('cwd_path_expand');
+  });
+
+  it('does not match `cd /other/path && cmd` (different absolute path)', () => {
+    const cwd = '/home/user/project';
+    const rules = getDefaultRules(cwd);
+    const match = findMatchingRule(
+      'Bash',
+      { command: 'cd /other/path && ls' },
+      rules,
+    );
+    expect(match).toBeUndefined();
+  });
+
+  it('does not match `cd ./subdir && cmd` (already relative)', () => {
+    const cwd = '/home/user/project';
+    const rules = getDefaultRules(cwd);
+    const match = findMatchingRule(
+      'Bash',
+      { command: 'cd ./src && npm test' },
+      rules,
+    );
+    expect(match).toBeUndefined();
+  });
+
   it('does not match relative ./path', () => {
     const rules = getDefaultRules(cwd);
     const match = findMatchingRule('Bash', { command: './.venv/bin/pip install pytest' }, rules);

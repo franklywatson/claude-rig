@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import type { HarnessConfig, RewriteResult } from '../types.js';
 import { SessionCache } from '../session/cache.js';
-import { findMatchingRule, getDefaultRules, matchCwdPathPrefix } from './rules.js';
+import { findMatchingRule, getDefaultRules, matchCwdReference } from './rules.js';
 import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
@@ -146,8 +146,15 @@ export function handlePreToolUse(
   // Step 4: No match = pass through
   if (!match) return null;
 
-  // Step 4b: Compound commands skip advisory (but file_modify still blocks above)
-  if (tool === 'Bash' && typeof args.command === 'string' && isCompoundCommand(args.command)) {
+  // Step 4b: Compound commands skip advisory (but file_modify still blocks above).
+  // Exception: cwd_path_expand is specifically about catching compound commands
+  // like `cd <cwd> && <cmd>`, so it must bypass this suppression.
+  if (
+    tool === 'Bash' &&
+    typeof args.command === 'string' &&
+    isCompoundCommand(args.command) &&
+    match.intent !== 'cwd_path_expand'
+  ) {
     return null;
   }
 
@@ -170,8 +177,29 @@ export function handlePreToolUse(
   // cwd_path_expand has special output format
   if (match.intent === 'cwd_path_expand' && tool === 'Bash') {
     const command = args.command as string;
-    const prefixLen = matchCwdPathPrefix(command, effectiveCwd) ?? effectiveCwd.length + 1;
-    const relativePart = command.slice(prefixLen);
+    const ref = matchCwdReference(command, effectiveCwd);
+    if (ref?.isCdForm && ref.isExactCwd) {
+      // Pattern: `cd <cwd>[ && cmd]` — the cd is redundant.
+      const tail = command.slice(ref.prefixLen).replace(/^\s*&&\s*/, '').trim();
+      const suggested = tail.length > 0 ? `\`${tail}\`` : '(nothing — you are already there)';
+      return [
+        `${prefix} Tool Router: redundant cd to cwd detected`,
+        `advise: drop the \`cd\`; run ${suggested} directly. You are already in ${effectiveCwd}.`,
+        'Shorter, saves tokens, more portable.',
+      ].join('\n');
+    }
+    if (ref?.isCdForm) {
+      // Pattern: `cd <cwd>/subdir[ && cmd]` — suggest relative cd.
+      const subdirAndRest = command.slice(ref.prefixLen);
+      const subdir = subdirAndRest.split(/[\s&;|]/)[0];
+      return [
+        `${prefix} Tool Router: fully-qualified CWD path in \`cd\``,
+        `advise: use \`cd ./${subdir}\` instead — you are already in ${effectiveCwd}.`,
+        'Shorter, saves tokens, more portable.',
+      ].join('\n');
+    }
+    // Default: bare absolute-path invocation, e.g. `/abs/cwd/bin/foo args`.
+    const relativePart = command.slice(ref?.prefixLen ?? effectiveCwd.length + 1);
     const binary = relativePart.split(/\s+/)[0];
     return [
       `${prefix} Tool Router: fully-qualified CWD path detected`,

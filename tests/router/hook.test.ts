@@ -234,6 +234,36 @@ describe('handlePreToolUse', () => {
     expect(result).toContain('./scripts/foo');
   });
 
+  it('advises to drop redundant `cd <cwd> && ...`', () => {
+    cache.setEnvironment(makeEnv());
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'cd /Users/bob/Documents/Some\\ Project/app && make test' },
+      cache,
+      config,
+      '/Users/bob/Documents/Some Project/app',
+    );
+    expect(result).not.toBeNull();
+    expect(result).toContain('ADVISE');
+    // Output must mention that the cd is redundant or suggest running the
+    // post-`&&` command directly. Match either wording option.
+    expect(result).toMatch(/redundant|drop the .?cd|already in/i);
+  });
+
+  it('advises ./subdir for `cd <cwd>/subdir && ...`', () => {
+    cache.setEnvironment(makeEnv());
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'cd /home/user/project/src && npm test' },
+      cache,
+      config,
+      '/home/user/project',
+    );
+    expect(result).not.toBeNull();
+    expect(result).toContain('ADVISE');
+    expect(result).toContain('./src');
+  });
+
   it('cwd_path_expand respects block enforcement', () => {
     config.rules.tool_routing!.cwd_path_expand = 'block';
     cache.setEnvironment(makeEnv());
