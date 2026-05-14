@@ -254,7 +254,9 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
       hooks[event] = [];
     }
     const entries = hooks[event] as Array<Record<string, unknown>>;
-    const hookScriptPath = `\${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/${script}`;
+    // Quote the path so a CLAUDE_PROJECT_DIR containing spaces (e.g.
+    // "/Users/.../Jerome Onboarding") doesn't split into multiple args.
+    const hookScriptPath = `"\${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/${script}"`;
     const command = `${npxCommand} ${hookScriptPath}`;
 
     // Remove old-format entries (flat matcher+command without nested hooks array)

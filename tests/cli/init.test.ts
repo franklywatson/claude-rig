@@ -152,6 +152,35 @@ describe('initCommand', () => {
     }
   });
 
+  it('quotes ${CLAUDE_PROJECT_DIR} path in hook commands so spaces do not break shell parsing', async () => {
+    // Regression: when CLAUDE_PROJECT_DIR contains a space (e.g.,
+    // "/Users/.../Jerome Onboarding"), unquoted shell interpolation splits
+    // the path at the space and Node ESM reports
+    //   ERR_MODULE_NOT_FOUND: Cannot find module '/Users/.../Jerome'
+    // The fix is to wrap the path in double quotes in the generated command.
+    const claudeDir = join(tempDir, '.claude');
+    mkdirSync(claudeDir, { recursive: true });
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+
+    await initCommand(tempDir, { force: false });
+
+    const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+    for (const [event, script] of [
+      ['PreToolUse', 'pre-tool-use.ts'],
+      ['PostToolUse', 'post-tool-use.ts'],
+      ['SessionStart', 'session-start.ts'],
+    ] as const) {
+      const cmd: string = settings.hooks[event][0].hooks[0].command;
+      const quotedPath = `"\${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/${script}"`;
+      expect(cmd).toContain(quotedPath);
+      // Negative assertion: the unquoted form must NOT appear elsewhere in the command
+      const unquotedPath = `\${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/${script}`;
+      const occurrences = cmd.split(unquotedPath).length - 1;
+      // The quoted form contains the unquoted as a substring, so 1 occurrence is expected
+      expect(occurrences).toBe(1);
+    }
+  });
+
   it('preserves existing settings when adding hooks', async () => {
     const claudeDir = join(tempDir, '.claude');
     mkdirSync(claudeDir, { recursive: true });
