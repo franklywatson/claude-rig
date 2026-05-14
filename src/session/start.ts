@@ -8,6 +8,7 @@ import { checkWorktreeSuggestion } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
 import { loadConfig } from '../config.js';
+import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 
 interface FileCapWarning {
   indexed: number;
@@ -144,6 +145,23 @@ export async function handleSessionStart(cwd: string, cache: SessionCache): Prom
     lines.push('  - mcp__graphify__god_nodes for core abstractions');
     lines.push('  - mcp__graphify__get_community for module clustering');
     lines.push('  - mcp__graphify__shortest_path for dependency paths');
+  }
+
+  // Graphify MCP server self-check (only when CLI is present but MCP not ready)
+  const execFnForCheck = (cmd: string, opts?: { encoding?: string; timeout?: number }) =>
+    execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string;
+  const mcpReadiness = checkGraphifyMcpReadiness(cwd, env, execFnForCheck);
+  if (mcpReadiness.status !== 'ready' && mcpReadiness.status !== 'cli_missing') {
+    if (mcpReadiness.status === 'no_graph') {
+      lines.push(`[WARNING] graphify CLI present but no graph built. Run: ${mcpReadiness.fixCommand}`);
+    } else if (mcpReadiness.status === 'cli_only_mcp_dep_missing') {
+      lines.push('[WARNING] graphify MCP server unavailable: missing Python "mcp" dependency.');
+      lines.push(`  Fix: ${mcpReadiness.fixCommand}`);
+    } else if (mcpReadiness.status === 'cli_only_not_registered') {
+      lines.push('[WARNING] graphify CLI present but MCP server not registered with Claude Code.');
+      lines.push('  Scout will fall back to parsing graph.json instead of using mcp__graphify__* tools.');
+      lines.push(`  Fix: ${mcpReadiness.fixCommand}`);
+    }
   }
 
   // One-time warning for missing tools
