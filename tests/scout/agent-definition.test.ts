@@ -18,7 +18,7 @@ describe('scout agent definition', () => {
     const frontmatter = content.split('---')[1];
     expect(frontmatter).toContain('name: scout');
     expect(frontmatter).toContain('model: inherit');
-    expect(frontmatter).toContain('maxTurns: 10');
+    expect(frontmatter).toContain('maxTurns: 15');
   });
 
   it('specifies jcodemunch and bash tools', () => {
