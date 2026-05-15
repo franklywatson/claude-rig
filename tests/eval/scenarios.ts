@@ -95,7 +95,7 @@ export interface EvalScenario {
   description: string;
   toolCall: { tool: string; args: Record<string, unknown> };
   expected: Record<string, ExpectedOutcome>; // keyed by env preset name
-  cwd?: string; // for cwd_path_expand scenarios
+  cwd?: string; // for Python environment rewrite scenarios
 }
 
 // ── Mock rtk rewrite function ──
@@ -452,20 +452,6 @@ export const ALL_SCENARIOS: EvalScenario[] = [
     },
   },
 
-  {
-    id: 'edge_cwd_path',
-    category: 'edge',
-    description: 'Bash with fully-qualified CWD path — advise (not rewrite)',
-    toolCall: { tool: 'Bash', args: { command: '/home/user/project/src/file.ts' } },
-    cwd: '/home/user/project',
-    expected: {
-      full: { action: 'advise', tool: './' },
-      rtk_only: { action: 'advise', tool: './' },
-      jm_only: { action: 'advise', tool: './' },
-      jm_not_indexed: { action: 'advise', tool: './' },
-      neither: { action: 'advise', tool: './' },
-    },
-  },
 ];
 
 // ── Python environment presets ──

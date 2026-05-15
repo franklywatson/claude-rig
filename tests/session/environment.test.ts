@@ -90,6 +90,35 @@ describe('detectEnvironment', () => {
     expect(env.jcodemunchKnownRepos).toContain('local/rig');
   });
 
+  it('basename match: CWD rig does NOT match repo local/test-rig (endsWith suffix false-positive, platform-agnostic)', async () => {
+    // Bug: "local/test-rig".endsWith("rig") === true — CWD "rig" incorrectly
+    // matches repo "test-rig" because it is a suffix of the repo basename.
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch': '/usr/local/bin/jcodemunch',
+      'list_repos': JSON.stringify({ repos: ['local/test-rig'] }),
+    });
+
+    const env = await detectEnvironment('/home/jerome/projects/rig', exec);
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(false);
+    expect(env.jcodemunchCwdRepo).toBeNull();
+  });
+
+  it('basename match: CWD rig DOES match repo local/rig (exact match preserved)', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch': '/usr/local/bin/jcodemunch',
+      'list_repos': JSON.stringify({ repos: ['local/rig', 'local/test-rig'] }),
+    });
+
+    // Both repos exist — must pick the exact match only
+    const env = await detectEnvironment('/home/jerome/projects/rig', exec);
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('local/rig');
+  });
+
   it('detects jcodemunch via MCP server binary when CLI not found', async () => {
     const mcpOutput = mcpListReposResponse([{ repo: 'local/ai-news' }]);
     const exec = makeExec({
@@ -182,6 +211,7 @@ describe('detectEnvironment', () => {
       'which rtk': new Error('not found'),
       'which jcodemunch': new Error('not found'),
       'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': new Error('not found'),
     });
 
     const env = await detectEnvironment('/fake/cwd', exec);
@@ -192,6 +222,87 @@ describe('detectEnvironment', () => {
     expect(env.jcodemunchCwdRepo).toBeNull();
     expect(env.jcodemunchKnownRepos).toEqual([]);
     expect(typeof env.detectedAt).toBe('number');
+  });
+
+  // ── macOS/uvx-install detection (jcodemunch-mcp not in PATH, managed by uvx) ──
+
+  it('macOS/uvx: detects jcodemunch when binary not in PATH but uvx available and CWD is indexed', async () => {
+    const mcpOutput = mcpListReposResponse([{ repo: 'local/forgd-onboarding' }]);
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': '/opt/homebrew/bin/uvx',
+      'uvx jcodemunch-mcp': mcpOutput,
+    });
+
+    const env = await detectEnvironment('/Users/jerome/Documents/Claude/Projects/forgd-onboarding', exec);
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('local/forgd-onboarding');
+  });
+
+  it('macOS/uvx: marks available=true but cwdIndexed=false when uvx runs but CWD not in repo list', async () => {
+    const mcpOutput = mcpListReposResponse([{ repo: 'local/other-project' }]);
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': '/opt/homebrew/bin/uvx',
+      'uvx jcodemunch-mcp': mcpOutput,
+    });
+
+    const env = await detectEnvironment('/Users/jerome/Documents/Claude/Projects/forgd-onboarding', exec);
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(false);
+    expect(env.jcodemunchCwdRepo).toBeNull();
+  });
+
+  it('macOS/uvx: marks available=false when uvx is not installed (which uvx fails)', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/Users/jerome/Documents/Claude/Projects/forgd-onboarding', exec);
+    expect(env.jcodemunchAvailable).toBe(false);
+    expect(env.jcodemunchCwdIndexed).toBe(false);
+  });
+
+  it('macOS/uvx: handles uvx jcodemunch-mcp startup failure gracefully (exit nonzero / timeout)', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': '/opt/homebrew/bin/uvx',
+      'uvx jcodemunch-mcp': new Error('uvx: Package jcodemunch-mcp not found'),
+    });
+
+    const env = await detectEnvironment('/Users/jerome/Documents/Claude/Projects/forgd-onboarding', exec);
+    expect(env.jcodemunchAvailable).toBe(false);
+    expect(env.jcodemunchCwdIndexed).toBe(false);
+  });
+
+  it('Linux/direct-binary: existing which jcodemunch-mcp path still wins when binary is in PATH (uvx fallback not reached)', async () => {
+    // On Linux with pip/pipx install, jcodemunch-mcp lands in ~/.local/bin (in PATH).
+    // The direct binary path must be preferred; uvx fallback must not be reached.
+    // Note: 'which jcodemunch-mcp' must come before 'which jcodemunch' in the map
+    // because makeExec uses substring matching and the shorter key would match first.
+    const mcpOutput = mcpListReposResponse([{ repo: 'local/my-project' }]);
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': '/home/user/.local/bin/jcodemunch-mcp',
+      'which jcodemunch': new Error('not found'),
+      'jcodemunch-mcp': mcpOutput,
+      // uvx is NOT in this map — if the code reaches it, makeExec throws "unexpected command"
+    });
+
+    const env = await detectEnvironment('/home/user/projects/my-project', exec);
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('local/my-project');
   });
 });
 

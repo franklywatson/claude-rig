@@ -471,31 +471,6 @@ describe('handlePreToolUse: pipe handling', () => {
   });
 });
 
-// ── CWD path expand edge case ──
-
-describe('handlePreToolUse: cwd path expand', () => {
-  const ENV_WITH_RTK = {
-    rtkAvailable: true,
-    rtkPath: '/usr/bin/rtk',
-    jcodemunchAvailable: true,
-    jcodemunchCwdIndexed: true,
-    jcodemunchCwdRepo: 'local/test',
-    jcodemunchKnownRepos: ['local/test'],
-    graphifyAvailable: false,
-    graphifyGraphPath: null,
-    detectedAt: Date.now(),
-  };
-
-  it('fully-qualified CWD path is advised (not rewritten)', () => {
-    const cache = new SessionCache();
-    cache.setEnvironment(ENV_WITH_RTK);
-    const result = handlePreToolUse(
-      'Bash', { command: '/home/user/project/src/file.ts' }, cache, DEFAULT_CONFIG, '/home/user/project', mockRewriteSuccess,
-    );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('./');
-  });
-});
 
 // ── Edge: rtk rewrite returns same command ──
 

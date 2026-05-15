@@ -1,7 +1,7 @@
 ---
 name: debug+
-description: "Invoke when encountering any bug, test failure, or unexpected behavior. Wraps superpowers:systematic-debugging with scout agent context harvesting for reliable codebase mapping."
-argument-hint: "[bug description or failure output]"
+description: "Invoke when debugging, fixing bugs, diagnosing failures, or when something is broken, unexpected, or not working as expected. Trigger phrases: 'debug', 'fix bug', 'why is X failing', 'what's wrong with', 'broken', 'diagnose', 'investigate'. Wraps superpowers:systematic-debugging with mandatory scout context harvesting."
+argument-hint: "[bug description, error output, or what is broken]"
 user-invocable: true
 ---
 

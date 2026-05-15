@@ -21,7 +21,6 @@ export const DEFAULT_CONFIG: HarnessConfig = {
       native_grep: 'advise',
       native_glob: 'advise',
       rtk_cat_code: 'block',
-      cwd_path_expand: 'advise',
       scout_explore: 'advise',
       read_line_threshold: 100,
     },

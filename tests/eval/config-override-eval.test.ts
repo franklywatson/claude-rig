@@ -57,22 +57,6 @@ const CONFIG_SCENARIOS: ConfigScenario[] = [
     configOverrides: { tool_routing: { grep: 'block' } },
     expected: { action: 'block' },
   },
-  {
-    id: 'config_cwd_path_block',
-    description: 'CWD path expand with cwd_path_expand: block → block',
-    toolCall: { tool: 'Bash', args: { command: '/home/user/project/src/file.ts' } },
-    cwd: '/home/user/project',
-    configOverrides: { tool_routing: { cwd_path_expand: 'block' } },
-    expected: { action: 'block' },
-  },
-  {
-    id: 'config_cwd_path_silent',
-    description: 'CWD path expand with cwd_path_expand: silent → allow',
-    toolCall: { tool: 'Bash', args: { command: '/home/user/project/src/file.ts' } },
-    cwd: '/home/user/project',
-    configOverrides: { tool_routing: { cwd_path_expand: 'silent' } },
-    expected: { action: 'allow' },
-  },
 ];
 
 describe('Context Eval: config override routing', () => {

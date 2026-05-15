@@ -11,8 +11,7 @@ export type IntentType =
   | 'native_read'
   | 'native_grep'
   | 'native_glob'
-  | 'rtk_cat_code'
-  | 'cwd_path_expand';
+  | 'rtk_cat_code';
 
 // ── Hook Result Types ──
 
@@ -156,7 +155,6 @@ export interface ToolRoutingRules {
   native_grep?: EnforcementLevel;
   native_glob?: EnforcementLevel;
   rtk_cat_code?: EnforcementLevel;
-  cwd_path_expand?: EnforcementLevel;
   scout_explore?: EnforcementLevel;
   read_line_threshold?: number;
 }
