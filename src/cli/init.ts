@@ -6,13 +6,14 @@ import { renderTemplate } from './renderer.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { stringify as yamlStringify } from 'yaml';
 import { detectEnvironment, type ExecFn } from '../session/environment.js';
-import { REQUIRED_PERMISSIONS } from './permissions.js';
+import { REQUIRED_PERMISSIONS, BROAD_BASH_PERMISSIONS } from './permissions.js';
 
 const __dirname = fileURLToPath(new URL('.', import.meta.url));
 const TEMPLATES_DIR = resolve(__dirname, '..', '..', 'templates');
 
 interface InitOptions {
   force: boolean;
+  broadPermissions?: boolean;
   exec?: ExecFn;
 }
 
@@ -108,7 +109,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
 
   // Update settings.json with hook registrations
   const npxCommand = resolveNpxPath(options.exec);
-  updateSettingsJson(claudeDir, npxCommand, rtkAvailable);
+  updateSettingsJson(claudeDir, npxCommand, rtkAvailable, options.broadPermissions ?? false);
 
   // Update .gitignore with rig-managed section
   updateGitignore(projectDir);
@@ -228,7 +229,7 @@ const SECRET_DENY_LIST = [
   'Write(**/*.key)',
 ];
 
-function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean): void {
+function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean, broadPermissions: boolean): void {
   const settingsPath = join(claudeDir, 'settings.json');
   let settings: Record<string, unknown> = {};
 
@@ -312,16 +313,26 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
   if (!Array.isArray(permissions.allow)) permissions.allow = [];
   if (!Array.isArray(permissions.deny)) permissions.deny = [];
 
-  // Auto-allow: the always-required set (MCP tools, session cache cat/ls/Read, npx)
-  for (const entry of REQUIRED_PERMISSIONS) {
-    if (!permissions.allow.includes(entry)) {
-      permissions.allow.push(entry);
+  // Allow entries are opt-in via --broad-permissions. Without the flag, only
+  // the deny list is added. This lets users choose their own approval level
+  // rather than having rig silently pre-authorize a broad set of operations.
+  if (broadPermissions) {
+    for (const entry of REQUIRED_PERMISSIONS) {
+      if (!permissions.allow.includes(entry)) {
+        permissions.allow.push(entry);
+      }
     }
-  }
-
-  // Auto-allow: rtk binary (only when detected — not in REQUIRED list because conditional)
-  if (rtkAvailable && !permissions.allow.includes('Bash(rtk:*)')) {
-    permissions.allow.push('Bash(rtk:*)');
+    // rtk: only when detected at init time
+    if (rtkAvailable && !permissions.allow.includes('Bash(rtk:*)')) {
+      permissions.allow.push('Bash(rtk:*)');
+    }
+    // Broad bash: pre-authorize common read-only shell ops to reduce prompts
+    // when agents use absolute paths (required by Claude Code system prompt).
+    for (const entry of BROAD_BASH_PERMISSIONS) {
+      if (!permissions.allow.includes(entry)) {
+        permissions.allow.push(entry);
+      }
+    }
   }
 
   // Default deny: secret file patterns

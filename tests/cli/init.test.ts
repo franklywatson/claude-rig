@@ -548,87 +548,25 @@ console.log('stale old hook');
   });
 
   describe('permissions', () => {
-    it('adds rtk permission when rtk is available', async () => {
+    const noTools: ExecFn = () => { throw new Error('not found'); };
+
+    // ── Default init (no --broad-permissions) ──
+
+    it('default init adds no allow permissions (all allows are opt-in via --broad-permissions)', async () => {
       const claudeDir = join(tempDir, '.claude');
       mkdirSync(claudeDir, { recursive: true });
       writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
-      const exec: ExecFn = (cmd: string) => {
-        if (cmd === 'which rtk') return '/usr/local/bin/rtk\n';
-        if (cmd === 'which jcodemunch') throw new Error('not found');
-        if (cmd === 'command -v npx') return '/usr/bin/npx\n';
-        return '';
-      };
-      await initCommand(tempDir, { force: false, exec });
+      await initCommand(tempDir, { force: false, exec: noTools });
 
       const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
-      expect(settings.permissions.allow).toContain('Bash(rtk:*)');
+      expect(settings.permissions.allow).toHaveLength(0);
     });
 
-    it('omits rtk permission when rtk is not available', async () => {
+    it('default init always adds secret file deny list regardless of --broad-permissions', async () => {
       const claudeDir = join(tempDir, '.claude');
       mkdirSync(claudeDir, { recursive: true });
       writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
-      const exec: ExecFn = (cmd: string) => {
-        if (cmd === 'which rtk') throw new Error('not found');
-        if (cmd === 'which jcodemunch') throw new Error('not found');
-        if (cmd === 'command -v npx') return '/usr/bin/npx\n';
-        return '';
-      };
-      await initCommand(tempDir, { force: false, exec });
-
-      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
-      expect(settings.permissions.allow).not.toContain('Bash(rtk:*)');
-    });
-
-    it('adds jcodemunch MCP permission', async () => {
-      const claudeDir = join(tempDir, '.claude');
-      mkdirSync(claudeDir, { recursive: true });
-      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
-      const exec: ExecFn = (cmd: string) => {
-        if (cmd === 'which rtk') throw new Error('not found');
-        if (cmd === 'which jcodemunch') throw new Error('not found');
-        if (cmd === 'command -v npx') return '/usr/bin/npx\n';
-        return '';
-      };
-      await initCommand(tempDir, { force: false, exec });
-
-      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
-      expect(settings.permissions.allow).toContain('mcp__jcodemunch__*');
-    });
-
-    it('adds graphify MCP permission', async () => {
-      const claudeDir = join(tempDir, '.claude');
-      mkdirSync(claudeDir, { recursive: true });
-      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
-      const exec: ExecFn = () => { throw new Error('not found'); };
-      await initCommand(tempDir, { force: false, exec });
-
-      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
-      expect(settings.permissions.allow).toContain('mcp__graphify__*');
-    });
-
-    it('adds all session-cache permissions needed by the savings skill', async () => {
-      const claudeDir = join(tempDir, '.claude');
-      mkdirSync(claudeDir, { recursive: true });
-      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
-      const exec: ExecFn = () => { throw new Error('not found'); };
-      await initCommand(tempDir, { force: false, exec });
-
-      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
-      // The savings skill uses cat, ls, and the Read tool against /tmp/rig-session-*.json
-      expect(settings.permissions.allow).toContain('Bash(cat /tmp/rig-session-*)');
-      expect(settings.permissions.allow).toContain('Bash(ls /tmp/rig-session-*)');
-      expect(settings.permissions.allow).toContain('Read(/tmp/rig-session-*.json)');
-      // macOS resolves /tmp -> /private/tmp before permission matching
-      expect(settings.permissions.allow).toContain('Read(/private/tmp/rig-session-*.json)');
-    });
-
-    it('adds secret file deny list', async () => {
-      const claudeDir = join(tempDir, '.claude');
-      mkdirSync(claudeDir, { recursive: true });
-      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
-      const exec: ExecFn = () => { throw new Error('not found'); };
-      await initCommand(tempDir, { force: false, exec });
+      await initCommand(tempDir, { force: false, exec: noTools });
 
       const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
       const deny = settings.permissions.deny;
@@ -646,36 +584,93 @@ console.log('stale old hook');
       expect(deny).toContain('Write(**/*.key)');
     });
 
-    it('does not duplicate permission entries on re-init', async () => {
+    // ── --broad-permissions flag ──
+
+    it('--broad-permissions adds required MCP and session-cache allow permissions', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec: noTools });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      expect(settings.permissions.allow).toContain('mcp__jcodemunch__*');
+      expect(settings.permissions.allow).toContain('mcp__graphify__*');
+      expect(settings.permissions.allow).toContain('Bash(cat /tmp/rig-session-*)');
+      expect(settings.permissions.allow).toContain('Bash(ls /tmp/rig-session-*)');
+      expect(settings.permissions.allow).toContain('Read(/tmp/rig-session-*.json)');
+      expect(settings.permissions.allow).toContain('Read(/private/tmp/rig-session-*.json)');
+      expect(settings.permissions.allow).toContain('Bash(npx:*)');
+    });
+
+    it('--broad-permissions adds rtk when rtk is available', async () => {
       const claudeDir = join(tempDir, '.claude');
       mkdirSync(claudeDir, { recursive: true });
       writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
       const exec: ExecFn = (cmd: string) => {
         if (cmd === 'which rtk') return '/usr/local/bin/rtk\n';
-        if (cmd === 'which jcodemunch') throw new Error('not found');
-        if (cmd === 'command -v npx') return '/usr/bin/npx\n';
-        return '';
+        throw new Error('not found');
       };
-      await initCommand(tempDir, { force: false, exec });
-      await initCommand(tempDir, { force: false, exec });
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      expect(settings.permissions.allow).toContain('Bash(rtk:*)');
+    });
+
+    it('--broad-permissions does NOT add rtk when rtk is not available', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec: noTools });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      expect(settings.permissions.allow).not.toContain('Bash(rtk:*)');
+    });
+
+    it('--broad-permissions adds broad bash permissions for common read-only shell operations', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec: noTools });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      expect(settings.permissions.allow).toContain('Bash(ls:*)');
+      expect(settings.permissions.allow).toContain('Bash(cat:*)');
+      expect(settings.permissions.allow).toContain('Bash(grep:*)');
+      expect(settings.permissions.allow).toContain('Bash(find:*)');
+      expect(settings.permissions.allow).toContain('Bash(which:*)');
+      expect(settings.permissions.allow).toContain('Bash(node:*)');
+      expect(settings.permissions.allow).toContain('Bash(npm:*)');
+    });
+
+    it('--broad-permissions is idempotent on re-init (no duplicates)', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+      const exec: ExecFn = (cmd: string) => {
+        if (cmd === 'which rtk') return '/usr/local/bin/rtk\n';
+        throw new Error('not found');
+      };
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec });
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec });
 
       const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
       const rtkCount = settings.permissions.allow.filter((p: string) => p === 'Bash(rtk:*)').length;
       expect(rtkCount).toBe(1);
       const jmCount = settings.permissions.allow.filter((p: string) => p === 'mcp__jcodemunch__*').length;
       expect(jmCount).toBe(1);
+      const lsCount = settings.permissions.allow.filter((p: string) => p === 'Bash(ls:*)').length;
+      expect(lsCount).toBe(1);
       const denyCount = settings.permissions.deny.filter((p: string) => p === 'Read(**/secrets/**)').length;
       expect(denyCount).toBe(1);
     });
 
-    it('preserves existing user permissions on re-init', async () => {
+    it('--broad-permissions preserves existing user permissions on re-init', async () => {
       const claudeDir = join(tempDir, '.claude');
       mkdirSync(claudeDir, { recursive: true });
       writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({
         permissions: { allow: ['Bash(git status:*)'], deny: ['Bash(rm *)'] },
       }));
-      const exec: ExecFn = () => { throw new Error('not found'); };
-      await initCommand(tempDir, { force: false, exec });
+      await initCommand(tempDir, { force: false, broadPermissions: true, exec: noTools });
 
       const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
       expect(settings.permissions.allow).toContain('Bash(git status:*)');

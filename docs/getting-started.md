@@ -46,6 +46,9 @@ npm link
 # Go to your project and initialize
 cd /path/to/your/project
 rig init
+
+# Optional: pre-authorize common tools to reduce permission prompts
+rig init --broad-permissions
 ```
 
 This generates:
@@ -67,6 +70,44 @@ This generates:
 | `.claude/agents/scout.md` | Cross-repo scout agent |
 | `.claude/settings.json` | Hook registrations (merged, not overwritten) |
 | `.harness.yaml` | Enforcement configuration |
+
+## Reducing permission prompts
+
+Claude Code requires agents to use absolute paths (system prompt requirement since v2.1.97).
+This means common shell operations like `ls /project/src/` trigger a permission prompt for
+each new path pattern, which can feel like a lot of approvals.
+
+Use `--broad-permissions` to pre-authorize common read-only operations:
+
+```bash
+rig init --broad-permissions
+```
+
+This adds the following to `.claude/settings.json` `permissions.allow`:
+
+```
+mcp__jcodemunch__*     # jcodemunch MCP tools (symbol search, file tree)
+mcp__graphify__*       # graphify MCP tools (knowledge graph)
+Bash(cat /tmp/rig-session-*)  # session cache reads (savings skill)
+Bash(ls /tmp/rig-session-*)
+Read(/tmp/rig-session-*.json)
+Read(/private/tmp/rig-session-*.json)
+Bash(npx:*)            # hook scripts use npx tsx
+Bash(rtk:*)            # rtk token-optimized commands (when rtk detected)
+Bash(ls:*)             # broad bash read-ops
+Bash(cat:*)
+Bash(grep:*)
+Bash(find:*)
+Bash(which:*)
+Bash(node:*)
+Bash(npm:*)
+```
+
+Without the flag, only the secret-file deny list is written (`Read(**/secrets/**)` etc.) —
+no allow entries are added and you control approvals yourself.
+
+The `--broad-permissions` flag is idempotent: running `rig init --broad-permissions` again
+after the first time will not duplicate entries.
 
 ## Verify installation
 

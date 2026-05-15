@@ -393,3 +393,14 @@ Key design decisions:
 - graphify build may fail on very large codebases (6000+ files) due to Python
   AST recursion limits during tree-sitter traversal. The scout agent falls back
   to jcodemunch-only analysis and reports the failure.
+- **Absolute paths and permission prompts**: Claude Code's system prompt (since
+  v2.1.97) requires agents to use absolute paths unconditionally. Each new
+  absolute path in a Bash command triggers a permission prompt unless pre-authorized.
+  `rig init --broad-permissions` pre-authorizes common read-only operations to
+  reduce this friction. Without the flag, users will see more approval dialogs —
+  this is intentional (opt-in rather than silently granting broad access).
+- **First-occurrence advisory suppression**: The tool router advises jcodemunch/scout
+  once per intent type per session via `hasAdvised()`. If the agent ignores the first
+  advisory, it receives no further reminders for that session. The jcodemunch detection
+  fix (uvx support) ensures the advisory fires in the first place; suppression
+  behavior itself is tracked for future work (periodic re-advisory or escalating urgency).

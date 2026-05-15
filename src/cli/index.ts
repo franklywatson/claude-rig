@@ -24,11 +24,12 @@ program
   .command('init')
   .description('Scaffold hooks, skills, agents, and config into .claude/')
   .option('--force', 'Overwrite existing files', false)
+  .option('--broad-permissions', 'Pre-authorize common tools in .claude/settings.json (MCP tools, session cache, npx, rtk, and broad bash read-ops). Without this flag, no allow permissions are added — only the secret-file deny list.', false)
   .option('--dir <path>', 'Target project directory', process.cwd())
   .action(async (options) => {
     const projectDir = resolve(options.dir);
     console.log(`Initializing rig in ${projectDir}...`);
-    await initCommand(projectDir, { force: options.force });
+    await initCommand(projectDir, { force: options.force, broadPermissions: options.broadPermissions });
     console.log('Done. Start a new Claude Code session to activate.');
   });
 

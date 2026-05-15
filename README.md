@@ -49,6 +49,9 @@ npm link
 cd /path/to/your/project
 rig init
 
+# Optional: pre-authorize common tools to reduce permission prompts (see below)
+rig init --broad-permissions
+
 # Verify installation (in a Claude Code session)
 /verify-harness
 ```
@@ -57,23 +60,32 @@ The `init` command generates hooks, skills, agents, config, and permissions into
 project's `.claude/` directory. Hook commands use `${CLAUDE_PROJECT_DIR}` for portability
 across machines.
 
-### Auto-configured permissions
+### Permissions
 
-`rig init` adds permission entries to `.claude/settings.json` so you don't get repeated
-permission prompts during normal usage:
+By default `rig init` only adds the secret-file **deny** list (`**/secrets/**`,
+`**/credentials/**`, `**/*.pem`, `**/*.key` for Read, Edit, Write). No allow entries
+are written — you control your own approval level.
 
-- **Allow** -- `Bash(rtk:*)` (when rtk is detected), `Bash(cat /tmp/rig-session-*)`,
-  `Bash(ls /tmp/rig-session-*)`, `Read(/tmp/rig-session-*.json)`, `Bash(npx:*)`, and
-  `mcp__jcodemunch__*` / `mcp__graphify__*` (always) are auto-added to
-  `permissions.allow`. Transparent command rewrites, session cache reads/listing/Read,
-  npx runs, and jcodemunch/graphify searches run without prompting. A session-start
-  self-check flags missing entries with `rig init --force` as the fix.
-- **Deny** -- A built-in secret file deny list blocks Read, Edit, and Write on
-  `**/secrets/**`, `**/credentials/**`, `**/*.pem`, and `**/*.key`. This baseline is
-  always applied and re-applied on `rig init --force`.
+Use `--broad-permissions` to pre-authorize common tools and reduce repeated prompts:
 
-Existing user permissions are preserved on re-init. Entries are deduplicated
-automatically.
+```bash
+rig init --broad-permissions
+```
+
+This adds to `permissions.allow`: MCP tools (`mcp__jcodemunch__*`, `mcp__graphify__*`),
+session cache reads (`Bash(cat /tmp/rig-session-*)` etc.), `Bash(npx:*)`,
+`Bash(rtk:*)` (when rtk detected), and broad bash read-ops (`Bash(ls:*)`,
+`Bash(cat:*)`, `Bash(grep:*)`, `Bash(find:*)`, `Bash(which:*)`, `Bash(node:*)`,
+`Bash(npm:*)`).
+
+**Why broad bash permissions?** Claude Code's system prompt requires agents to use
+absolute paths unconditionally (since v2.1.97). Each new absolute path triggers a
+permission prompt unless the command pattern is pre-authorized. `--broad-permissions`
+pre-authorizes common read-only operations so agents can explore the codebase without
+constant approval dialogs.
+
+Existing user permissions are preserved on re-init. Entries are deduplicated automatically.
+The deny list is always applied regardless of the flag.
 
 ## Architecture
 
