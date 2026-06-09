@@ -34,7 +34,10 @@ function makeMcpQuery(responses: Record<string, string | Error | null>): McpQuer
 }
 
 // Helper to build MCP JSON-RPC response for list_repos
-function mcpListReposResponse(repos: Array<{ repo: string; source_root?: string }>): string {
+function mcpListReposResponse(
+  repos: Array<{ repo: string; source_root?: string }>,
+  protocolVersion = '2025-03-26',
+): string {
   const reposJson = JSON.stringify({ repos });
   const rpcResponse = {
     jsonrpc: '2.0',
@@ -44,7 +47,7 @@ function mcpListReposResponse(repos: Array<{ repo: string; source_root?: string 
       isError: false,
     },
   };
-  const initResponse = { jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-03-26' } };
+  const initResponse = { jsonrpc: '2.0', id: 1, result: { protocolVersion } };
   return JSON.stringify(initResponse) + '\n' + JSON.stringify(rpcResponse);
 }
 
@@ -612,6 +615,82 @@ describe('detectEnvironment with config-registered MCP transport', () => {
     );
 
     expect(env.jcodemunchAvailable).toBe(false);
+  });
+});
+
+describe('MCP protocol version validation', () => {
+  const uvxExec = makeExec({
+    'which rtk': new Error('not found'),
+    'which jcodemunch-mcp': new Error('not found'),
+    'which jcodemunch': new Error('not found'),
+    'which uvx': '/opt/homebrew/bin/uvx',
+    'which graphify': new Error('not found'),
+  });
+
+  it('sets no warning when the server speaks the expected protocol version', async () => {
+    const mcpQuery = makeMcpQuery({
+      'uvx jcodemunch-mcp': mcpListReposResponse([{ repo: 'local/my-project' }]),
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project', uvxExec, () => false, () => undefined, mcpQuery, () => null,
+    );
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchProtocolWarning).toBeUndefined();
+  });
+
+  it('sets a warning on protocol version mismatch but stays available', async () => {
+    const mcpQuery = makeMcpQuery({
+      'uvx jcodemunch-mcp': mcpListReposResponse([{ repo: 'local/my-project' }], '2024-11-05'),
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project', uvxExec, () => false, () => undefined, mcpQuery, () => null,
+    );
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchProtocolWarning).toContain('2024-11-05');
+    expect(env.jcodemunchProtocolWarning).toContain('2025-03-26');
+  });
+
+  it('sets no warning when the initialize line is missing or garbled', async () => {
+    const reposJson = JSON.stringify({ repos: [{ repo: 'local/my-project' }] });
+    const onlyToolResponse = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      result: { content: [{ type: 'text', text: reposJson }], isError: false },
+    });
+    const mcpQuery = makeMcpQuery({
+      'uvx jcodemunch-mcp': '{garbled init line\n' + onlyToolResponse,
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project', uvxExec, () => false, () => undefined, mcpQuery, () => null,
+    );
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchProtocolWarning).toBeUndefined();
+  });
+
+  it('callJcodemunchMcpTool fires onWarning on mismatch and still returns the tool text', async () => {
+    const initResponse = JSON.stringify({
+      jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05' },
+    });
+    const toolResponse = JSON.stringify({
+      jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '{"success":true}' }] },
+    });
+    const mcpQuery = makeMcpQuery({
+      'jcodemunch-mcp': initResponse + '\n' + toolResponse,
+    });
+
+    const warnings: string[] = [];
+    const result = await callJcodemunchMcpTool(
+      'jcodemunch-mcp', [], 'index_folder', { path: '/work' }, mcpQuery, 60_000,
+      (msg) => warnings.push(msg),
+    );
+
+    expect(result).toBe('{"success":true}');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('2024-11-05');
   });
 });
 

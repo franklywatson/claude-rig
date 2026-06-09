@@ -98,6 +98,7 @@ export async function detectEnvironment(
     jcodemunchCwdRepo: jmResult.cwdRepo,
     jcodemunchKnownRepos: jmResult.knownRepos,
     jcodemunchTransport: jmResult.transport,
+    jcodemunchProtocolWarning: jmResult.protocolWarning,
     graphifyAvailable: graphifyResult.state === 'ready',
     graphifyGraphPath: graphifyResult.state === 'ready' ? graphifyResult.graphPath ?? null : null,
     graphBuildInfo: graphifyResult.state === 'absent' && !graphifyResult._cliFound ? undefined : graphifyResult,
@@ -171,6 +172,7 @@ interface JcodemunchDetection {
   cwdRepo: string | null;
   knownRepos: string[];
   transport?: JcodemunchTransport;
+  protocolWarning?: string;
 }
 
 async function detectJcodemunch(
@@ -253,11 +255,42 @@ function detectJcodemunchCli(cwd: string, exec: ExecFn): JcodemunchDetection {
   }
 }
 
+export const MCP_PROTOCOL_VERSION = '2025-03-26';
+
+const INITIALIZE_MESSAGE = JSON.stringify({
+  jsonrpc: '2.0',
+  method: 'initialize',
+  params: {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: 'rig', version: '1.0' },
+  },
+  id: 1,
+});
+
 const LIST_REPOS_MESSAGES = [
-  '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"rig","version":"1.0"}},"id":1}',
+  INITIALIZE_MESSAGE,
   '{"jsonrpc":"2.0","method":"notifications/initialized"}',
   '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_repos","arguments":{}},"id":2}',
 ];
+
+/**
+ * Inspect the initialize response (id:1) already present in the stdout buffer
+ * and return a warning string when the server's protocolVersion differs from
+ * ours. Returns null on match or on any parse failure — never blocks detection.
+ */
+export function extractProtocolMismatch(output: string | null): string | null {
+  if (!output) return null;
+  try {
+    const initLine = output.trim().split('\n').find(l => l.includes('"id":1'));
+    if (!initLine) return null;
+    const serverVersion = JSON.parse(initLine)?.result?.protocolVersion;
+    if (typeof serverVersion !== 'string' || serverVersion === MCP_PROTOCOL_VERSION) return null;
+    return `jcodemunch MCP protocol version mismatch (server: ${serverVersion}, expected: ${MCP_PROTOCOL_VERSION})`;
+  } catch {
+    return null;
+  }
+}
 
 async function detectJcodemunchMcp(
   cwd: string,
@@ -276,19 +309,23 @@ async function detectJcodemunchViaUvx(cwd: string, mcpQuery: McpQueryFn): Promis
 
 function parseListReposResponse(cwd: string, output: string | null): JcodemunchDetection {
   if (!output) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+  const protocolWarning = extractProtocolMismatch(output) ?? undefined;
+  const fallback: JcodemunchDetection = {
+    available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [], protocolWarning,
+  };
   try {
     const lines = output.trim().split('\n');
     const reposLine = lines.find(l => l.includes('"id":2'));
-    if (!reposLine) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+    if (!reposLine) return fallback;
 
     const rpcResponse = JSON.parse(reposLine);
     const textContent = rpcResponse?.result?.content?.[0]?.text;
-    if (!textContent) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+    if (!textContent) return fallback;
 
     const reposData = JSON.parse(textContent);
-    return resolveJcodemunchRepos(cwd, reposData.repos ?? []);
+    return { ...resolveJcodemunchRepos(cwd, reposData.repos ?? []), protocolWarning };
   } catch {
-    return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+    return fallback;
   }
 }
 
@@ -306,9 +343,10 @@ export async function callJcodemunchMcpTool(
   toolArgs: Record<string, string>,
   mcpQuery: McpQueryFn = defaultMcpQuery,
   timeoutMs: number = 60_000,
+  onWarning?: (msg: string) => void,
 ): Promise<string | null> {
   const messages = [
-    '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"rig","version":"1.0"}},"id":1}',
+    INITIALIZE_MESSAGE,
     '{"jsonrpc":"2.0","method":"notifications/initialized"}',
     JSON.stringify({
       jsonrpc: '2.0',
@@ -320,6 +358,8 @@ export async function callJcodemunchMcpTool(
 
   const output = await mcpQuery(command, args, messages, 2, timeoutMs);
   if (!output) return null;
+  const mismatch = extractProtocolMismatch(output);
+  if (mismatch && onWarning) onWarning(mismatch);
   try {
     const lines = output.trim().split('\n');
     const responseLine = lines.find(l => l.includes('"id":2'));

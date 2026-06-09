@@ -118,6 +118,7 @@ export interface Environment {
   jcodemunchCwdRepo: string | null;
   jcodemunchKnownRepos: string[];
   jcodemunchTransport?: JcodemunchTransport;
+  jcodemunchProtocolWarning?: string;
   /** @deprecated Use graphBuildInfo instead. Removed after graphify-redesign migration. */
   graphifyAvailable: boolean;
   /** @deprecated Use graphBuildInfo instead. Removed after graphify-redesign migration. */
