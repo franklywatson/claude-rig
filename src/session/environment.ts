@@ -149,21 +149,19 @@ export function detectGraphify(
     }
   }
 
-  if (!cliAvailable) {
-    return { state: 'absent', _cliFound: false };
-  }
-
+  // A valid graph on disk is sufficient for 'ready' regardless of CLI
+  // presence — the CLI may live off the hook PATH (e.g. ~/.local/bin) and is
+  // only needed for rebuilding. _cliFound tells callers whether rebuild works.
   const graphPath = join(cwd, 'graphify-out', 'graph.json');
   if (existsCheck(graphPath)) {
     const stat = statCheck(graphPath);
     if (stat && stat.size >= PLACEHOLDER_THRESHOLD) {
-      return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: true };
+      return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: cliAvailable };
     }
     // Placeholder or tiny file — treat as absent
-    return { state: 'absent', _cliFound: true };
   }
 
-  return { state: 'absent', _cliFound: true };
+  return { state: 'absent', _cliFound: cliAvailable };
 }
 
 interface JcodemunchDetection {

@@ -709,17 +709,33 @@ describe('detectGraphify', () => {
     expect(result.graphPath).toBe('graphify-out/graph.json');
   });
 
-  it('returns state absent when which graphify fails', () => {
+  it('returns ready when graph.json exists even if CLI is not on PATH', () => {
+    // The CLI may be installed off the hook PATH (e.g. ~/.local/bin); a valid
+    // graph on disk is sufficient for 'ready' — CLI is only needed to rebuild.
     const exec = makeExec({
       'which graphify': new Error('not found'),
       'which graphifyy': new Error('not found'),
     });
-    const existsCheck = (_path: string) => true;
-    const statCheck = (_path: string) => ({ size: 5000 });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/graph.json';
+    const statCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
 
     const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
+    expect(result.state).toBe('ready');
+    expect(result.graphPath).toBe('graphify-out/graph.json');
+    expect(result._cliFound).toBe(false);
+  });
+
+  it('returns state absent when CLI not found and no graph.json', () => {
+    const exec = makeExec({
+      'which graphify': new Error('not found'),
+      'which graphifyy': new Error('not found'),
+    });
+
+    const result = detectGraphify('/fake/cwd', exec, () => false, () => undefined);
     expect(result.state).toBe('absent');
     expect(result.graphPath).toBeUndefined();
+    expect(result._cliFound).toBe(false);
   });
 
   it('returns state absent when graphifyy (uvx) binary exists but no graph.json', () => {
