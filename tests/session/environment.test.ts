@@ -34,7 +34,7 @@ function makeMcpQuery(responses: Record<string, string | Error | null>): McpQuer
 }
 
 // Helper to build MCP JSON-RPC response for list_repos
-function mcpListReposResponse(repos: Array<{ repo: string }>): string {
+function mcpListReposResponse(repos: Array<{ repo: string; source_root?: string }>): string {
   const reposJson = JSON.stringify({ repos });
   const rpcResponse = {
     jsonrpc: '2.0',
@@ -531,6 +531,74 @@ describe('detectEnvironment with config-registered MCP transport', () => {
 
     expect(env.jcodemunchAvailable).toBe(true);
     expect(env.jcodemunchTransport?.kind).toBe('cli');
+  });
+
+  it('source_root exact-path match wins over ambiguous basenames', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([
+          { repo: 'local/api', source_root: '/other/checkout/api' },
+          { repo: 'team/api', source_root: '/work/api' },
+        ]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/api',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('team/api');
+    expect(env.jcodemunchKnownRepos).toEqual(['local/api', 'team/api']);
+  });
+
+  it('renamed checkout matches via source_root even when basenames differ', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([
+          { repo: 'org/upstream-name', source_root: '/work/my-fork' },
+        ]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-fork',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('org/upstream-name');
+  });
+
+  it('falls back to strict basename equality when source_root is absent', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([{ repo: 'local/test-rig' }, { repo: 'local/rig' }]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/home/jerome/projects/rig',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchCwdRepo).toBe('local/rig');
   });
 
   it('a throwing registrationLookup never breaks detection', async () => {

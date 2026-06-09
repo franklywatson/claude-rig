@@ -1,5 +1,5 @@
 import { execSync, spawn } from 'node:child_process';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 import type { Environment, GraphBuildInfo, JcodemunchTransport } from '../types.js';
 import { resolveJcodemunchRegistration } from './claude-config.js';
@@ -286,8 +286,7 @@ function parseListReposResponse(cwd: string, output: string | null): JcodemunchD
     if (!textContent) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
 
     const reposData = JSON.parse(textContent);
-    const repoNames: string[] = (reposData.repos ?? []).map((r: { repo: string }) => r.repo);
-    return resolveJcodemunchRepos(cwd, repoNames);
+    return resolveJcodemunchRepos(cwd, reposData.repos ?? []);
   } catch {
     return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
   }
@@ -332,14 +331,27 @@ export async function callJcodemunchMcpTool(
   }
 }
 
-function resolveJcodemunchRepos(cwd: string, repos: string[]): JcodemunchDetection {
+/** A repo entry from list_repos: bare name (CLI/older servers) or rich object (MCP). */
+type RepoEntry = string | { repo: string; source_root?: string };
+
+function resolveJcodemunchRepos(cwd: string, repos: RepoEntry[]): JcodemunchDetection {
+  const entries = repos
+    .map(r => (typeof r === 'string' ? { repo: r } : r))
+    .filter((e): e is { repo: string; source_root?: string } => typeof e?.repo === 'string');
+
+  // Exact source-root path match is authoritative — it disambiguates repos
+  // with the same basename and survives renamed checkouts. Basename equality
+  // is the fallback for entries that don't carry a source_root.
+  const resolvedCwd = resolve(cwd);
   const folderName = basename(cwd);
-  const cwdRepo = repos.find(r => r.split('/').pop() === folderName) ?? null;
+  const bySourceRoot = entries.find(e => e.source_root && resolve(e.source_root) === resolvedCwd);
+  const byBasename = entries.find(e => e.repo.split('/').pop() === folderName);
+  const cwdRepo = (bySourceRoot ?? byBasename)?.repo ?? null;
 
   return {
     available: true,
     cwdIndexed: cwdRepo !== null,
     cwdRepo,
-    knownRepos: repos,
+    knownRepos: entries.map(e => e.repo),
   };
 }
