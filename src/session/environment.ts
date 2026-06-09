@@ -1,7 +1,11 @@
 import { execSync, spawn } from 'node:child_process';
 import { basename, join } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
-import type { Environment, GraphBuildInfo } from '../types.js';
+import type { Environment, GraphBuildInfo, JcodemunchTransport } from '../types.js';
+import { resolveJcodemunchRegistration } from './claude-config.js';
+import type { McpRegistration } from './claude-config.js';
+
+export type RegistrationLookupFn = (cwd: string) => McpRegistration | null;
 
 export interface ExecFn {
   (command: string, options?: { encoding?: string; timeout?: number }): string;
@@ -80,9 +84,10 @@ export async function detectEnvironment(
   existsCheck: (path: string) => boolean = existsSync,
   statCheck: (path: string) => { size: number } | undefined = defaultStatCheck,
   mcpQuery: McpQueryFn = defaultMcpQuery,
+  registrationLookup: RegistrationLookupFn = resolveJcodemunchRegistration,
 ): Promise<Environment> {
   const rtkResult = detectRtk(exec);
-  const jmResult = await detectJcodemunch(cwd, exec, mcpQuery);
+  const jmResult = await detectJcodemunch(cwd, exec, mcpQuery, registrationLookup);
   const graphifyResult = detectGraphify(cwd, exec, existsCheck, statCheck);
 
   return {
@@ -92,6 +97,7 @@ export async function detectEnvironment(
     jcodemunchCwdIndexed: jmResult.cwdIndexed,
     jcodemunchCwdRepo: jmResult.cwdRepo,
     jcodemunchKnownRepos: jmResult.knownRepos,
+    jcodemunchTransport: jmResult.transport,
     graphifyAvailable: graphifyResult.state === 'ready',
     graphifyGraphPath: graphifyResult.state === 'ready' ? graphifyResult.graphPath ?? null : null,
     graphBuildInfo: graphifyResult.state === 'absent' && !graphifyResult._cliFound ? undefined : graphifyResult,
@@ -164,37 +170,72 @@ interface JcodemunchDetection {
   cwdIndexed: boolean;
   cwdRepo: string | null;
   knownRepos: string[];
+  transport?: JcodemunchTransport;
 }
 
 async function detectJcodemunch(
   cwd: string,
   exec: ExecFn,
   mcpQuery: McpQueryFn,
+  registrationLookup: RegistrationLookupFn,
 ): Promise<JcodemunchDetection> {
   // Try CLI binary first
   try {
     exec('which jcodemunch');
-    return detectJcodemunchCli(cwd, exec);
+    return {
+      ...detectJcodemunchCli(cwd, exec),
+      transport: { kind: 'cli', command: 'jcodemunch', args: [] },
+    };
   } catch {
-    // CLI not found — try MCP server binary
+    // CLI not found — try the registered MCP command
+  }
+
+  // Claude Code's own MCP registration is ground truth for how the server is
+  // launched (e.g. `uvx --from <wheel-url> jcodemunch-mcp` for GitHub-release
+  // installs that a bare `uvx jcodemunch-mcp` can never resolve).
+  let registration: McpRegistration | null = null;
+  try {
+    registration = registrationLookup(cwd);
+  } catch {
+    // Unreadable config — continue with the PATH-based chain
+  }
+  if (registration) {
+    const output = await mcpQuery(registration.command, registration.args, LIST_REPOS_MESSAGES, 2, 20_000);
+    if (output) {
+      return {
+        ...parseListReposResponse(cwd, output),
+        transport: {
+          kind: 'config',
+          command: registration.command,
+          args: registration.args,
+          source: registration.source,
+        },
+      };
+    }
+    // Registered command didn't respond — fall through to PATH-based detection
   }
 
   try {
     const mcpPath = exec('which jcodemunch-mcp').trim();
     if (mcpPath) {
-      return await detectJcodemunchMcp(cwd, mcpPath, mcpQuery);
+      return {
+        ...(await detectJcodemunchMcp(cwd, mcpPath, mcpQuery)),
+        transport: { kind: 'binary', command: mcpPath, args: [] },
+      };
     }
   } catch {
     // MCP binary not found either
   }
 
-  // macOS/uvx install: jcodemunch-mcp is managed by uvx and not in PATH.
-  // Claude Code's recommended install (command: "uvx", args: ["jcodemunch-mcp"])
-  // works but `which jcodemunch-mcp` fails. Send JSON-RPC via uvx directly.
-  // This also applies to Linux users who install via uvx instead of pip/pipx.
+  // Last resort: bare uvx invocation. Only works for PyPI-published installs —
+  // wheel-URL installs are covered by the registration probe above.
   try {
     exec('which uvx');
-    return await detectJcodemunchViaUvx(cwd, mcpQuery);
+    const result = await detectJcodemunchViaUvx(cwd, mcpQuery);
+    if (result.available) {
+      return { ...result, transport: { kind: 'uvx', command: 'uvx', args: ['jcodemunch-mcp'] } };
+    }
+    return result;
   } catch {
     // uvx not available
   }

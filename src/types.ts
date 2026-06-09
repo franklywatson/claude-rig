@@ -98,6 +98,18 @@ export interface GraphBuildInfo {
 
 // ── Environment Types ──
 
+/**
+ * How a working jcodemunch transport was found: 'cli' (binary on PATH),
+ * 'config' (MCP registration read from Claude Code's config — ground truth),
+ * 'binary' (jcodemunch-mcp on PATH), 'uvx' (bare uvx fallback, PyPI-only).
+ */
+export interface JcodemunchTransport {
+  kind: 'cli' | 'config' | 'binary' | 'uvx';
+  command: string;
+  args: string[];
+  source?: string;
+}
+
 export interface Environment {
   rtkAvailable: boolean;
   rtkPath: string | null;
@@ -105,6 +117,7 @@ export interface Environment {
   jcodemunchCwdIndexed: boolean;
   jcodemunchCwdRepo: string | null;
   jcodemunchKnownRepos: string[];
+  jcodemunchTransport?: JcodemunchTransport;
   /** @deprecated Use graphBuildInfo instead. Removed after graphify-redesign migration. */
   graphifyAvailable: boolean;
   /** @deprecated Use graphBuildInfo instead. Removed after graphify-redesign migration. */

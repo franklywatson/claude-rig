@@ -94,7 +94,7 @@ describe('detectEnvironment', () => {
       'which uvx': new Error('not found'),
     });
 
-    const env = await detectEnvironment('/fake/cwd', exec);
+    const env = await detectEnvironment('/fake/cwd', exec, undefined, undefined, makeMcpQuery({}), () => null);
     expect(env.jcodemunchAvailable).toBe(false);
     expect(env.jcodemunchCwdIndexed).toBe(false);
     expect(env.jcodemunchCwdRepo).toBeNull();
@@ -243,7 +243,7 @@ describe('detectEnvironment', () => {
       'which uvx': new Error('not found'),
     });
 
-    const env = await detectEnvironment('/fake/cwd', exec);
+    const env = await detectEnvironment('/fake/cwd', exec, undefined, undefined, makeMcpQuery({}), () => null);
     expect(env.rtkAvailable).toBe(false);
     expect(env.rtkPath).toBeNull();
     expect(env.jcodemunchAvailable).toBe(false);
@@ -309,7 +309,14 @@ describe('detectEnvironment', () => {
       'which uvx': new Error('not found'),
     });
 
-    const env = await detectEnvironment('/Users/jerome/Documents/Claude/Projects/forgd-onboarding', exec);
+    const env = await detectEnvironment(
+      '/Users/jerome/Documents/Claude/Projects/forgd-onboarding',
+      exec,
+      undefined,
+      undefined,
+      makeMcpQuery({}),
+      () => null,
+    );
     expect(env.jcodemunchAvailable).toBe(false);
     expect(env.jcodemunchCwdIndexed).toBe(false);
   });
@@ -357,7 +364,7 @@ describe('detectEnvironment', () => {
       return mcpListReposResponse([{ repo: 'local/my-project' }]);
     };
 
-    await detectEnvironment('/Users/jerome/projects/my-project', exec, undefined, undefined, mcpQuery);
+    await detectEnvironment('/Users/jerome/projects/my-project', exec, undefined, undefined, mcpQuery, () => null);
     expect(capturedCommand).toBe('uvx');
     expect(capturedArgs).toEqual(['jcodemunch-mcp']);
     // Must include initialize, notifications/initialized, and tools/call list_repos
@@ -396,6 +403,147 @@ describe('detectEnvironment', () => {
     expect(env.jcodemunchCwdIndexed).toBe(true);
     expect(env.jcodemunchCwdRepo).toBe('local/my-project');
     expect(mcpQueryCommand).toBe('/home/user/.local/bin/jcodemunch-mcp');
+  });
+});
+
+describe('detectEnvironment with config-registered MCP transport', () => {
+  const WHEEL_URL =
+    'https://github.com/jgravelle/jcodemunch-mcp/releases/download/v1.108.20/jcodemunch_mcp-1.108.20-py3-none-any.whl';
+  const wheelRegistration = {
+    command: 'uvx',
+    args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+    source: 'user' as const,
+  };
+
+  const noBinariesExec = makeExec({
+    'which rtk': new Error('not found'),
+    'which jcodemunch-mcp': new Error('not found'),
+    'which jcodemunch': new Error('not found'),
+    'which uvx': '/opt/homebrew/bin/uvx',
+    'which graphify': new Error('not found'),
+  });
+
+  it('detects via registered wheel-URL command when binaries are absent (live-bug regression)', async () => {
+    const probeCalls: Array<{ command: string; args: string[] }> = [];
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      probeCalls.push({ command, args });
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([{ repo: 'franklywatson/my-project' }]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('franklywatson/my-project');
+    expect(env.jcodemunchTransport).toEqual({
+      kind: 'config',
+      command: 'uvx',
+      args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+      source: 'user',
+    });
+    // The registration command/args must be passed to the probe verbatim
+    expect(probeCalls[0]).toEqual({
+      command: 'uvx',
+      args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+    });
+  });
+
+  it('falls through to jcodemunch-mcp binary when the registration probe fails', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': '/usr/local/bin/jcodemunch-mcp',
+      'which jcodemunch': new Error('not found'),
+      'which graphify': new Error('not found'),
+    });
+    const mcpQuery: McpQueryFn = async (command) => {
+      if (command === '/usr/local/bin/jcodemunch-mcp') {
+        return mcpListReposResponse([{ repo: 'local/my-project' }]);
+      }
+      return null; // registration probe fails
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      exec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchTransport?.kind).toBe('binary');
+    expect(env.jcodemunchTransport?.command).toBe('/usr/local/bin/jcodemunch-mcp');
+  });
+
+  it('uses the bare uvx fallback when no registration exists', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.length === 1 && args[0] === 'jcodemunch-mcp') {
+        return mcpListReposResponse([{ repo: 'local/my-project' }]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => null,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchTransport).toEqual({
+      kind: 'uvx',
+      command: 'uvx',
+      args: ['jcodemunch-mcp'],
+    });
+  });
+
+  it('records a cli transport when the jcodemunch binary is on PATH', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': '/usr/local/bin/jcodemunch',
+      'jcodemunch list_repos': JSON.stringify({ repos: ['local/my-project'] }),
+      'which graphify': new Error('not found'),
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      exec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => null,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchTransport?.kind).toBe('cli');
+  });
+
+  it('a throwing registrationLookup never breaks detection', async () => {
+    const env = await detectEnvironment(
+      '/work/my-project',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => { throw new Error('config unreadable'); },
+    );
+
+    expect(env.jcodemunchAvailable).toBe(false);
   });
 });
 
