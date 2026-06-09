@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleSessionStart } from '../../src/session/start.js';
+import { handleSessionStart, detectAndIndex } from '../../src/session/start.js';
 import { SessionCache } from '../../src/session/cache.js';
+import type { ExecFn, McpQueryFn } from '../../src/session/environment.js';
 
 vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
@@ -168,7 +169,7 @@ describe('handleSessionStart', () => {
     expect(output).toContain('install');
   });
 
-  it('warns when jcodemunch is not installed', async () => {
+  it('warns when jcodemunch was not detected', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') return '/usr/bin/rtk';
       if (cmd === 'which jcodemunch') throw new Error('not found');
@@ -208,7 +209,7 @@ describe('handleSessionStart', () => {
     const output = await handleSessionStart('/home/user/test-project', cache);
     // The tool-missing warnings (rtk/jcodemunch) should not appear when both are present.
     expect(output).not.toContain('rtk is not installed');
-    expect(output).not.toContain('jcodemunch is not installed');
+    expect(output).not.toContain('jcodemunch was not detected');
   });
 
   it('emits subagent delegation instructions when jcodemunch available', async () => {
@@ -274,13 +275,13 @@ describe('handleSessionStart', () => {
     // First call — tool-missing warnings present
     const output1 = await handleSessionStart('/home/user/test-project', cache);
     expect(output1).toContain('rtk is not installed');
-    expect(output1).toContain('jcodemunch is not installed');
+    expect(output1).toContain('jcodemunch was not detected');
 
     // Second call — tool-missing warnings suppressed by toolsWarned flag
     // (the permissions warning is independent and may still fire)
     const output2 = await handleSessionStart('/home/user/test-project', cache);
     expect(output2).not.toContain('rtk is not installed');
-    expect(output2).not.toContain('jcodemunch is not installed');
+    expect(output2).not.toContain('jcodemunch was not detected');
   });
 
   it('emits active enforcement rules when rules are not all silent', async () => {
@@ -586,6 +587,217 @@ describe('handleSessionStart', () => {
 
       const output = await handleSessionStart('/home/user/small-project', cache);
       expect(output).not.toContain('file limit');
+    });
+  });
+
+  describe('transport reuse and output states', () => {
+    const WHEEL_URL =
+      'https://github.com/jgravelle/jcodemunch-mcp/releases/download/v1.108.20/jcodemunch_mcp-1.108.20-py3-none-any.whl';
+    const wheelRegistration = {
+      command: 'uvx',
+      args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+      source: 'user' as const,
+    };
+
+    const noBinariesExec: ExecFn = (cmd: string) => {
+      if (cmd === 'which uvx') return '/opt/homebrew/bin/uvx';
+      throw new Error(`not found: ${cmd}`);
+    };
+
+    function listReposResponse(
+      repos: Array<{ repo: string; source_root?: string }>,
+      protocolVersion = '2025-03-26',
+    ): string {
+      const init = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion } });
+      const tool = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        result: { content: [{ type: 'text', text: JSON.stringify({ repos }) }], isError: false },
+      });
+      return init + '\n' + tool;
+    }
+
+    function toolCallResponse(payload: object): string {
+      const init = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-03-26' } });
+      const tool = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        result: { content: [{ type: 'text', text: JSON.stringify(payload) }] },
+      });
+      return init + '\n' + tool;
+    }
+
+    it('detectAndIndex reuses the config transport verbatim for MCP auto-index', async () => {
+      const indexCalls: Array<{ command: string; args: string[] }> = [];
+      const mcpQuery: McpQueryFn = async (command, args, messages) => {
+        if (messages.some(m => m.includes('index_folder'))) {
+          indexCalls.push({ command, args });
+          return toolCallResponse({ success: true, repo: 'org/proj' });
+        }
+        if (command === 'uvx' && args.includes(WHEEL_URL)) {
+          return listReposResponse([]);
+        }
+        return null;
+      };
+
+      const { env, autoIndex } = await detectAndIndex(
+        '/work/proj', noBinariesExec, () => false, () => undefined, mcpQuery, () => wheelRegistration,
+      );
+
+      expect(autoIndex).toBe('succeeded');
+      expect(env.jcodemunchCwdIndexed).toBe(true);
+      expect(env.jcodemunchCwdRepo).toBe('org/proj');
+      expect(indexCalls[0]).toEqual({
+        command: 'uvx',
+        args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+      });
+    });
+
+    it('detectAndIndex reports failed when the index attempt yields nothing', async () => {
+      const mcpQuery: McpQueryFn = async (command, args, messages) => {
+        if (messages.some(m => m.includes('index_folder'))) return null;
+        if (command === 'uvx' && args.includes(WHEEL_URL)) return listReposResponse([]);
+        return null;
+      };
+
+      const { autoIndex } = await detectAndIndex(
+        '/work/proj', noBinariesExec, () => false, () => undefined, mcpQuery, () => wheelRegistration,
+      );
+
+      expect(autoIndex).toBe('failed');
+    });
+
+    it('detectAndIndex reports not_needed when CWD is already indexed', async () => {
+      const mcpQuery: McpQueryFn = async (command, args) => {
+        if (command === 'uvx' && args.includes(WHEEL_URL)) {
+          return listReposResponse([{ repo: 'org/proj', source_root: '/work/proj' }]);
+        }
+        return null;
+      };
+
+      const { autoIndex, env } = await detectAndIndex(
+        '/work/proj', noBinariesExec, () => false, () => undefined, mcpQuery, () => wheelRegistration,
+      );
+
+      expect(env.jcodemunchCwdIndexed).toBe(true);
+      expect(autoIndex).toBe('not_needed');
+    });
+
+    it('detectAndIndex routes CLI auto-index through the injectable exec', async () => {
+      const seen: string[] = [];
+      const exec: ExecFn = (cmd: string) => {
+        seen.push(cmd);
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":[]}';
+        if (cmd.includes('index_folder')) return JSON.stringify({ success: true, repo: 'local/proj' });
+        throw new Error(`not found: ${cmd}`);
+      };
+
+      const { autoIndex } = await detectAndIndex(
+        '/work/proj', exec, () => false, () => undefined, async () => null, () => null,
+      );
+
+      expect(autoIndex).toBe('succeeded');
+      expect(seen.some(c => c.includes('index_folder'))).toBe(true);
+    });
+
+    it('renders cli transport and indexed state', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') return '/usr/bin/rtk';
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache);
+      expect(output).toContain('jcodemunch: available (cli)');
+      expect(output).toContain('CWD indexed: local/test-project');
+    });
+
+    it('renders auto-index failure guidance when indexing fails', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":[]}';
+        if (cmd.includes('index_folder')) throw new Error('index failed');
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache);
+      expect(output).toContain('CWD not indexed (auto-index failed');
+      expect(output).toContain('mcp__jcodemunch__index_folder');
+    });
+
+    it('renders config transport detail and protocol mismatch warning', async () => {
+      vi.mocked(execSync).mockImplementation(() => '');
+      const mcpQuery: McpQueryFn = async (command, args) => {
+        if (command === 'uvx' && args.includes(WHEEL_URL)) {
+          return listReposResponse([{ repo: 'org/proj', source_root: '/work/proj' }], '2024-11-05');
+        }
+        return null;
+      };
+
+      const output = await handleSessionStart('/work/proj', cache, {
+        exec: noBinariesExec,
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery,
+        registrationLookup: () => wheelRegistration,
+        readdir: () => { throw new Error('no dir'); },
+      });
+
+      expect(output).toContain('available (mcp via user config: uvx --from');
+      expect(output).toContain('[WARNING] jcodemunch MCP protocol version mismatch');
+      expect(output).toContain('2024-11-05');
+    });
+
+    it('not-installed warning mentions checking the MCP registration', async () => {
+      vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+
+      const output = await handleSessionStart('/home/user/test-project', cache, {
+        exec: () => { throw new Error('not found'); },
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery: async () => null,
+        registrationLookup: () => null,
+        readdir: () => { throw new Error('no dir'); },
+      });
+
+      expect(output).toContain('jcodemunch: not found');
+      expect(output).toContain('claude mcp list');
+    });
+
+    it('warns about orphaned index data when detection fails but ~/.code-index has dbs', async () => {
+      vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+
+      const output = await handleSessionStart('/home/user/test-project', cache, {
+        exec: () => { throw new Error('not found'); },
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery: async () => null,
+        registrationLookup: () => null,
+        readdir: () => ['franklywatson-claude-rig.db', 'config.jsonc'],
+        homeDir: '/home/user',
+      });
+
+      expect(output).toContain('index data found at ~/.code-index');
+      expect(output).toContain('claude mcp list');
+    });
+
+    it('does not warn about orphaned index data when ~/.code-index is absent', async () => {
+      vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+
+      const output = await handleSessionStart('/home/user/test-project', cache, {
+        exec: () => { throw new Error('not found'); },
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery: async () => null,
+        registrationLookup: () => null,
+        readdir: () => { throw new Error('ENOENT'); },
+        homeDir: '/home/user',
+      });
+
+      expect(output).not.toContain('index data found');
     });
   });
 });
