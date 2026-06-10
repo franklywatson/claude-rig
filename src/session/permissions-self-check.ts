@@ -1,48 +1,63 @@
 import { join } from 'node:path';
+import { homedir } from 'node:os';
 import type { PermissionsReadiness } from '../types.js';
 import { REQUIRED_PERMISSIONS } from '../cli/permissions.js';
 
-const FIX_COMMAND = 'rig init --force';
+const INIT_FIX_COMMAND = 'rig init --force';
+// Plain `rig init` writes only the deny list; allow entries are opt-in.
+const ALLOW_FIX_COMMAND = 'rig init --broad-permissions';
 
 type ReadFileFn = (path: string, encoding: string) => string;
 type ExistsCheck = (path: string) => boolean;
 
 /**
- * Checks `.claude/settings.json` against the set of permissions `rig init`
- * is expected to have auto-allowed. Detects two failure modes:
+ * Checks the merged permission allow-list against the set of permissions
+ * `rig init --broad-permissions` is expected to have auto-allowed.
  *
- * 1. The settings file doesn't exist (rig was never initialized in this
- *    project, or settings.json was deleted).
- * 2. The settings file exists but is missing one or more required entries
- *    (e.g., user upgraded rig and the required set grew, or hand-edited
- *    settings.json removed entries).
+ * Claude Code merges permissions across scopes, so an entry satisfied at any
+ * of these locations counts (checking only the project file produced false
+ * positives for users who keep broad allows at user scope):
  *
- * Both fix paths are `rig init --force`, which is idempotent — it only adds
- * missing entries and preserves user customizations.
+ * 1. `<project>/.claude/settings.json`
+ * 2. `<project>/.claude/settings.local.json`
+ * 3. `~/.claude/settings.json`
  *
- * Errors reading or parsing settings.json are treated as "no_settings" rather
- * than thrown, so a broken settings file doesn't break session-start.
+ * A missing or malformed *project* settings.json still reports "no_settings"
+ * — that means rig was never initialized here, regardless of user scope.
+ *
+ * Read or parse errors in the other scopes are ignored (treated as empty), so
+ * a broken settings file never breaks session-start.
  */
 export function checkPermissionsReadiness(
   projectDir: string,
   readFile: ReadFileFn,
   existsCheck: ExistsCheck,
+  homeDir: string = homedir(),
 ): PermissionsReadiness {
-  const settingsPath = join(projectDir, '.claude', 'settings.json');
+  const projectSettingsPath = join(projectDir, '.claude', 'settings.json');
 
-  if (!existsCheck(settingsPath)) {
-    return { status: 'no_settings', fixCommand: FIX_COMMAND };
+  if (!existsCheck(projectSettingsPath)) {
+    return { status: 'no_settings', fixCommand: INIT_FIX_COMMAND };
   }
 
-  let settings: unknown;
+  let projectSettings: unknown;
   try {
-    settings = JSON.parse(readFile(settingsPath, 'utf-8'));
+    projectSettings = JSON.parse(readFile(projectSettingsPath, 'utf-8'));
   } catch {
-    return { status: 'no_settings', fixCommand: FIX_COMMAND };
+    return { status: 'no_settings', fixCommand: INIT_FIX_COMMAND };
   }
 
-  const allow = extractAllowList(settings);
-  const missing = REQUIRED_PERMISSIONS.filter((entry) => !allow.includes(entry));
+  const allow = new Set(extractAllowList(projectSettings));
+  for (const path of [
+    join(projectDir, '.claude', 'settings.local.json'),
+    join(homeDir, '.claude', 'settings.json'),
+  ]) {
+    for (const entry of readAllowList(path, readFile, existsCheck)) {
+      allow.add(entry);
+    }
+  }
+
+  const missing = REQUIRED_PERMISSIONS.filter((entry) => !allow.has(entry));
 
   if (missing.length === 0) {
     return { status: 'ok' };
@@ -51,8 +66,17 @@ export function checkPermissionsReadiness(
   return {
     status: 'missing',
     missing,
-    fixCommand: FIX_COMMAND,
+    fixCommand: ALLOW_FIX_COMMAND,
   };
+}
+
+function readAllowList(path: string, readFile: ReadFileFn, existsCheck: ExistsCheck): string[] {
+  try {
+    if (!existsCheck(path)) return [];
+    return extractAllowList(JSON.parse(readFile(path, 'utf-8')));
+  } catch {
+    return [];
+  }
 }
 
 function extractAllowList(settings: unknown): string[] {
