@@ -800,6 +800,48 @@ describe('detectGraphify', () => {
     expect(env.graphifyGraphPath).toBe('graphify-out/graph.json');
   });
 
+  it('returns building when .rebuild.lock present and no valid graph', () => {
+    const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/.rebuild.lock';
+
+    const result = detectGraphify(
+      '/fake/cwd', exec, existsCheck, () => undefined,
+      (path) => (path.endsWith('.rebuild.lock') ? new Date(2000) : undefined),
+    );
+    expect(result.state).toBe('building');
+    expect(result._cliFound).toBe(true);
+  });
+
+  it('returns ready when graph.json is newer than .rebuild.lock (stale lock from completed build)', () => {
+    // graphify leaves lock files behind after completed builds
+    const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
+    const existsCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ||
+      path === '/fake/cwd/graphify-out/.rebuild.lock';
+    const statCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
+    const mtimeCheck = (path: string) =>
+      path.endsWith('graph.json') ? new Date(5000) : new Date(1000);
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck, mtimeCheck);
+    expect(result.state).toBe('ready');
+    expect(result.graphPath).toBe('graphify-out/graph.json');
+  });
+
+  it('returns building when .rebuild.lock is newer than graph.json (active rebuild)', () => {
+    const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
+    const existsCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ||
+      path === '/fake/cwd/graphify-out/.rebuild.lock';
+    const statCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
+    const mtimeCheck = (path: string) =>
+      path.endsWith('graph.json') ? new Date(1000) : new Date(5000);
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck, mtimeCheck);
+    expect(result.state).toBe('building');
+  });
+
   it('returns state ready when graphifyy binary and real graph exist', () => {
     const exec = (cmd: string) => {
       if (cmd === 'which graphify') throw new Error('not found');

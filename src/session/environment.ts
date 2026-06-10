@@ -129,11 +129,20 @@ export interface GraphifyDetectResult extends GraphBuildInfo {
   _cliFound: boolean;
 }
 
+const defaultMtimeCheck = (path: string): Date | undefined => {
+  try {
+    return statSync(path).mtime;
+  } catch {
+    return undefined;
+  }
+};
+
 export function detectGraphify(
   cwd: string,
   exec: ExecFn,
   existsCheck: (path: string) => boolean = existsSync,
   statCheck: (path: string) => { size: number } | undefined = defaultStatCheck,
+  mtimeCheck: (path: string) => Date | undefined = defaultMtimeCheck,
 ): GraphifyDetectResult {
   // Check for graphify CLI — package installs as 'graphifyy' (double-y)
   let cliAvailable = false;
@@ -153,12 +162,31 @@ export function detectGraphify(
   // presence — the CLI may live off the hook PATH (e.g. ~/.local/bin) and is
   // only needed for rebuilding. _cliFound tells callers whether rebuild works.
   const graphPath = join(cwd, 'graphify-out', 'graph.json');
+  let graphValid = false;
   if (existsCheck(graphPath)) {
     const stat = statCheck(graphPath);
-    if (stat && stat.size >= PLACEHOLDER_THRESHOLD) {
-      return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: cliAvailable };
-    }
+    graphValid = !!stat && stat.size >= PLACEHOLDER_THRESHOLD;
     // Placeholder or tiny file — treat as absent
+  }
+
+  // graphify leaves .rebuild.lock behind after completed builds: a lock with a
+  // graph newer than it is stale (finished build); a lock newer than the graph
+  // (or with no valid graph) means a rebuild is in progress.
+  const lockPath = join(cwd, 'graphify-out', '.rebuild.lock');
+  if (existsCheck(lockPath)) {
+    if (!graphValid) {
+      return { state: 'building', _cliFound: cliAvailable };
+    }
+    const graphMtime = mtimeCheck(graphPath);
+    const lockMtime = mtimeCheck(lockPath);
+    if (graphMtime && lockMtime && lockMtime > graphMtime) {
+      return { state: 'building', _cliFound: cliAvailable };
+    }
+    // Stale lock (or mtimes unavailable) — the valid graph wins
+  }
+
+  if (graphValid) {
+    return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: cliAvailable };
   }
 
   return { state: 'absent', _cliFound: cliAvailable };
