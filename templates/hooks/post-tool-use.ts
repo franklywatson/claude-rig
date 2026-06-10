@@ -49,7 +49,7 @@ import { execSync } from 'node:child_process';
   // execFn powers external-directory graphify stats capture; without it that
   // branch of handlePostToolUse is dead code.
   const execFn = (cmd: string, opts?: { timeout?: number }) =>
-    execSync(cmd, { encoding: 'utf-8', ...opts }) as string;
+    execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...opts }) as string;
 
   loadConfig(resolve(cwd, '.harness.yaml')).then((config: any) => {
     const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn);
