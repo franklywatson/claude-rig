@@ -128,6 +128,74 @@ describe('handlePostToolUse', () => {
     });
   });
 
+  it('captures stats when an external graph is built via Bash graphify update', () => {
+    const report = [
+      '# Graph Report - /external/meridian',
+      '',
+      '## Summary',
+      '- 420 nodes · 891 edges · 67 communities detected',
+      '- Extraction: 91% EXTRACTED · 9% INFERRED · 0% AMBIGUOUS',
+    ].join('\n');
+    // Only the report read is expected: the graph was just built by the Bash
+    // command itself, so no test -f / graphify update retry should run.
+    const exec = (cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) return report;
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    handlePostToolUse(
+      'Bash',
+      { command: 'graphify update "/external/meridian"' },
+      tracker,
+      cache,
+      config,
+      exec,
+    );
+
+    expect(cache.getGraphifyStats('/external/meridian')).toEqual({
+      nodes: 420, edges: 891, communities: 67,
+      extractedPct: 91, inferredPct: 9, ambiguousPct: 0,
+    });
+  });
+
+  it('captures stats for unquoted and graphifyy command variants', () => {
+    const report = '- 10 nodes · 20 edges · 3 communities detected';
+    const exec = (cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) return report;
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    handlePostToolUse(
+      'Bash', { command: 'graphifyy update /external/alpha' }, tracker, cache, config, exec,
+    );
+
+    expect(cache.getGraphifyStats('/external/alpha')?.nodes).toBe(10);
+  });
+
+  it('does not capture stats for Bash graphify update on the CWD', () => {
+    const exec = () => { throw new Error('should not be called'); };
+
+    handlePostToolUse(
+      'Bash',
+      { command: `graphify update "${process.cwd()}"` },
+      tracker,
+      cache,
+      config,
+      exec,
+    );
+
+    expect(cache.getGraphifyStats(process.cwd())).toBeUndefined();
+  });
+
+  it('ignores Bash commands that merely mention graphify without update', () => {
+    const exec = () => { throw new Error('should not be called'); };
+
+    expect(() => handlePostToolUse(
+      'Bash', { command: 'graphify benchmark "/external/x"' }, tracker, cache, config, exec,
+    )).not.toThrow();
+    expect(cache.getGraphifyStats('/external/x')).toBeUndefined();
+  });
+
   it('does not capture stats for CWD directory on index_folder', () => {
     const exec = () => '';
     handlePostToolUse(

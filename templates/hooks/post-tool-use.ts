@@ -10,6 +10,7 @@
  */
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 
 (async () => {
   let handlePostToolUse: any;
@@ -45,8 +46,13 @@ import { readFileSync } from 'node:fs';
   const cache = new SessionCache(cwd, input.session_id);
   const tracker = new FileTracker();
 
+  // execFn powers external-directory graphify stats capture; without it that
+  // branch of handlePostToolUse is dead code.
+  const execFn = (cmd: string, opts?: { timeout?: number }) =>
+    execSync(cmd, { encoding: 'utf-8', ...opts }) as string;
+
   loadConfig(resolve(cwd, '.harness.yaml')).then((config: any) => {
-    const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config);
+    const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn);
 
     if (result) {
       console.error(result);
