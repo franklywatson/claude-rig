@@ -842,6 +842,77 @@ describe('detectGraphify', () => {
     expect(result.state).toBe('building');
   });
 
+  it('captures the CLI version when the probe succeeds', () => {
+    const exec = makeExec({
+      'which graphify': '/usr/local/bin/graphify',
+      'graphify --version': 'graphify 0.7.18',
+    });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/graph.json';
+    const statCheck = () => ({ size: 5000 });
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
+    expect(result.state).toBe('ready');
+    expect(result.cliVersion).toBe('0.7.18');
+  });
+
+  it('parses the version from the binary line, not from skew-warning noise', () => {
+    // Live output includes a warning line mentioning a different version:
+    //   warning: skill is from graphify 0.7.16, package is 0.7.18. ...
+    //   graphify 0.7.18
+    const exec = makeExec({
+      'which graphify': '/usr/local/bin/graphify',
+      'graphify --version':
+        "  warning: skill is from graphify 0.7.16, package is 0.7.18. Run 'graphify install' to update.\ngraphify 0.7.18",
+    });
+
+    const result = detectGraphify('/fake/cwd', exec, () => false, () => undefined);
+    expect(result.cliVersion).toBe('0.7.18');
+  });
+
+  it('version probe failure never changes detection state', () => {
+    const exec = makeExec({
+      'which graphify': '/usr/local/bin/graphify',
+      // no 'graphify --version' key — makeExec throws for it
+    });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/graph.json';
+    const statCheck = () => ({ size: 5000 });
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
+    expect(result.state).toBe('ready');
+    expect(result.cliVersion).toBeUndefined();
+  });
+
+  it('probes the graphifyy binary name when that is what resolved', () => {
+    const calls: string[] = [];
+    const exec = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd === 'which graphify') throw new Error('not found');
+      if (cmd === 'which graphifyy') return '/home/user/.local/bin/graphifyy';
+      if (cmd === 'graphifyy --version') return 'graphifyy 0.7.16';
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    const result = detectGraphify('/fake/cwd', exec, () => false, () => undefined);
+    expect(result.cliVersion).toBe('0.7.16');
+    expect(calls).toContain('graphifyy --version');
+  });
+
+  it('exposes graphifyVersion on the detected environment', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+      'which graphify': '/usr/local/bin/graphify',
+      'graphify --version': 'graphify 0.7.18',
+    });
+
+    const env = await detectEnvironment(
+      '/project', exec, () => false, () => undefined, makeMcpQuery({}), () => null,
+    );
+    expect(env.graphifyVersion).toBe('0.7.18');
+  });
+
   it('returns state ready when graphifyy binary and real graph exist', () => {
     const exec = (cmd: string) => {
       if (cmd === 'which graphify') throw new Error('not found');

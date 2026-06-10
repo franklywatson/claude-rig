@@ -124,6 +124,7 @@ export interface Environment {
   /** @deprecated Use graphBuildInfo instead. Removed after graphify-redesign migration. */
   graphifyGraphPath: string | null;
   graphBuildInfo?: GraphBuildInfo;
+  graphifyVersion?: string | null;
   detectedAt: number;
 }
 

@@ -784,6 +784,34 @@ describe('handleSessionStart', () => {
       expect(output).toContain('claude mcp list');
     });
 
+    it('warns when graphify version is outside the tested range', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd === 'graphify --version') return 'graphify 0.6.2';
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache);
+      expect(output).toContain('graphify 0.6.2 is outside the tested range');
+    });
+
+    it('does not warn when graphify version is inside the tested range', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd === 'graphify --version') return 'graphify 0.7.18';
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache);
+      expect(output).not.toContain('outside the tested range');
+    });
+
     it('does not warn about orphaned index data when ~/.code-index is absent', async () => {
       vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
 

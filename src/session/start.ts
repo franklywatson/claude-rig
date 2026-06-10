@@ -21,6 +21,23 @@ interface FileCapWarning {
 
 export type AutoIndexOutcome = 'succeeded' | 'failed' | 'not_needed';
 
+// graphify versions rig's stats parsing and state handling are tested against
+const GRAPHIFY_TESTED_MIN = '0.7.0';
+const GRAPHIFY_TESTED_MAX_EXCLUSIVE = '0.8.0';
+
+function versionInRange(version: string, min: string, maxExclusive: string): boolean {
+  const segments = (v: string): number[] => v.split('.').map(Number);
+  const compare = (a: number[], b: number[]): number => {
+    for (let i = 0; i < 3; i++) {
+      const diff = (a[i] ?? 0) - (b[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  };
+  const v = segments(version);
+  return compare(v, segments(min)) >= 0 && compare(v, segments(maxExclusive)) < 0;
+}
+
 /** Injectable seams for handleSessionStart; production callers pass nothing. */
 export interface SessionStartDeps {
   exec?: ExecFn;
@@ -124,6 +141,10 @@ export async function handleSessionStart(
 
   if (env.jcodemunchProtocolWarning) {
     lines.push(`[WARNING] ${env.jcodemunchProtocolWarning}`);
+  }
+
+  if (env.graphifyVersion && !versionInRange(env.graphifyVersion, GRAPHIFY_TESTED_MIN, GRAPHIFY_TESTED_MAX_EXCLUSIVE)) {
+    lines.push(`[WARNING] graphify ${env.graphifyVersion} is outside the tested range (>=${GRAPHIFY_TESTED_MIN} <${GRAPHIFY_TESTED_MAX_EXCLUSIVE}) — proceeding anyway`);
   }
 
   if (graphInfo?.state === 'ready' && baseline.graphifyStats) {

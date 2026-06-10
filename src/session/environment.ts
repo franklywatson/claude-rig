@@ -101,6 +101,7 @@ export async function detectEnvironment(
     jcodemunchProtocolWarning: jmResult.protocolWarning,
     graphifyAvailable: graphifyResult.state === 'ready',
     graphifyGraphPath: graphifyResult.state === 'ready' ? graphifyResult.graphPath ?? null : null,
+    graphifyVersion: graphifyResult.cliVersion ?? null,
     graphBuildInfo: graphifyResult.state === 'absent' && !graphifyResult._cliFound ? undefined : graphifyResult,
     detectedAt: Date.now(),
   };
@@ -127,6 +128,18 @@ const defaultStatCheck = (path: string): { size: number } | undefined => {
 
 export interface GraphifyDetectResult extends GraphBuildInfo {
   _cliFound: boolean;
+  cliVersion?: string;
+}
+
+/**
+ * Parse the version from `graphify --version` output. Anchors on the binary's
+ * own version line — output may also contain a skew-warning line mentioning a
+ * different version ("skill is from graphify 0.7.16, package is 0.7.18").
+ */
+function parseGraphifyVersion(output: string): string | undefined {
+  const anchored = output.match(/^graphify(?:y)?\s+(\d+\.\d+\.\d+)/m);
+  if (anchored) return anchored[1];
+  return output.match(/(\d+\.\d+\.\d+)/)?.[1];
 }
 
 const defaultMtimeCheck = (path: string): Date | undefined => {
@@ -145,16 +158,27 @@ export function detectGraphify(
   mtimeCheck: (path: string) => Date | undefined = defaultMtimeCheck,
 ): GraphifyDetectResult {
   // Check for graphify CLI — package installs as 'graphifyy' (double-y)
-  let cliAvailable = false;
+  let cliBinary: string | null = null;
   try {
     exec('which graphify');
-    cliAvailable = true;
+    cliBinary = 'graphify';
   } catch {
     try {
       exec('which graphifyy');
-      cliAvailable = true;
+      cliBinary = 'graphifyy';
     } catch {
       // Neither binary found — MCP server may still be running via uvx
+    }
+  }
+  const cliAvailable = cliBinary !== null;
+
+  // Version probe is diagnostics-only — failure must never change state
+  let cliVersion: string | undefined;
+  if (cliBinary) {
+    try {
+      cliVersion = parseGraphifyVersion(exec(`${cliBinary} --version`, { timeout: 5000 }));
+    } catch {
+      // Probe failed — version stays unknown
     }
   }
 
@@ -175,21 +199,21 @@ export function detectGraphify(
   const lockPath = join(cwd, 'graphify-out', '.rebuild.lock');
   if (existsCheck(lockPath)) {
     if (!graphValid) {
-      return { state: 'building', _cliFound: cliAvailable };
+      return { state: 'building', _cliFound: cliAvailable, cliVersion };
     }
     const graphMtime = mtimeCheck(graphPath);
     const lockMtime = mtimeCheck(lockPath);
     if (graphMtime && lockMtime && lockMtime > graphMtime) {
-      return { state: 'building', _cliFound: cliAvailable };
+      return { state: 'building', _cliFound: cliAvailable, cliVersion };
     }
     // Stale lock (or mtimes unavailable) — the valid graph wins
   }
 
   if (graphValid) {
-    return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: cliAvailable };
+    return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: cliAvailable, cliVersion };
   }
 
-  return { state: 'absent', _cliFound: cliAvailable };
+  return { state: 'absent', _cliFound: cliAvailable, cliVersion };
 }
 
 interface JcodemunchDetection {
