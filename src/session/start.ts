@@ -96,7 +96,7 @@ export async function handleSessionStart(
           baseline.graphifyStats = { [resolve(cwd)]: buildStats };
         }
       } else {
-        env.graphBuildInfo = { state: 'failed' };
+        env.graphBuildInfo = checkResult;
       }
     } else {
       env.graphBuildInfo = buildResult;
@@ -129,7 +129,7 @@ export async function handleSessionStart(
     '[rig] Session initialized',
     `  rtk: ${env.rtkAvailable ? `available (${env.rtkPath}${env.rtkVersion ? `, v${env.rtkVersion}` : ''})` : 'not found'}`,
     `  jcodemunch: ${describeJcodemunch(env)}`,
-    `  graphify: ${graphInfo?.state === 'ready' ? 'available' : graphInfo?.state === 'building' ? 'building graph...' : graphInfo?.state === 'failed' ? 'build failed' : 'not found'}`,
+    `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
 
   if (env.jcodemunchAvailable) {
@@ -154,7 +154,7 @@ export async function handleSessionStart(
     lines.push(`[WARNING] ${warning}`);
   }
 
-  if (graphInfo?.state === 'ready' && baseline.graphifyStats) {
+  if (env.graphBuildInfo?.state === 'ready' && baseline.graphifyStats) {
     const entries = Object.entries(baseline.graphifyStats);
     if (entries.length > 0) {
       const [dir, gs] = entries[0];
@@ -196,7 +196,7 @@ export async function handleSessionStart(
     lines.push('  Do NOT dismiss this advisory — always use scout for codebase exploration tasks');
   }
 
-  if (graphInfo?.state === 'ready') {
+  if (env.graphBuildInfo?.state === 'ready') {
     lines.push('[rig] Graphify graph tools available for relationship queries:');
     lines.push('  - mcp__graphify__query_graph for relationship context');
     lines.push('  - mcp__graphify__god_nodes for core abstractions');
@@ -249,13 +249,26 @@ export async function handleSessionStart(
         lines.push("  The server is likely registered but unreachable — check 'claude mcp list' output.");
       }
     }
-    if (!graphInfo) {
+    if (!env.graphBuildInfo) {
       lines.push('[HINT] graphify is not installed. Install for knowledge graph analysis: https://github.com/safishamsi/graphify');
     }
     cache.setToolsWarned(true);
   }
 
   return lines.join('\n');
+}
+
+function describeGraphify(info: GraphBuildInfo | undefined): string {
+  switch (info?.state) {
+    case 'ready':
+      return 'available';
+    case 'building':
+      return 'building graph...';
+    case 'failed':
+      return info.errorReason ? `build failed (${info.errorReason})` : 'build failed';
+    default:
+      return 'not found';
+  }
 }
 
 function describeJcodemunch(env: Environment): string {

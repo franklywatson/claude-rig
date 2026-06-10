@@ -94,6 +94,7 @@ export interface GraphBuildInfo {
   pid?: number;
   startedAt?: number;
   graphPath?: string;
+  errorReason?: string;
 }
 
 // ── Environment Types ──

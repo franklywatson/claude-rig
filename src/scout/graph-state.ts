@@ -42,8 +42,10 @@ export function triggerBuild(
   try {
     exec(`graphify update "${directory}"`, { encoding: 'utf-8', timeout: BUILD_TIMEOUT });
     return { state: 'building', startedAt: Date.now() };
-  } catch {
-    return { state: 'failed' };
+  } catch (err) {
+    // Preserve why: timeout vs AST recursion vs missing CLI are very different fixes
+    const message = err instanceof Error ? err.message : String(err);
+    return { state: 'failed', errorReason: message.slice(0, 200) };
   }
 }
 
@@ -66,7 +68,7 @@ export function waitForBuild(
     }
   }
 
-  return { state: 'failed' };
+  return { state: 'failed', errorReason: 'graph.json missing or placeholder after build' };
 }
 
 /**

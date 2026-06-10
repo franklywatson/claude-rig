@@ -62,6 +62,23 @@ describe('triggerBuild', () => {
     expect(result.state).toBe('failed');
     expect(result.graphPath).toBeUndefined();
   });
+
+  it('preserves the error message on build failure', () => {
+    const mockExec = vi.fn(() => {
+      throw new Error('maximum recursion depth exceeded during tree-sitter traversal');
+    });
+    const result = triggerBuild('/project', mockExec as any);
+
+    expect(result.state).toBe('failed');
+    expect(result.errorReason).toBe('maximum recursion depth exceeded during tree-sitter traversal');
+  });
+
+  it('truncates very long error messages to 200 chars', () => {
+    const mockExec = vi.fn(() => { throw new Error('x'.repeat(500)); });
+    const result = triggerBuild('/project', mockExec as any);
+
+    expect(result.errorReason).toHaveLength(200);
+  });
 });
 
 // ── waitForBuild ──
@@ -87,6 +104,13 @@ describe('waitForBuild', () => {
     const result = waitForBuild(buildInfo, '/project', () => true, () => ({ size: 50 }));
 
     expect(result.state).toBe('failed');
+  });
+
+  it('explains the failure when the graph never materialized', () => {
+    const buildInfo: GraphBuildInfo = { state: 'building', startedAt: Date.now() };
+    const result = waitForBuild(buildInfo, '/project', () => false, () => undefined);
+
+    expect(result.errorReason).toBe('graph.json missing or placeholder after build');
   });
 });
 

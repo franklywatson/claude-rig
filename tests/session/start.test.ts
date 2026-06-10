@@ -803,6 +803,21 @@ describe('handleSessionStart', () => {
       expect(output).toContain('[WARNING] graphify: GRAPH_REPORT.md present but unparseable');
     });
 
+    it('surfaces the build failure reason in session output', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd.includes('graphify update')) throw new Error('recursion depth exceeded');
+        if (cmd.startsWith('test -f')) throw new Error('absent');
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache);
+      expect(output).toContain('build failed (recursion depth exceeded)');
+    });
+
     it('renders the rtk version when known', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';
