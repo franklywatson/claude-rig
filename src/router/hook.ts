@@ -1,4 +1,5 @@
 import { execFileSync } from 'node:child_process';
+import { appendFileSync } from 'node:fs';
 import type { HarnessConfig, RewriteResult } from '../types.js';
 import { SessionCache } from '../session/cache.js';
 import { findMatchingRule, getDefaultRules } from './rules.js';
@@ -14,19 +15,63 @@ export interface HookOptions {
   existsCheck?: ExistsCheckFn;
 }
 
-const defaultExecRewrite: ExecRewriteFn = (rtkPath: string, args: string[]): string | null => {
+export type RawExecFileFn = (file: string, args: string[], opts: object) => string;
+
+const RTK_DIAG_LOG = '/tmp/rig-rtk-rewrite-failures.log';
+
+const defaultWriteDiag = (line: string): void => {
   try {
-    const result = execFileSync(rtkPath, args, {
-      encoding: 'utf-8',
-      timeout: 5000,
-      stdio: ['pipe', 'pipe', 'pipe'],
-    });
-    return result.trim() || null;
+    appendFileSync(RTK_DIAG_LOG, line + '\n');
   } catch {
-    // exit 1 = no rewrite, exit 2 = denied — both fall through to rig rules
-    return null;
+    // Best-effort diagnostics — never break the hook
   }
 };
+
+/**
+ * Build the default ExecRewriteFn. Exit codes 1 (no rewrite) and 2 (denied)
+ * are rtk's expected decline contract and stay silent; anything else —
+ * unexpected exit codes, signals, ENOENT — is appended as a JSON line to
+ * the diagnostic log so silent fallthroughs become debuggable in the field.
+ * Set RIG_DEBUG to log expected declines too. Null-fallthrough is unchanged.
+ */
+export function makeDefaultExecRewrite(
+  writeDiag: (line: string) => void = defaultWriteDiag,
+  rawExec: RawExecFileFn = execFileSync as unknown as RawExecFileFn,
+): ExecRewriteFn {
+  return (rtkPath: string, args: string[]): string | null => {
+    try {
+      const result = rawExec(rtkPath, args, {
+        encoding: 'utf-8',
+        timeout: 5000,
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+      return result.trim() || null;
+    } catch (err) {
+      const e = err as { status?: number; signal?: string; code?: string; stderr?: unknown };
+      const expectedDecline = e?.status === 1 || e?.status === 2;
+      if (!expectedDecline || process.env.RIG_DEBUG) {
+        const stderr =
+          typeof e?.stderr === 'string'
+            ? e.stderr
+            : Buffer.isBuffer(e?.stderr)
+              ? e.stderr.toString('utf-8')
+              : '';
+        writeDiag(
+          JSON.stringify({
+            ts: Date.now(),
+            command: args.join(' '),
+            exitCode: e?.status ?? null,
+            signal: e?.signal ?? e?.code ?? null,
+            stderr: stderr.slice(0, 300),
+          }),
+        );
+      }
+      return null;
+    }
+  };
+}
+
+const defaultExecRewrite: ExecRewriteFn = makeDefaultExecRewrite();
 
 /**
  * Try to rewrite a Bash command using `rtk rewrite`.
