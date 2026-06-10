@@ -164,6 +164,51 @@ export function captureMetricsBaseline(
   return { totalSaved: 0, capturedAt: Date.now() };
 }
 
+/** Context-layer compression stats from `headroom perf --format json`. */
+export interface HeadroomStats {
+  tokensSaved: number;
+  savingsPct: number;
+  totalRequests: number;
+  cacheHitPct: number;
+}
+
+/**
+ * Capture headroom proxy compression stats for the last 24 hours. These are
+ * context-layer savings — they overlap tool-layer (rtk/jcodemunch) savings at
+ * the boundary and must be reported separately, never summed.
+ */
+export function captureHeadroomStats(
+  exec: ExecFn,
+  onWarn?: (msg: string) => void,
+): HeadroomStats | null {
+  let raw: string;
+  try {
+    raw = exec('headroom perf --format json --hours 24', { timeout: GAIN_TIMEOUT_MS });
+  } catch {
+    // headroom absent or proxy never ran — nothing to report
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (
+      typeof parsed?.tokens_saved === 'number' && Number.isFinite(parsed.tokens_saved) &&
+      typeof parsed?.total_requests === 'number'
+    ) {
+      return {
+        tokensSaved: parsed.tokens_saved,
+        savingsPct: typeof parsed.savings_pct === 'number' ? parsed.savings_pct : 0,
+        totalRequests: parsed.total_requests,
+        cacheHitPct: typeof parsed.cache_hit_pct === 'number' ? parsed.cache_hit_pct : 0,
+      };
+    }
+  } catch {
+    // Fall through — schema warning below
+  }
+  onWarn?.("headroom: 'headroom perf --format json' returned an unexpected schema — context-layer savings unavailable");
+  return null;
+}
+
 export function incrementMetric(
   toolName: string,
   toolInput: Record<string, unknown>,
@@ -213,6 +258,7 @@ export function formatSavingsReport(
   counters: { rtkCalls: number; jmCalls: number; efficientCalls: number; graphifyCalls: number },
   jmStats?: JcodemunchSessionStats | null,
   graphifyStats?: Record<string, GraphifyProjectStats> | null,
+  headroomStats?: HeadroomStats | null,
 ): string {
   const hasBaseline = baseline != null && baseline.totalSaved > 0;
   const lines: string[] = [];
@@ -251,6 +297,14 @@ export function formatSavingsReport(
 
   if (counters.efficientCalls > 0) {
     lines.push(`  efficient tools: ${counters.efficientCalls} calls (Read/Grep/Glob on code files)`);
+  }
+
+  // Context layer — overlaps tool-layer savings at the rtk boundary, so it is
+  // reported as its own line and never added to the totals above.
+  if (headroomStats && headroomStats.totalRequests > 0) {
+    lines.push(
+      `  headroom: ${formatTokens(headroomStats.tokensSaved)} saved (context layer — ${headroomStats.totalRequests} requests, ${Math.round(headroomStats.savingsPct)}% compression, ${Math.round(headroomStats.cacheHitPct)}% cache hits; not summed with tool-layer savings)`,
+    );
   }
 
   if (graphifyStats && Object.keys(graphifyStats).length > 0) {

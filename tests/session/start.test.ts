@@ -852,6 +852,29 @@ describe('handleSessionStart', () => {
       expect(output).toContain('build failed (recursion depth exceeded)');
     });
 
+    it('reports headroom when the proxy is configured for this project', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which headroom') return '/usr/local/bin/headroom';
+        return '';
+      });
+      const settingsPath = '/home/user/test-project/.claude/settings.json';
+
+      const output = await startSession('/home/user/test-project', cache, {
+        readFile: (p) => {
+          if (p === settingsPath) {
+            return JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'http://127.0.0.1:8787' } });
+          }
+          throw new Error(`ENOENT: ${p}`);
+        },
+        existsCheck: (p) => p === settingsPath,
+      });
+
+      expect(output).toContain('headroom: proxy configured (context-layer compression)');
+    });
+
     it('renders the rtk version when known', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';

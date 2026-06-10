@@ -127,6 +127,8 @@ export interface Environment {
   graphifyGraphPath: string | null;
   graphBuildInfo?: GraphBuildInfo;
   graphifyVersion?: string | null;
+  headroomAvailable?: boolean;
+  headroomInitialized?: boolean;
   detectedAt: number;
 }
 
