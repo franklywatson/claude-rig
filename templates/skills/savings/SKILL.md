@@ -41,7 +41,16 @@ Report token savings from rtk and jcodemunch usage during this session.
    section in the report (see Output Format below). Alternatively, if graphify
    MCP is available, call `mcp__graphify__graph_stats` to get live stats.
    If graphify is not available, skip graphify reporting.
-6. Format and print the report (see Output Format below). Do NOT write any
+6. For headroom (context-compression proxy): check the session cache file's
+   `environment.headroomInitialized` field. If true, run
+   `headroom perf --format json --hours 24` and read `tokens_saved`,
+   `savings_pct`, `total_requests`, and `cache_hit_pct`. Include the headroom
+   line only when `total_requests > 0`. These are context-layer savings — they
+   overlap tool-layer (rtk/jcodemunch) savings at the boundary, so report them
+   on their own line and NEVER add them to the rtk/jcodemunch numbers. If
+   `headroomInitialized` is false/absent or the command fails, skip headroom
+   reporting.
+7. Format and print the report (see Output Format below). Do NOT write any
    explanatory text before or after the report — output ONLY the report lines.
 
 ## Output Format
@@ -52,8 +61,12 @@ With session data (baseline + delta available), single project:
 [rig] Session Savings
   rtk: X.XM saved (N calls, +XK this session)
   jcodemunch: XK saved (N queries, 150M total all-time)
+  headroom: XK saved (context layer — N requests, X% compression, X% cache hits; not summed with tool-layer savings)
   graphify: N nodes, M edges, K communities (X% EXTRACTED, X% INFERRED, X% AMBIGUOUS)
 ```
+
+The headroom line appears only when the proxy is initialized for this project
+and had requests in the window — omit it otherwise.
 
 With session data, multi-project (scouted external repos):
 

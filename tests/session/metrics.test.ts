@@ -4,6 +4,7 @@ import {
   captureGraphifyStats,
   captureGraphifyStatsViaReport,
   captureExternalGraphifyStats,
+  captureHeadroomStats,
   incrementMetric,
   formatSavingsReport,
   resolveGraphifyStats,
@@ -206,6 +207,50 @@ describe('captureGraphifyStatsViaReport warnings', () => {
   });
 });
 
+describe('captureHeadroomStats', () => {
+  const VALID = JSON.stringify({
+    window_hours: 24,
+    total_requests: 42,
+    total_tokens_before: 100_000,
+    total_tokens_after: 60_000,
+    tokens_saved: 40_000,
+    savings_pct: 40.0,
+    cache_hit_pct: 78.5,
+  });
+
+  it('parses headroom perf JSON with a bounded timeout', () => {
+    const exec = vi.fn(() => VALID);
+    const stats = captureHeadroomStats(exec);
+
+    expect(stats).toEqual({
+      tokensSaved: 40_000,
+      savingsPct: 40.0,
+      totalRequests: 42,
+      cacheHitPct: 78.5,
+    });
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('headroom perf --format json'),
+      expect.objectContaining({ timeout: 10_000 }),
+    );
+  });
+
+  it('returns null silently when headroom is absent (exec throws)', () => {
+    const onWarn = vi.fn();
+    const stats = captureHeadroomStats(() => { throw new Error('not found'); }, onWarn);
+
+    expect(stats).toBeNull();
+    expect(onWarn).not.toHaveBeenCalled();
+  });
+
+  it('warns on schema drift and returns null', () => {
+    const onWarn = vi.fn();
+    const stats = captureHeadroomStats(() => JSON.stringify({ saved: 'lots' }), onWarn);
+
+    expect(stats).toBeNull();
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining('unexpected schema'));
+  });
+});
+
 describe('incrementMetric', () => {
   it('detects rtk usage from Bash tool with rtk command', () => {
     const result = incrementMetric('Bash', { command: 'rtk git status' });
@@ -285,6 +330,33 @@ describe('formatSavingsReport', () => {
     const baseline: MetricsBaseline = { totalSaved: 1000, capturedAt: Date.now() };
     const report = formatSavingsReport(baseline, 1000, { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
     expect(report).toContain('no token savings');
+  });
+
+  it('appends a clearly-separated headroom context-layer line when stats are present', () => {
+    const baseline: MetricsBaseline = { totalSaved: 1000, capturedAt: Date.now() };
+    const headroom = { tokensSaved: 40_000, savingsPct: 40, totalRequests: 42, cacheHitPct: 78.5 };
+    const report = formatSavingsReport(
+      baseline, 1000,
+      { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 },
+      undefined, undefined, headroom,
+    );
+
+    expect(report).toContain('headroom: 40K saved (context layer');
+    expect(report).toContain('42 requests');
+    expect(report).toContain('40% compression');
+    // Per docs: context-layer savings overlap tool-layer savings — never summed
+    expect(report).toContain('not summed');
+  });
+
+  it('omits the headroom line when stats are null or there were no requests', () => {
+    const baseline: MetricsBaseline = { totalSaved: 1000, capturedAt: Date.now() };
+    const counters = { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 };
+
+    expect(formatSavingsReport(baseline, 1000, counters, undefined, undefined, null)).not.toContain('headroom');
+    expect(formatSavingsReport(
+      baseline, 1000, counters, undefined, undefined,
+      { tokensSaved: 0, savingsPct: 0, totalRequests: 0, cacheHitPct: 0 },
+    )).not.toContain('headroom');
   });
 
   it('shows jcodemunch available with no queries', () => {

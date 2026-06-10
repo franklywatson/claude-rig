@@ -13,6 +13,7 @@ import type { WaitForBuildOpts } from '../scout/graph-state.js';
 import { loadConfig } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
+import { detectHeadroom } from './headroom.js';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
 interface FileCapWarning {
@@ -47,6 +48,7 @@ export interface SessionStartDeps {
   mcpQuery?: McpQueryFn;
   registrationLookup?: RegistrationLookupFn;
   readdir?: (path: string) => string[];
+  readFile?: (path: string) => string;
   homeDir?: string;
   graphWait?: WaitForBuildOpts;
 }
@@ -67,6 +69,18 @@ export async function handleSessionStart(
   const { env, fileCapHit, autoIndex } = await detectAndIndex(
     cwd, deps.exec, deps.existsCheck, deps.statCheck, deps.mcpQuery, deps.registrationLookup,
   );
+
+  // Headroom (context-compression proxy) is complementary to rig — record
+  // whether it is configured so /savings can include context-layer stats.
+  const headroom = detectHeadroom(
+    cwd,
+    deps.exec ?? ((cmd, opts) => execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string),
+    deps.readFile,
+    deps.existsCheck ?? existsSync,
+    deps.homeDir,
+  );
+  env.headroomAvailable = headroom.available;
+  env.headroomInitialized = headroom.initialized;
   cache.setEnvironment(env);
 
   const pyEnv = await detectPythonEnv(cwd);
@@ -138,6 +152,10 @@ export async function handleSessionStart(
     `  jcodemunch: ${describeJcodemunch(env)}`,
     `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
+
+  if (env.headroomInitialized) {
+    lines.push('  headroom: proxy configured (context-layer compression)');
+  }
 
   if (env.jcodemunchAvailable) {
     if (env.jcodemunchCwdIndexed) {
