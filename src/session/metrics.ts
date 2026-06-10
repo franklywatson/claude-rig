@@ -137,15 +137,30 @@ export function captureExternalGraphifyStats(
   return captureGraphifyStatsViaReport(directory, exec, onWarn);
 }
 
-export function captureMetricsBaseline(exec: ExecFn): MetricsBaseline {
+export function captureMetricsBaseline(
+  exec: ExecFn,
+  onWarn?: (msg: string) => void,
+): MetricsBaseline {
+  let raw: string;
   try {
-    const raw = exec('rtk gain --format json', { timeout: GAIN_TIMEOUT_MS });
-    const parsed = JSON.parse(raw);
-    const totalSaved = parsed?.summary?.total_saved ?? 0;
-    return { totalSaved, capturedAt: Date.now() };
+    raw = exec('rtk gain --format json', { timeout: GAIN_TIMEOUT_MS });
   } catch {
+    // rtk absent — covered by the session-start not-installed warning
     return { totalSaved: 0, capturedAt: Date.now() };
   }
+
+  try {
+    const parsed = JSON.parse(raw);
+    const totalSaved = parsed?.summary?.total_saved;
+    if (typeof totalSaved === 'number' && Number.isFinite(totalSaved)) {
+      return { totalSaved, capturedAt: Date.now() };
+    }
+  } catch {
+    // Fall through — schema warning below
+  }
+  // rtk ran but the output shape is wrong: format drift, not absence
+  onWarn?.("rtk: 'rtk gain --format json' returned an unexpected schema — savings baseline unavailable");
+  return { totalSaved: 0, capturedAt: Date.now() };
 }
 
 export function incrementMetric(

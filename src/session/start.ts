@@ -68,11 +68,11 @@ export async function handleSessionStart(
 
   const execFn: ExecFn = (cmd, opts) =>
     execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string;
-  const baseline = captureMetricsBaseline(execFn);
-  // Capture graphify stats via report (not the 74MB graph.json)
-  const graphInfo = env.graphBuildInfo;
   const statsWarnings: string[] = [];
   const onStatsWarn = (msg: string): void => { statsWarnings.push(msg); };
+  const baseline = captureMetricsBaseline(execFn, onStatsWarn);
+  // Capture graphify stats via report (not the 74MB graph.json)
+  const graphInfo = env.graphBuildInfo;
   if (graphInfo?.state === 'ready') {
     const cwdStats = captureGraphifyStatsViaReport(cwd, execFn, onStatsWarn);
     if (cwdStats) {

@@ -43,6 +43,39 @@ describe('captureMetricsBaseline', () => {
     const baseline = captureMetricsBaseline(exec);
     expect(baseline).toEqual({ totalSaved: 0, capturedAt: expect.any(Number) });
   });
+
+  it.each([
+    ['missing total_saved', JSON.stringify({ summary: {} })],
+    ['string total_saved', JSON.stringify({ summary: { total_saved: '5000' } })],
+    ['array payload', JSON.stringify([1, 2])],
+    ['malformed JSON', 'not json'],
+  ])('warns on unexpected schema (%s) and returns zero', (_label, raw) => {
+    const onWarn = vi.fn();
+    const exec = makeExec({ 'rtk gain --format json': raw });
+
+    const baseline = captureMetricsBaseline(exec, onWarn);
+    expect(baseline.totalSaved).toBe(0);
+    expect(onWarn).toHaveBeenCalledTimes(1);
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining('unexpected schema'));
+  });
+
+  it('does not warn on a valid payload', () => {
+    const onWarn = vi.fn();
+    const exec = makeExec({
+      'rtk gain --format json': JSON.stringify({ summary: { total_saved: 42 } }),
+    });
+
+    expect(captureMetricsBaseline(exec, onWarn).totalSaved).toBe(42);
+    expect(onWarn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when rtk itself is absent (exec throws)', () => {
+    const onWarn = vi.fn();
+    const exec = makeExec({ 'rtk gain --format json': new Error('not found') });
+
+    expect(captureMetricsBaseline(exec, onWarn).totalSaved).toBe(0);
+    expect(onWarn).not.toHaveBeenCalled();
+  });
 });
 
 describe('stats-capture exec timeouts', () => {
