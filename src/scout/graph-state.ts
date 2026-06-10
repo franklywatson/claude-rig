@@ -48,23 +48,49 @@ export function triggerBuild(
   }
 }
 
+export interface WaitForBuildOpts {
+  /** How long to keep polling for the graph. 0 (default) = single immediate check. */
+  deadlineMs?: number;
+  intervalMs?: number;
+  sleep?: (ms: number) => void;
+}
+
+// Synchronous sleep that doesn't spin the CPU — hooks are synchronous processes.
+const defaultSleep = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
+
 /**
  * Check the result of a previously-triggered build.
  * Returns ready if graph.json now exists with real content, failed otherwise.
+ *
+ * `graphify update` can return before graph.json is fully on disk — a single
+ * immediate check races the build output (observed in the field: update
+ * returned at T, graph landed at T+1s, "failed" got cached all session).
+ * Callers in a position to wait pass a deadline to poll across that window.
  */
 export function waitForBuild(
   _buildInfo: GraphBuildInfo,
   cwd: string,
   existsCheck: ExistsCheck,
   statCheck: StatCheck,
+  opts: WaitForBuildOpts = {},
 ): GraphBuildInfo {
+  const deadlineMs = opts.deadlineMs ?? 0;
+  const intervalMs = opts.intervalMs ?? 250;
+  const sleep = opts.sleep ?? defaultSleep;
   const graphFile = graphJsonPath(cwd);
+  const start = Date.now();
 
-  if (existsCheck(graphFile)) {
-    const stat = statCheck(graphFile);
-    if (stat && stat.size >= GRAPHIFY_PLACEHOLDER_THRESHOLD) {
-      return { state: 'ready', graphPath: GRAPH_JSON_REL };
+  for (;;) {
+    if (existsCheck(graphFile)) {
+      const stat = statCheck(graphFile);
+      if (stat && stat.size >= GRAPHIFY_PLACEHOLDER_THRESHOLD) {
+        return { state: 'ready', graphPath: GRAPH_JSON_REL };
+      }
     }
+    if (Date.now() - start >= deadlineMs) break;
+    sleep(intervalMs);
   }
 
   return { state: 'failed', errorReason: 'graph.json missing or placeholder after build' };
@@ -90,14 +116,22 @@ export function ensureGraphReady(
     case 'ready':
       return info;
 
-    case 'absent':
-      triggerBuild(directory, exec);
+    case 'absent': {
+      const build = triggerBuild(directory, exec);
+      // A failed trigger carries the error reason — don't discard it for a
+      // pointless disk check that would report a generic failure.
+      if (build.state === 'failed') return build;
       return waitForBuild(info, directory, existsCheck, statCheck);
+    }
 
     case 'building':
       return waitForBuild(info, directory, existsCheck, statCheck);
 
-    case 'failed':
-      return info;
+    case 'failed': {
+      // A cached failure may be stale: the build can land moments after the
+      // verdict was recorded (build-output race). The disk is truth.
+      const current = determineGraphState(directory, existsCheck, statCheck);
+      return current.state === 'ready' ? current : info;
+    }
   }
 }

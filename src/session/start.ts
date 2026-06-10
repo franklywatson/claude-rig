@@ -9,6 +9,7 @@ import { detectPythonEnv } from './python-env.js';
 import { checkWorktreeSuggestion } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
+import type { WaitForBuildOpts } from '../scout/graph-state.js';
 import { loadConfig } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
@@ -47,7 +48,12 @@ export interface SessionStartDeps {
   registrationLookup?: RegistrationLookupFn;
   readdir?: (path: string) => string[];
   homeDir?: string;
+  graphWait?: WaitForBuildOpts;
 }
+
+// graphify update can return before graph.json is fully written; poll across
+// that window instead of caching a false "failed" for the whole session.
+const GRAPH_WAIT_DEFAULT: WaitForBuildOpts = { deadlineMs: 5000, intervalMs: 250 };
 
 /**
  * SessionStart hook handler. Detects environment and auto-indexes CWD
@@ -82,10 +88,11 @@ export async function handleSessionStart(
     // Async build: trigger in background, mark as building
     const buildResult = triggerBuild(cwd, execFn);
     if (buildResult.state === 'building') {
-      // Check if it completed quickly (small projects)
+      // Poll briefly — graphify update can return before graph.json lands
       const checkResult = waitForBuild(buildResult, cwd,
-        (p) => { try { execSync(`test -f "${p}"`, { encoding: 'utf-8' }); return true; } catch { return false; } },
-        (p) => { try { return require('node:fs').statSync(p); } catch { return undefined; } },
+        deps.existsCheck ?? ((p) => { try { execSync(`test -f "${p}"`, { encoding: 'utf-8' }); return true; } catch { return false; } }),
+        deps.statCheck ?? ((p) => { try { return require('node:fs').statSync(p); } catch { return undefined; } }),
+        deps.graphWait ?? GRAPH_WAIT_DEFAULT,
       );
       if (checkResult.state === 'ready') {
         env.graphBuildInfo = checkResult;

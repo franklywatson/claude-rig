@@ -112,6 +112,51 @@ describe('waitForBuild', () => {
 
     expect(result.errorReason).toBe('graph.json missing or placeholder after build');
   });
+
+  it('polls until the graph lands when a deadline is given (build-output race)', () => {
+    // Field bug: graphify update returned at T, graph.json landed at T+1s,
+    // the single immediate check recorded "failed" and cached it all session.
+    const buildInfo: GraphBuildInfo = { state: 'building', startedAt: Date.now() };
+    let landed = false;
+    const sleeps: number[] = [];
+
+    const result = waitForBuild(
+      buildInfo,
+      '/project',
+      () => landed,
+      () => (landed ? { size: 5000 } : undefined),
+      {
+        deadlineMs: 5000,
+        intervalMs: 250,
+        sleep: (ms) => { sleeps.push(ms); if (sleeps.length === 2) landed = true; },
+      },
+    );
+
+    expect(result.state).toBe('ready');
+    expect(sleeps).toEqual([250, 250]);
+  });
+
+  it('fails after the deadline when the graph never lands', () => {
+    const buildInfo: GraphBuildInfo = { state: 'building', startedAt: Date.now() };
+    const sleeps: number[] = [];
+
+    const result = waitForBuild(
+      buildInfo, '/project', () => false, () => undefined,
+      { deadlineMs: 500, intervalMs: 250, sleep: (ms) => sleeps.push(ms) },
+    );
+
+    expect(result.state).toBe('failed');
+    expect(sleeps.length).toBeGreaterThan(0);
+  });
+
+  it('default behavior stays a single immediate check (no sleeping)', () => {
+    const buildInfo: GraphBuildInfo = { state: 'building', startedAt: Date.now() };
+    let checks = 0;
+    const result = waitForBuild(buildInfo, '/project', () => { checks++; return false; }, () => undefined);
+
+    expect(result.state).toBe('failed');
+    expect(checks).toBe(1);
+  });
 });
 
 // ── ensureGraphReady ──
@@ -182,20 +227,38 @@ describe('ensureGraphReady', () => {
     expect(mockExec).not.toHaveBeenCalled();
   });
 
-  it('returns failed when state is failed', () => {
-    const env = makeEnv({ state: 'failed' });
+  it('revalidates a cached failed state against the disk — stale failure becomes ready', () => {
+    // Field bug: the build-output race cached "failed" for the whole session
+    // even though graph.json landed seconds later. The disk is truth.
+    const env = makeEnv({ state: 'failed', errorReason: 'graph.json missing or placeholder after build' });
     const result = ensureGraphReady('/project', env, mockExec as any, () => true, () => ({ size: 5000 }));
+
+    expect(result).not.toBeNull();
+    expect(result!.state).toBe('ready');
+    expect(result!.graphPath).toBe('graphify-out/graph.json');
+    expect(mockExec).not.toHaveBeenCalled(); // revalidation reads disk, never rebuilds
+  });
+
+  it('keeps the failed state (and its reason) when the graph really is absent', () => {
+    const env = makeEnv({ state: 'failed', errorReason: 'recursion depth' });
+    const result = ensureGraphReady('/project', env, mockExec as any, () => false, () => undefined);
+
     expect(result).not.toBeNull();
     expect(result!.state).toBe('failed');
+    expect(result!.errorReason).toBe('recursion depth');
     expect(mockExec).not.toHaveBeenCalled();
   });
 
-  it('returns build_failed when build exec throws', () => {
+  it('returns build_failed with the error reason when build exec throws', () => {
     const env = makeEnv({ state: 'absent' });
     const failExec = vi.fn(() => { throw new Error('recursion depth'); });
+    let checks = 0;
 
-    const result = ensureGraphReady('/project', env, failExec as any, () => false, () => undefined);
+    const result = ensureGraphReady('/project', env, failExec as any, () => { checks++; return false; }, () => undefined);
     expect(result).not.toBeNull();
     expect(result!.state).toBe('failed');
+    expect(result!.errorReason).toBe('recursion depth');
+    // A failed trigger short-circuits — no pointless waitForBuild check
+    expect(checks).toBe(0);
   });
 });
