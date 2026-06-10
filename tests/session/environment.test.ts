@@ -65,6 +65,34 @@ describe('detectEnvironment', () => {
     expect(env.rtkPath).toBe('/usr/local/bin/rtk');
   });
 
+  it('captures the rtk version when the probe succeeds', async () => {
+    const exec = makeExec({
+      'which rtk': '/opt/homebrew/bin/rtk',
+      'rtk --version': 'rtk 0.39.0\n',
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec, () => false, () => undefined, makeMcpQuery({}), () => null);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkVersion).toBe('0.39.0');
+  });
+
+  it('rtk version probe failure leaves rtk available with null version', async () => {
+    const exec = makeExec({
+      'which rtk': '/opt/homebrew/bin/rtk',
+      // no 'rtk --version' key — makeExec throws for it
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec, () => false, () => undefined, makeMcpQuery({}), () => null);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkVersion).toBeNull();
+  });
+
   it('detects rtk unavailable when which fails', async () => {
     const exec = makeExec({
       'which rtk': new Error('not found'),

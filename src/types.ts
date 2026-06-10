@@ -113,6 +113,7 @@ export interface JcodemunchTransport {
 export interface Environment {
   rtkAvailable: boolean;
   rtkPath: string | null;
+  rtkVersion?: string | null;
   jcodemunchAvailable: boolean;
   jcodemunchCwdIndexed: boolean;
   jcodemunchCwdRepo: string | null;

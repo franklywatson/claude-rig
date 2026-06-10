@@ -784,6 +784,19 @@ describe('handleSessionStart', () => {
       expect(output).toContain('claude mcp list');
     });
 
+    it('renders the rtk version when known', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';
+        if (cmd === 'rtk --version') return 'rtk 0.39.0';
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache);
+      expect(output).toContain('rtk: available (/opt/homebrew/bin/rtk, v0.39.0)');
+    });
+
     it('warns when graphify version is outside the tested range', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd === 'which rtk') throw new Error('not found');

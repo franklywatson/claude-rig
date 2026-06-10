@@ -124,7 +124,7 @@ export async function handleSessionStart(
 
   const lines = [
     '[rig] Session initialized',
-    `  rtk: ${env.rtkAvailable ? `available (${env.rtkPath})` : 'not found'}`,
+    `  rtk: ${env.rtkAvailable ? `available (${env.rtkPath}${env.rtkVersion ? `, v${env.rtkVersion}` : ''})` : 'not found'}`,
     `  jcodemunch: ${describeJcodemunch(env)}`,
     `  graphify: ${graphInfo?.state === 'ready' ? 'available' : graphInfo?.state === 'building' ? 'building graph...' : graphInfo?.state === 'failed' ? 'build failed' : 'not found'}`,
   ];

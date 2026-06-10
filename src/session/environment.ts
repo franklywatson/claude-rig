@@ -93,6 +93,7 @@ export async function detectEnvironment(
   return {
     rtkAvailable: rtkResult.available,
     rtkPath: rtkResult.path,
+    rtkVersion: rtkResult.version,
     jcodemunchAvailable: jmResult.available,
     jcodemunchCwdIndexed: jmResult.cwdIndexed,
     jcodemunchCwdRepo: jmResult.cwdRepo,
@@ -107,12 +108,19 @@ export async function detectEnvironment(
   };
 }
 
-function detectRtk(exec: ExecFn): { available: boolean; path: string | null } {
+function detectRtk(exec: ExecFn): { available: boolean; path: string | null; version: string | null } {
   try {
     const path = exec('which rtk').trim();
-    return { available: true, path };
+    // Version probe is diagnostics-only — failure never affects availability
+    let version: string | null = null;
+    try {
+      version = exec('rtk --version', { timeout: 5000 }).match(/(\d+\.\d+\.\d+)/)?.[1] ?? null;
+    } catch {
+      // Probe failed — version stays unknown
+    }
+    return { available: true, path, version };
   } catch {
-    return { available: false, path: null };
+    return { available: false, path: null, version: null };
   }
 }
 
