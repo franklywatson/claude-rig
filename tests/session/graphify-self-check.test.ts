@@ -146,6 +146,9 @@ describe('checkGraphifyMcpReadiness — cli_only_not_registered', () => {
     if (result.status === 'cli_only_not_registered') {
       expect(result.fixCommand).toContain('claude mcp add');
       expect(result.fixCommand).toContain('graphify');
+      // Without the -- separator, claude mcp add parses the server's -m flag
+      // as its own option and fails with "error: unknown option '-m'"
+      expect(result.fixCommand).toMatch(/claude mcp add graphify -s local -- \S+ -m graphify\.serve/);
     }
   });
 

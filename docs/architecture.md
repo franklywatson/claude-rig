@@ -363,6 +363,15 @@ falling back to strict basename equality. The MCP `initialize` response's
 `protocolVersion` is validated (warn-only), and rtk/graphify versions are
 probed for diagnostics (graphify warns outside its tested range).
 
+**Headroom detection** (`headroom.ts`): session start records whether the
+[Headroom](https://github.com/chopratejas/headroom) compression proxy is
+configured for the project (`headroom-init-claude` hook marker or a localhost
+`ANTHROPIC_BASE_URL` in project, local, or user settings scope) as
+`Environment.headroomInitialized`. When set, the `/savings` skill runs
+`headroom perf --format json` (timeout-bounded, schema-validated) and reports
+context-layer compression on its own line — never summed with tool-layer
+savings, which it overlaps at the rtk boundary.
+
 `handleSessionStart()` auto-indexes the project through the detected
 transport, captures a metrics baseline on first session (with `rtk gain`
 schema validation — format drift warns instead of silently zeroing savings),
