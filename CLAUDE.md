@@ -39,14 +39,14 @@ All types in `src/types.ts`. Important ones:
 
 - Config via `.harness.yaml` (YAML, layered merge with base + local)
 - Environment detection uses injectable `ExecFn` for testability
-- Session cache has 30-min TTL, file-backed in /tmp (cross-process persistence)
+- Session cache: 4-hour env TTL, file-backed in /tmp keyed by (cwd, session id); scout cache has a separate 30-min TTL
 - All hooks read JSON from stdin, write JSON to stdout (Claude Code hook protocol)
 - Skill templates use `{{VAR}}` substitution via `renderTemplate()`
 - Enforcement levels: block (exit 2), advise (print + exit 0), silent (log + exit 0)
 
 ## Testing
 
-- 290+ tests in `tests/` mirroring `src/` structure
+- 1100+ tests in `tests/` mirroring `src/` structure
 - Vitest with v8 coverage provider
 - Coverage gate: 80% statements/functions/lines, 75% branches
 - No mocks for environment detection -- use injectable `ExecFn`
