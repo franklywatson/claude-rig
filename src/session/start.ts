@@ -1,59 +1,86 @@
 import { execSync } from 'node:child_process';
 import { join, resolve, basename } from 'node:path';
+import { homedir } from 'node:os';
 import { SessionCache } from './cache.js';
 import type { Environment, GraphBuildInfo, HarnessConfig } from '../types.js';
 import { detectEnvironment, callJcodemunchMcpTool } from './environment.js';
+import type { ExecFn, McpQueryFn, RegistrationLookupFn } from './environment.js';
 import { detectPythonEnv } from './python-env.js';
 import { checkWorktreeSuggestion } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
+import type { WaitForBuildOpts } from '../scout/graph-state.js';
 import { loadConfig } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
-import { readFileSync, existsSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
 interface FileCapWarning {
   indexed: number;
   total: number;
 }
 
-/**
- * Resolves how to invoke `jcodemunch-mcp`: prefer a binary in PATH, fall back
- * to `uvx jcodemunch-mcp` (macOS/Linux uvx installs). Returns null if neither
- * is available.
- */
-function resolveJcodemunchMcpTransport(): { command: string; args: string[] } | null {
-  try {
-    const mcpPath = execSync('which jcodemunch-mcp', { encoding: 'utf-8' }).trim();
-    if (mcpPath) return { command: mcpPath, args: [] };
-  } catch {
-    // Not in PATH — try uvx
-  }
-  try {
-    execSync('which uvx', { encoding: 'utf-8' });
-    return { command: 'uvx', args: ['jcodemunch-mcp'] };
-  } catch {
-    return null;
-  }
+export type AutoIndexOutcome = 'succeeded' | 'failed' | 'not_needed';
+
+// graphify versions rig's stats parsing and state handling are tested against
+const GRAPHIFY_TESTED_MIN = '0.7.0';
+const GRAPHIFY_TESTED_MAX_EXCLUSIVE = '0.8.0';
+
+function versionInRange(version: string, min: string, maxExclusive: string): boolean {
+  const segments = (v: string): number[] => v.split('.').map(Number);
+  const compare = (a: number[], b: number[]): number => {
+    for (let i = 0; i < 3; i++) {
+      const diff = (a[i] ?? 0) - (b[i] ?? 0);
+      if (diff !== 0) return diff;
+    }
+    return 0;
+  };
+  const v = segments(version);
+  return compare(v, segments(min)) >= 0 && compare(v, segments(maxExclusive)) < 0;
 }
+
+/** Injectable seams for handleSessionStart; production callers pass nothing. */
+export interface SessionStartDeps {
+  exec?: ExecFn;
+  existsCheck?: (path: string) => boolean;
+  statCheck?: (path: string) => { size: number } | undefined;
+  mcpQuery?: McpQueryFn;
+  registrationLookup?: RegistrationLookupFn;
+  readdir?: (path: string) => string[];
+  homeDir?: string;
+  graphWait?: WaitForBuildOpts;
+}
+
+// graphify update can return before graph.json is fully written; poll across
+// that window instead of caching a false "failed" for the whole session.
+const GRAPH_WAIT_DEFAULT: WaitForBuildOpts = { deadlineMs: 5000, intervalMs: 250 };
 
 /**
  * SessionStart hook handler. Detects environment and auto-indexes CWD
  * with jcodemunch if available but not yet indexed.
  */
-export async function handleSessionStart(cwd: string, cache: SessionCache): Promise<string> {
-  const { env, fileCapHit } = await detectAndIndex(cwd);
+export async function handleSessionStart(
+  cwd: string,
+  cache: SessionCache,
+  deps: SessionStartDeps = {},
+): Promise<string> {
+  const { env, fileCapHit, autoIndex } = await detectAndIndex(
+    cwd, deps.exec, deps.existsCheck, deps.statCheck, deps.mcpQuery, deps.registrationLookup,
+  );
   cache.setEnvironment(env);
 
   const pyEnv = await detectPythonEnv(cwd);
   cache.setPythonEnv(pyEnv);
 
-  const baseline = captureMetricsBaseline((cmd) => execSync(cmd, { encoding: 'utf-8' }));
+  const execFn: ExecFn = (cmd, opts) =>
+    execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string;
+  const statsWarnings: string[] = [];
+  const onStatsWarn = (msg: string): void => { statsWarnings.push(msg); };
+  const baseline = captureMetricsBaseline(execFn, onStatsWarn);
   // Capture graphify stats via report (not the 74MB graph.json)
   const graphInfo = env.graphBuildInfo;
-  const execFn = (cmd: string) => execSync(cmd, { encoding: 'utf-8' });
   if (graphInfo?.state === 'ready') {
-    const cwdStats = captureGraphifyStatsViaReport(cwd, execFn);
+    const cwdStats = captureGraphifyStatsViaReport(cwd, execFn, onStatsWarn);
     if (cwdStats) {
       baseline.graphifyStats = { [resolve(cwd)]: cwdStats };
     }
@@ -61,21 +88,22 @@ export async function handleSessionStart(cwd: string, cache: SessionCache): Prom
     // Async build: trigger in background, mark as building
     const buildResult = triggerBuild(cwd, execFn);
     if (buildResult.state === 'building') {
-      // Check if it completed quickly (small projects)
+      // Poll briefly — graphify update can return before graph.json lands
       const checkResult = waitForBuild(buildResult, cwd,
-        (p) => { try { execSync(`test -f "${p}"`, { encoding: 'utf-8' }); return true; } catch { return false; } },
-        (p) => { try { return require('node:fs').statSync(p); } catch { return undefined; } },
+        deps.existsCheck ?? ((p) => { try { execSync(`test -f "${p}"`, { encoding: 'utf-8' }); return true; } catch { return false; } }),
+        deps.statCheck ?? ((p) => { try { return require('node:fs').statSync(p); } catch { return undefined; } }),
+        deps.graphWait ?? GRAPH_WAIT_DEFAULT,
       );
       if (checkResult.state === 'ready') {
         env.graphBuildInfo = checkResult;
         env.graphifyAvailable = true;
         env.graphifyGraphPath = checkResult.graphPath ?? null;
-        const buildStats = captureGraphifyStatsViaReport(cwd, execFn);
+        const buildStats = captureGraphifyStatsViaReport(cwd, execFn, onStatsWarn);
         if (buildStats) {
           baseline.graphifyStats = { [resolve(cwd)]: buildStats };
         }
       } else {
-        env.graphBuildInfo = { state: 'failed' };
+        env.graphBuildInfo = checkResult;
       }
     } else {
       env.graphBuildInfo = buildResult;
@@ -106,20 +134,34 @@ export async function handleSessionStart(cwd: string, cache: SessionCache): Prom
 
   const lines = [
     '[rig] Session initialized',
-    `  rtk: ${env.rtkAvailable ? `available (${env.rtkPath})` : 'not found'}`,
-    `  jcodemunch: ${env.jcodemunchAvailable ? 'available' : 'not found'}`,
-    `  graphify: ${graphInfo?.state === 'ready' ? 'available' : graphInfo?.state === 'building' ? 'building graph...' : graphInfo?.state === 'failed' ? 'build failed' : 'not found'}`,
+    `  rtk: ${env.rtkAvailable ? `available (${env.rtkPath}${env.rtkVersion ? `, v${env.rtkVersion}` : ''})` : 'not found'}`,
+    `  jcodemunch: ${describeJcodemunch(env)}`,
+    `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
 
   if (env.jcodemunchAvailable) {
     if (env.jcodemunchCwdIndexed) {
       lines.push(`  CWD indexed: ${env.jcodemunchCwdRepo}`);
+    } else if (autoIndex === 'failed') {
+      lines.push('  CWD not indexed (auto-index failed — run mcp__jcodemunch__index_folder manually)');
     } else {
-      lines.push(`  CWD: not indexed (auto-indexing skipped)`);
+      lines.push('  CWD: not indexed');
     }
   }
 
-  if (graphInfo?.state === 'ready' && baseline.graphifyStats) {
+  if (env.jcodemunchProtocolWarning) {
+    lines.push(`[WARNING] ${env.jcodemunchProtocolWarning}`);
+  }
+
+  if (env.graphifyVersion && !versionInRange(env.graphifyVersion, GRAPHIFY_TESTED_MIN, GRAPHIFY_TESTED_MAX_EXCLUSIVE)) {
+    lines.push(`[WARNING] graphify ${env.graphifyVersion} is outside the tested range (>=${GRAPHIFY_TESTED_MIN} <${GRAPHIFY_TESTED_MAX_EXCLUSIVE}) — proceeding anyway`);
+  }
+
+  for (const warning of statsWarnings) {
+    lines.push(`[WARNING] ${warning}`);
+  }
+
+  if (env.graphBuildInfo?.state === 'ready' && baseline.graphifyStats) {
     const entries = Object.entries(baseline.graphifyStats);
     if (entries.length > 0) {
       const [dir, gs] = entries[0];
@@ -161,7 +203,7 @@ export async function handleSessionStart(cwd: string, cache: SessionCache): Prom
     lines.push('  Do NOT dismiss this advisory — always use scout for codebase exploration tasks');
   }
 
-  if (graphInfo?.state === 'ready') {
+  if (env.graphBuildInfo?.state === 'ready') {
     lines.push('[rig] Graphify graph tools available for relationship queries:');
     lines.push('  - mcp__graphify__query_graph for relationship context');
     lines.push('  - mcp__graphify__god_nodes for core abstractions');
@@ -207,15 +249,61 @@ export async function handleSessionStart(cwd: string, cache: SessionCache): Prom
       lines.push('[WARNING] rtk is not installed. Install for 60-90% token savings on dev operations: https://github.com/franklywatson/rtk');
     }
     if (!env.jcodemunchAvailable) {
-      lines.push('[WARNING] jcodemunch is not installed. Install for indexed code search: https://github.com/franklywatson/jcodemunch');
+      lines.push('[WARNING] jcodemunch was not detected. Install for indexed code search: https://github.com/franklywatson/jcodemunch');
+      lines.push("  If installed as an MCP server, verify its registration with 'claude mcp list'.");
+      if (hasOrphanedIndexData(deps.homeDir ?? homedir(), deps.readdir ?? readdirSync)) {
+        lines.push('[WARNING] jcodemunch index data found at ~/.code-index but no working transport detected.');
+        lines.push("  The server is likely registered but unreachable — check 'claude mcp list' output.");
+      }
     }
-    if (!graphInfo) {
+    if (!env.graphBuildInfo) {
       lines.push('[HINT] graphify is not installed. Install for knowledge graph analysis: https://github.com/safishamsi/graphify');
     }
     cache.setToolsWarned(true);
   }
 
   return lines.join('\n');
+}
+
+function describeGraphify(info: GraphBuildInfo | undefined): string {
+  switch (info?.state) {
+    case 'ready':
+      return 'available';
+    case 'building':
+      return 'building graph...';
+    case 'failed':
+      return info.errorReason ? `build failed (${info.errorReason})` : 'build failed';
+    default:
+      return 'not found';
+  }
+}
+
+function describeJcodemunch(env: Environment): string {
+  if (!env.jcodemunchAvailable) return 'not found';
+  const t = env.jcodemunchTransport;
+  if (!t) return 'available';
+  switch (t.kind) {
+    case 'cli':
+      return 'available (cli)';
+    case 'binary':
+      return `available (mcp binary: ${t.command})`;
+    case 'uvx':
+      return 'available (mcp via uvx)';
+    case 'config': {
+      const cmd = `${t.command} ${t.args.join(' ')}`.trim();
+      const shown = cmd.length > 100 ? cmd.slice(0, 97) + '...' : cmd;
+      return `available (mcp via ${t.source ?? 'claude'} config: ${shown})`;
+    }
+  }
+}
+
+/** Index DBs on disk + failed detection = registration/transport problem, not a missing install. */
+function hasOrphanedIndexData(homeDir: string, readdir: (path: string) => string[]): boolean {
+  try {
+    return readdir(join(homeDir, '.code-index')).some(f => f.endsWith('.db'));
+  } catch {
+    return false;
+  }
 }
 
 function formatActiveRules(config: HarnessConfig): string | null {
@@ -234,68 +322,73 @@ function formatActiveRules(config: HarnessConfig): string | null {
   return `  Active enforcement: ${active.join(', ')}`;
 }
 
-async function detectAndIndex(
+export async function detectAndIndex(
   cwd: string,
-  exec?: import('./environment.js').ExecFn,
+  exec?: ExecFn,
   existsCheck?: (path: string) => boolean,
   statCheck?: (path: string) => { size: number } | undefined,
-): Promise<{ env: Environment; fileCapHit?: FileCapWarning }> {
-  const env = await detectEnvironment(cwd, exec, existsCheck, statCheck);
+  mcpQuery?: McpQueryFn,
+  registrationLookup?: RegistrationLookupFn,
+): Promise<{ env: Environment; fileCapHit?: FileCapWarning; autoIndex: AutoIndexOutcome }> {
+  const env = await detectEnvironment(cwd, exec, existsCheck, statCheck, mcpQuery, registrationLookup);
   let fileCapHit: FileCapWarning | undefined;
+  let autoIndex: AutoIndexOutcome = 'not_needed';
 
-  // Auto-index if jcodemunch is available but CWD isn't indexed
+  // Auto-index if jcodemunch is available but CWD isn't indexed, reusing the
+  // exact transport that detection succeeded with — never re-derive it.
   if (env.jcodemunchAvailable && !env.jcodemunchCwdIndexed) {
-    // Try CLI auto-index first (only works when jcodemunch CLI binary is installed)
-    try {
-      execSync('which jcodemunch', { encoding: 'utf-8' });
-      const indexResult = execSync(
-        `jcodemunch index_folder --path "${cwd}"`,
-        { encoding: 'utf-8', timeout: 60_000 },
-      ).trim();
-      const parsedResult = JSON.parse(indexResult);
-      if (parsedResult.success) {
-        env.jcodemunchCwdIndexed = true;
-        env.jcodemunchCwdRepo = parsedResult.repo ?? env.jcodemunchCwdRepo;
-        if (env.jcodemunchCwdRepo && !env.jcodemunchKnownRepos.includes(env.jcodemunchCwdRepo)) {
-          env.jcodemunchKnownRepos.push(env.jcodemunchCwdRepo);
+    autoIndex = 'failed';
+    const transport = env.jcodemunchTransport;
+    const execFn: ExecFn = exec ??
+      ((cmd, opts) => execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string);
+
+    if (transport?.kind === 'cli') {
+      try {
+        const indexResult = execFn(
+          `jcodemunch index_folder --path "${cwd}"`,
+          { timeout: 60_000 },
+        ).trim();
+        if (applyIndexResult(env, JSON.parse(indexResult), (cap) => { fileCapHit = cap; })) {
+          autoIndex = 'succeeded';
         }
-        const skipped = parsedResult.discovery_skip_counts?.file_limit ?? 0;
-        if (skipped > 0 && parsedResult.file_count) {
-          fileCapHit = { indexed: parsedResult.file_count, total: parsedResult.file_count + skipped };
-        }
+      } catch {
+        // CLI auto-index failed — surfaced via the autoIndex outcome
       }
-    } catch {
-      // CLI not available — try MCP auto-index via JSON-RPC.
-      // Resolve transport: direct binary first, then uvx fallback (macOS).
-      const transport = resolveJcodemunchMcpTransport();
-      if (transport) {
-        try {
-          const text = await callJcodemunchMcpTool(
-            transport.command,
-            transport.args,
-            'index_folder',
-            { path: cwd },
-          );
-          if (text) {
-            const parsedResult = JSON.parse(text);
-            if (parsedResult.success) {
-              env.jcodemunchCwdIndexed = true;
-              env.jcodemunchCwdRepo = parsedResult.repo ?? env.jcodemunchCwdRepo;
-              if (env.jcodemunchCwdRepo && !env.jcodemunchKnownRepos.includes(env.jcodemunchCwdRepo)) {
-                env.jcodemunchKnownRepos.push(env.jcodemunchCwdRepo);
-              }
-              const skipped = parsedResult.discovery_skip_counts?.file_limit ?? 0;
-              if (skipped > 0 && parsedResult.file_count) {
-                fileCapHit = { indexed: parsedResult.file_count, total: parsedResult.file_count + skipped };
-              }
-            }
-          }
-        } catch {
-          // MCP auto-index failed — agent can index via MCP directly
+    } else if (transport) {
+      try {
+        const text = await callJcodemunchMcpTool(
+          transport.command,
+          transport.args,
+          'index_folder',
+          { path: cwd },
+          mcpQuery,
+        );
+        if (text && applyIndexResult(env, JSON.parse(text), (cap) => { fileCapHit = cap; })) {
+          autoIndex = 'succeeded';
         }
+      } catch {
+        // MCP auto-index failed — agent can index via MCP directly
       }
     }
   }
 
-  return { env, fileCapHit };
+  return { env, fileCapHit, autoIndex };
+}
+
+function applyIndexResult(
+  env: Environment,
+  parsedResult: { success?: boolean; repo?: string; file_count?: number; discovery_skip_counts?: { file_limit?: number } },
+  onFileCap: (cap: FileCapWarning) => void,
+): boolean {
+  if (!parsedResult.success) return false;
+  env.jcodemunchCwdIndexed = true;
+  env.jcodemunchCwdRepo = parsedResult.repo ?? env.jcodemunchCwdRepo;
+  if (env.jcodemunchCwdRepo && !env.jcodemunchKnownRepos.includes(env.jcodemunchCwdRepo)) {
+    env.jcodemunchKnownRepos.push(env.jcodemunchCwdRepo);
+  }
+  const skipped = parsedResult.discovery_skip_counts?.file_limit ?? 0;
+  if (skipped > 0 && parsedResult.file_count) {
+    onFileCap({ indexed: parsedResult.file_count, total: parsedResult.file_count + skipped });
+  }
+  return true;
 }

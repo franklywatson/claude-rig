@@ -1,12 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleSessionStart } from '../../src/session/start.js';
+import { handleSessionStart, detectAndIndex } from '../../src/session/start.js';
 import { SessionCache } from '../../src/session/cache.js';
+import type { ExecFn, McpQueryFn } from '../../src/session/environment.js';
 
 vi.mock('node:child_process', () => ({
   execSync: vi.fn(),
 }));
 
 import { execSync } from 'node:child_process';
+
+// Opt out of the production build-wait poll (5s) unless a test exercises it.
+function startSession(
+  cwd: string,
+  c: SessionCache,
+  deps: Parameters<typeof handleSessionStart>[2] = {},
+): Promise<string> {
+  return handleSessionStart(cwd, c, { graphWait: { deadlineMs: 0 }, ...deps });
+}
 
 describe('handleSessionStart', () => {
   let cache: SessionCache;
@@ -24,7 +34,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
 
     const env = cache.getEnvironment();
     expect(env).toBeDefined();
@@ -40,7 +50,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    await handleSessionStart('/home/user/test-project', cache);
+    await startSession('/home/user/test-project', cache);
 
     const pyEnv = cache.getPythonEnv();
     expect(pyEnv).toBeDefined();
@@ -61,7 +71,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    await handleSessionStart(tmpDir, cache);
+    await startSession(tmpDir, cache);
 
     const pyEnv = cache.getPythonEnv();
     expect(pyEnv).toBeDefined();
@@ -79,7 +89,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    await handleSessionStart('/home/user/test-project', cache);
+    await startSession('/home/user/test-project', cache);
 
     // Should have called index_folder for the CWD
     expect(execSync).toHaveBeenCalledWith(
@@ -96,7 +106,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    await handleSessionStart('/home/user/test-project', cache);
+    await startSession('/home/user/test-project', cache);
 
     // Should NOT have called index_folder — already indexed
     const calls = vi.mocked(execSync).mock.calls.map(c => c[0] as string);
@@ -110,7 +120,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    await handleSessionStart('/home/user/test-project', cache);
+    await startSession('/home/user/test-project', cache);
 
     const calls = vi.mocked(execSync).mock.calls.map(c => c[0] as string);
     expect(calls.find(c => c.includes('index_folder'))).toBeUndefined();
@@ -124,7 +134,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('rtk');
     expect(output).toContain('jcodemunch');
     expect(output).toContain('indexed');
@@ -138,7 +148,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('using-git-worktrees');
   });
 
@@ -150,7 +160,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).not.toContain('using-git-worktrees');
   });
 
@@ -162,20 +172,20 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('WARNING');
     expect(output).toContain('rtk');
     expect(output).toContain('install');
   });
 
-  it('warns when jcodemunch is not installed', async () => {
+  it('warns when jcodemunch was not detected', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') return '/usr/bin/rtk';
       if (cmd === 'which jcodemunch') throw new Error('not found');
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('WARNING');
     expect(output).toContain('jcodemunch');
     expect(output).toContain('install');
@@ -189,7 +199,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('rtk');
     expect(output).toContain('jcodemunch');
     // Should contain two warnings
@@ -205,10 +215,10 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     // The tool-missing warnings (rtk/jcodemunch) should not appear when both are present.
     expect(output).not.toContain('rtk is not installed');
-    expect(output).not.toContain('jcodemunch is not installed');
+    expect(output).not.toContain('jcodemunch was not detected');
   });
 
   it('emits subagent delegation instructions when jcodemunch available', async () => {
@@ -219,7 +229,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('When spawning subagents');
     expect(output).toContain('mcp__jcodemunch__search_text');
     expect(output).toContain('mcp__jcodemunch__get_file_tree');
@@ -233,7 +243,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).not.toContain('When spawning subagents');
     expect(output).not.toContain('mcp__jcodemunch__');
   });
@@ -246,7 +256,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).toContain('scout');
     expect(output).toContain('subagent_type');
     expect(output).toContain('Explore');
@@ -259,7 +269,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     expect(output).not.toContain('scout');
   });
 
@@ -272,15 +282,15 @@ describe('handleSessionStart', () => {
     });
 
     // First call — tool-missing warnings present
-    const output1 = await handleSessionStart('/home/user/test-project', cache);
+    const output1 = await startSession('/home/user/test-project', cache);
     expect(output1).toContain('rtk is not installed');
-    expect(output1).toContain('jcodemunch is not installed');
+    expect(output1).toContain('jcodemunch was not detected');
 
     // Second call — tool-missing warnings suppressed by toolsWarned flag
     // (the permissions warning is independent and may still fire)
-    const output2 = await handleSessionStart('/home/user/test-project', cache);
+    const output2 = await startSession('/home/user/test-project', cache);
     expect(output2).not.toContain('rtk is not installed');
-    expect(output2).not.toContain('jcodemunch is not installed');
+    expect(output2).not.toContain('jcodemunch was not detected');
   });
 
   it('emits active enforcement rules when rules are not all silent', async () => {
@@ -291,7 +301,7 @@ describe('handleSessionStart', () => {
       return '';
     });
 
-    const output = await handleSessionStart('/home/user/test-project', cache);
+    const output = await startSession('/home/user/test-project', cache);
     // Default config has no_mocks: block, which should appear in active rules
     expect(output).toContain('Active enforcement');
     expect(output).toContain('no_mocks');
@@ -318,7 +328,7 @@ describe('handleSessionStart', () => {
       '    full_accounting: silent',
     ].join('\n'));
 
-    const output = await handleSessionStart(configDir, cache);
+    const output = await startSession(configDir, cache);
     expect(output).not.toContain('Active enforcement');
 
     rmSync(configDir, { recursive: true });
@@ -345,7 +355,7 @@ describe('handleSessionStart', () => {
       '    full_accounting: advise',
     ].join('\n'));
 
-    const output = await handleSessionStart(configDir, cache);
+    const output = await startSession(configDir, cache);
     expect(output).toContain('Active enforcement');
     expect(output).toContain('no_mocks (block)');
     expect(output).toContain('full_accounting (advise)');
@@ -382,7 +392,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      const output = await handleSessionStart(tmpDir, cache);
+      const output = await startSession(tmpDir, cache);
       expect(output).toContain('graphify: available');
       expect(output).toContain('3 nodes');
       expect(output).toContain('2 edges');
@@ -400,7 +410,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      const output = await handleSessionStart('/home/user/test-project', cache);
+      const output = await startSession('/home/user/test-project', cache);
       expect(output).toContain('graphify: not found');
       expect(output).not.toContain('nodes');
     });
@@ -423,7 +433,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      const output = await handleSessionStart(tmpDir, cache);
+      const output = await startSession(tmpDir, cache);
       expect(output).toContain('mcp__graphify__query_graph');
       expect(output).toContain('mcp__graphify__god_nodes');
       expect(output).toContain('mcp__graphify__get_community');
@@ -440,7 +450,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      const output = await handleSessionStart('/home/user/test-project', cache);
+      const output = await startSession('/home/user/test-project', cache);
       expect(output).toContain('HINT');
       expect(output).toContain('graphify');
     });
@@ -468,7 +478,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      await handleSessionStart(tmpDir, cache);
+      await startSession(tmpDir, cache);
       const baseline = cache.getMetricsBaseline();
       expect(baseline?.graphifyStats).toBeDefined();
       const entries = Object.entries(baseline!.graphifyStats!);
@@ -496,7 +506,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      await handleSessionStart('/home/user/test-project', cache);
+      await startSession('/home/user/test-project', cache);
       const baseline = cache.getMetricsBaseline();
       expect(baseline).toBeDefined();
       expect(baseline!.totalSaved).toBe(5000000);
@@ -519,7 +529,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      await handleSessionStart('/home/user/test-project', cache);
+      await startSession('/home/user/test-project', cache);
       const baseline = cache.getMetricsBaseline();
       expect(baseline?.graphifyStats).toBeDefined();
       const entries = Object.entries(baseline!.graphifyStats!);
@@ -538,7 +548,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      await handleSessionStart('/home/user/test-project', cache);
+      await startSession('/home/user/test-project', cache);
       const baseline = cache.getMetricsBaseline();
       expect(baseline!.totalSaved).toBe(6000000);
     });
@@ -561,7 +571,7 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      const output = await handleSessionStart('/home/user/big-project', cache);
+      const output = await startSession('/home/user/big-project', cache);
       expect(output).toContain('WARNING');
       expect(output).toContain('file limit');
       expect(output).toContain('max_folder_files');
@@ -584,8 +594,319 @@ describe('handleSessionStart', () => {
         return '';
       });
 
-      const output = await handleSessionStart('/home/user/small-project', cache);
+      const output = await startSession('/home/user/small-project', cache);
       expect(output).not.toContain('file limit');
+    });
+  });
+
+  describe('transport reuse and output states', () => {
+    const WHEEL_URL =
+      'https://github.com/jgravelle/jcodemunch-mcp/releases/download/v1.108.20/jcodemunch_mcp-1.108.20-py3-none-any.whl';
+    const wheelRegistration = {
+      command: 'uvx',
+      args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+      source: 'user' as const,
+    };
+
+    const noBinariesExec: ExecFn = (cmd: string) => {
+      if (cmd === 'which uvx') return '/opt/homebrew/bin/uvx';
+      throw new Error(`not found: ${cmd}`);
+    };
+
+    function listReposResponse(
+      repos: Array<{ repo: string; source_root?: string }>,
+      protocolVersion = '2025-03-26',
+    ): string {
+      const init = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion } });
+      const tool = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        result: { content: [{ type: 'text', text: JSON.stringify({ repos }) }], isError: false },
+      });
+      return init + '\n' + tool;
+    }
+
+    function toolCallResponse(payload: object): string {
+      const init = JSON.stringify({ jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-03-26' } });
+      const tool = JSON.stringify({
+        jsonrpc: '2.0',
+        id: 2,
+        result: { content: [{ type: 'text', text: JSON.stringify(payload) }] },
+      });
+      return init + '\n' + tool;
+    }
+
+    it('detectAndIndex reuses the config transport verbatim for MCP auto-index', async () => {
+      const indexCalls: Array<{ command: string; args: string[] }> = [];
+      const mcpQuery: McpQueryFn = async (command, args, messages) => {
+        if (messages.some(m => m.includes('index_folder'))) {
+          indexCalls.push({ command, args });
+          return toolCallResponse({ success: true, repo: 'org/proj' });
+        }
+        if (command === 'uvx' && args.includes(WHEEL_URL)) {
+          return listReposResponse([]);
+        }
+        return null;
+      };
+
+      const { env, autoIndex } = await detectAndIndex(
+        '/work/proj', noBinariesExec, () => false, () => undefined, mcpQuery, () => wheelRegistration,
+      );
+
+      expect(autoIndex).toBe('succeeded');
+      expect(env.jcodemunchCwdIndexed).toBe(true);
+      expect(env.jcodemunchCwdRepo).toBe('org/proj');
+      expect(indexCalls[0]).toEqual({
+        command: 'uvx',
+        args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+      });
+    });
+
+    it('detectAndIndex reports failed when the index attempt yields nothing', async () => {
+      const mcpQuery: McpQueryFn = async (command, args, messages) => {
+        if (messages.some(m => m.includes('index_folder'))) return null;
+        if (command === 'uvx' && args.includes(WHEEL_URL)) return listReposResponse([]);
+        return null;
+      };
+
+      const { autoIndex } = await detectAndIndex(
+        '/work/proj', noBinariesExec, () => false, () => undefined, mcpQuery, () => wheelRegistration,
+      );
+
+      expect(autoIndex).toBe('failed');
+    });
+
+    it('detectAndIndex reports not_needed when CWD is already indexed', async () => {
+      const mcpQuery: McpQueryFn = async (command, args) => {
+        if (command === 'uvx' && args.includes(WHEEL_URL)) {
+          return listReposResponse([{ repo: 'org/proj', source_root: '/work/proj' }]);
+        }
+        return null;
+      };
+
+      const { autoIndex, env } = await detectAndIndex(
+        '/work/proj', noBinariesExec, () => false, () => undefined, mcpQuery, () => wheelRegistration,
+      );
+
+      expect(env.jcodemunchCwdIndexed).toBe(true);
+      expect(autoIndex).toBe('not_needed');
+    });
+
+    it('detectAndIndex routes CLI auto-index through the injectable exec', async () => {
+      const seen: string[] = [];
+      const exec: ExecFn = (cmd: string) => {
+        seen.push(cmd);
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":[]}';
+        if (cmd.includes('index_folder')) return JSON.stringify({ success: true, repo: 'local/proj' });
+        throw new Error(`not found: ${cmd}`);
+      };
+
+      const { autoIndex } = await detectAndIndex(
+        '/work/proj', exec, () => false, () => undefined, async () => null, () => null,
+      );
+
+      expect(autoIndex).toBe('succeeded');
+      expect(seen.some(c => c.includes('index_folder'))).toBe(true);
+    });
+
+    it('renders cli transport and indexed state', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') return '/usr/bin/rtk';
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache);
+      expect(output).toContain('jcodemunch: available (cli)');
+      expect(output).toContain('CWD indexed: local/test-project');
+    });
+
+    it('renders auto-index failure guidance when indexing fails', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":[]}';
+        if (cmd.includes('index_folder')) throw new Error('index failed');
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache);
+      expect(output).toContain('CWD not indexed (auto-index failed');
+      expect(output).toContain('mcp__jcodemunch__index_folder');
+    });
+
+    it('renders config transport detail and protocol mismatch warning', async () => {
+      vi.mocked(execSync).mockImplementation(() => '');
+      const mcpQuery: McpQueryFn = async (command, args) => {
+        if (command === 'uvx' && args.includes(WHEEL_URL)) {
+          return listReposResponse([{ repo: 'org/proj', source_root: '/work/proj' }], '2024-11-05');
+        }
+        return null;
+      };
+
+      const output = await startSession('/work/proj', cache, {
+        exec: noBinariesExec,
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery,
+        registrationLookup: () => wheelRegistration,
+        readdir: () => { throw new Error('no dir'); },
+      });
+
+      expect(output).toContain('available (mcp via user config: uvx --from');
+      expect(output).toContain('[WARNING] jcodemunch MCP protocol version mismatch');
+      expect(output).toContain('2024-11-05');
+    });
+
+    it('not-installed warning mentions checking the MCP registration', async () => {
+      vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        exec: () => { throw new Error('not found'); },
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery: async () => null,
+        registrationLookup: () => null,
+        readdir: () => { throw new Error('no dir'); },
+      });
+
+      expect(output).toContain('jcodemunch: not found');
+      expect(output).toContain('claude mcp list');
+    });
+
+    it('warns about orphaned index data when detection fails but ~/.code-index has dbs', async () => {
+      vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        exec: () => { throw new Error('not found'); },
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery: async () => null,
+        registrationLookup: () => null,
+        readdir: () => ['franklywatson-claude-rig.db', 'config.jsonc'],
+        homeDir: '/home/user',
+      });
+
+      expect(output).toContain('index data found at ~/.code-index');
+      expect(output).toContain('claude mcp list');
+    });
+
+    it('renders a warning when GRAPH_REPORT.md is unparseable', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd.includes('GRAPH_REPORT.md')) return 'TOTALLY NEW REPORT FORMAT';
+        if (cmd.includes('graphify benchmark')) throw new Error('no benchmark');
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        existsCheck: (p) => p.endsWith('graph.json'),
+        statCheck: () => ({ size: 5000 }),
+      });
+
+      expect(output).toContain('[WARNING] graphify: GRAPH_REPORT.md present but unparseable');
+    });
+
+    it('recovers when the graph lands shortly after graphify update returns (build-output race)', async () => {
+      let landed = false;
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') throw new Error('not found');
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd.includes('GRAPH_REPORT.md')) return '10 nodes · 20 edges · 3 communities detected';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        existsCheck: (p) => p.endsWith('graph.json') && landed,
+        statCheck: () => (landed ? { size: 5000 } : undefined),
+        graphWait: {
+          deadlineMs: 5000,
+          intervalMs: 250,
+          // The graph "lands" during the second poll interval
+          sleep: () => { landed = true; },
+        },
+      });
+
+      expect(output).toContain('graphify: available');
+      expect(output).not.toContain('build failed');
+    });
+
+    it('surfaces the build failure reason in session output', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd.includes('graphify update')) throw new Error('recursion depth exceeded');
+        if (cmd.startsWith('test -f')) throw new Error('absent');
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache);
+      expect(output).toContain('build failed (recursion depth exceeded)');
+    });
+
+    it('renders the rtk version when known', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';
+        if (cmd === 'rtk --version') return 'rtk 0.39.0';
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache);
+      expect(output).toContain('rtk: available (/opt/homebrew/bin/rtk, v0.39.0)');
+    });
+
+    it('warns when graphify version is outside the tested range', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd === 'graphify --version') return 'graphify 0.6.2';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache);
+      expect(output).toContain('graphify 0.6.2 is outside the tested range');
+    });
+
+    it('does not warn when graphify version is inside the tested range', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd === 'graphify --version') return 'graphify 0.7.18';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache);
+      expect(output).not.toContain('outside the tested range');
+    });
+
+    it('does not warn about orphaned index data when ~/.code-index is absent', async () => {
+      vi.mocked(execSync).mockImplementation(() => { throw new Error('not found'); });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        exec: () => { throw new Error('not found'); },
+        existsCheck: () => false,
+        statCheck: () => undefined,
+        mcpQuery: async () => null,
+        registrationLookup: () => null,
+        readdir: () => { throw new Error('ENOENT'); },
+        homeDir: '/home/user',
+      });
+
+      expect(output).not.toContain('index data found');
     });
   });
 });

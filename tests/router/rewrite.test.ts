@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { handlePreToolUse, tryRtkRewrite, type ExecRewriteFn } from '../../src/router/hook.js';
+import { describe, it, expect, vi } from 'vitest';
+import { handlePreToolUse, tryRtkRewrite, makeDefaultExecRewrite, type ExecRewriteFn } from '../../src/router/hook.js';
 import { SessionCache } from '../../src/session/cache.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 import type { RewriteResult } from '../../src/types.js';
@@ -21,6 +21,72 @@ const mockRewriteSuccess: ExecRewriteFn = (_rtkPath, args) => {
 const mockRewriteNone: ExecRewriteFn = () => null;
 
 const mockRewriteIdentical: ExecRewriteFn = (_rtkPath, args) => args[1];
+
+// ── makeDefaultExecRewrite diagnostics ──
+
+describe('makeDefaultExecRewrite diagnostics', () => {
+  function execError(props: Record<string, unknown>): () => never {
+    return () => {
+      throw Object.assign(new Error('exec failed'), props);
+    };
+  }
+
+  it('returns the rewritten command on success with no diagnostics', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(writeDiag, () => 'rtk grep foo\n');
+
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'grep foo'])).toBe('rtk grep foo');
+    expect(writeDiag).not.toHaveBeenCalled();
+  });
+
+  it('stays silent on expected declines (exit 1 and 2)', () => {
+    const writeDiag = vi.fn();
+    for (const status of [1, 2]) {
+      const rewrite = makeDefaultExecRewrite(writeDiag, execError({ status }));
+      expect(rewrite('/usr/bin/rtk', ['rewrite', 'grep foo'])).toBeNull();
+    }
+    expect(writeDiag).not.toHaveBeenCalled();
+  });
+
+  it('logs unexpected exit codes with stderr context', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(
+      writeDiag,
+      execError({ status: 127, stderr: 'boom: library mismatch' }),
+    );
+
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'grep foo'])).toBeNull();
+    expect(writeDiag).toHaveBeenCalledTimes(1);
+    const line = writeDiag.mock.calls[0][0] as string;
+    expect(line).toContain('127');
+    expect(line).toContain('boom: library mismatch');
+    expect(line).toContain('grep foo');
+  });
+
+  it('logs signals and ENOENT-style failures', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(writeDiag, execError({ signal: 'SIGTERM' }));
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'cat f'])).toBeNull();
+    expect(writeDiag).toHaveBeenCalledWith(expect.stringContaining('SIGTERM'));
+
+    const writeDiag2 = vi.fn();
+    const rewrite2 = makeDefaultExecRewrite(writeDiag2, execError({ code: 'ENOENT' }));
+    expect(rewrite2('/missing/rtk', ['rewrite', 'cat f'])).toBeNull();
+    expect(writeDiag2).toHaveBeenCalledWith(expect.stringContaining('ENOENT'));
+  });
+
+  it('truncates stderr in the diagnostic line to 300 chars', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(
+      writeDiag,
+      execError({ status: 101, stderr: 'x'.repeat(1000) }),
+    );
+
+    rewrite('/usr/bin/rtk', ['rewrite', 'grep foo']);
+    const parsed = JSON.parse(writeDiag.mock.calls[0][0] as string);
+    expect(parsed.stderr).toHaveLength(300);
+  });
+});
 
 // ── tryRtkRewrite unit tests ──
 

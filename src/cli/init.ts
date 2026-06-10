@@ -3,6 +3,7 @@ import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync, readdir
 import { join, resolve, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { renderTemplate } from './renderer.js';
+import { GRAPHIFY_OUT_DIR } from '../constants.js';
 import { DEFAULT_CONFIG } from '../config.js';
 import { stringify as yamlStringify } from 'yaml';
 import { detectEnvironment, type ExecFn } from '../session/environment.js';
@@ -102,7 +103,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
   }
 
   // Create graphify-out directory (graph built on-demand, no placeholder)
-  const graphifyDir = join(projectDir, 'graphify-out');
+  const graphifyDir = join(projectDir, GRAPHIFY_OUT_DIR);
   if (!existsSync(graphifyDir)) {
     mkdirSync(graphifyDir, { recursive: true });
   }
@@ -120,7 +121,7 @@ const GITIGNORE_MARKER_END = '# --- end rig-managed ---';
 const GITIGNORE_ENTRIES = [
   '.harness.yaml.local',
   '*.session-cache.json',
-  'graphify-out/',
+  `${GRAPHIFY_OUT_DIR}/`,
 ];
 
 function updateGitignore(projectDir: string): void {

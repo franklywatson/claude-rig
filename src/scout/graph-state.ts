@@ -1,7 +1,6 @@
-import { join } from 'node:path';
 import type { Environment, GraphBuildInfo } from '../types.js';
+import { graphJsonPath, GRAPH_JSON_REL, GRAPHIFY_PLACEHOLDER_THRESHOLD } from '../constants.js';
 
-const PLACEHOLDER_THRESHOLD = 1024; // bytes
 const BUILD_TIMEOUT = 120_000; // ms
 
 type ExecFn = (cmd: string, opts?: { encoding?: string; timeout?: number }) => string;
@@ -17,18 +16,18 @@ export function determineGraphState(
   existsCheck: ExistsCheck,
   statCheck: StatCheck,
 ): GraphBuildInfo {
-  const graphJsonPath = join(cwd, 'graphify-out', 'graph.json');
+  const graphFile = graphJsonPath(cwd);
 
-  if (!existsCheck(graphJsonPath)) {
+  if (!existsCheck(graphFile)) {
     return { state: 'absent' };
   }
 
-  const stat = statCheck(graphJsonPath);
-  if (!stat || stat.size < PLACEHOLDER_THRESHOLD) {
+  const stat = statCheck(graphFile);
+  if (!stat || stat.size < GRAPHIFY_PLACEHOLDER_THRESHOLD) {
     return { state: 'absent' };
   }
 
-  return { state: 'ready', graphPath: 'graphify-out/graph.json' };
+  return { state: 'ready', graphPath: GRAPH_JSON_REL };
 }
 
 /**
@@ -42,31 +41,59 @@ export function triggerBuild(
   try {
     exec(`graphify update "${directory}"`, { encoding: 'utf-8', timeout: BUILD_TIMEOUT });
     return { state: 'building', startedAt: Date.now() };
-  } catch {
-    return { state: 'failed' };
+  } catch (err) {
+    // Preserve why: timeout vs AST recursion vs missing CLI are very different fixes
+    const message = err instanceof Error ? err.message : String(err);
+    return { state: 'failed', errorReason: message.slice(0, 200) };
   }
 }
+
+export interface WaitForBuildOpts {
+  /** How long to keep polling for the graph. 0 (default) = single immediate check. */
+  deadlineMs?: number;
+  intervalMs?: number;
+  sleep?: (ms: number) => void;
+}
+
+// Synchronous sleep that doesn't spin the CPU — hooks are synchronous processes.
+const defaultSleep = (ms: number): void => {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+};
 
 /**
  * Check the result of a previously-triggered build.
  * Returns ready if graph.json now exists with real content, failed otherwise.
+ *
+ * `graphify update` can return before graph.json is fully on disk — a single
+ * immediate check races the build output (observed in the field: update
+ * returned at T, graph landed at T+1s, "failed" got cached all session).
+ * Callers in a position to wait pass a deadline to poll across that window.
  */
 export function waitForBuild(
   _buildInfo: GraphBuildInfo,
   cwd: string,
   existsCheck: ExistsCheck,
   statCheck: StatCheck,
+  opts: WaitForBuildOpts = {},
 ): GraphBuildInfo {
-  const graphJsonPath = join(cwd, 'graphify-out', 'graph.json');
+  const deadlineMs = opts.deadlineMs ?? 0;
+  const intervalMs = opts.intervalMs ?? 250;
+  const sleep = opts.sleep ?? defaultSleep;
+  const graphFile = graphJsonPath(cwd);
+  const start = Date.now();
 
-  if (existsCheck(graphJsonPath)) {
-    const stat = statCheck(graphJsonPath);
-    if (stat && stat.size >= PLACEHOLDER_THRESHOLD) {
-      return { state: 'ready', graphPath: 'graphify-out/graph.json' };
+  for (;;) {
+    if (existsCheck(graphFile)) {
+      const stat = statCheck(graphFile);
+      if (stat && stat.size >= GRAPHIFY_PLACEHOLDER_THRESHOLD) {
+        return { state: 'ready', graphPath: GRAPH_JSON_REL };
+      }
     }
+    if (Date.now() - start >= deadlineMs) break;
+    sleep(intervalMs);
   }
 
-  return { state: 'failed' };
+  return { state: 'failed', errorReason: 'graph.json missing or placeholder after build' };
 }
 
 /**
@@ -89,14 +116,22 @@ export function ensureGraphReady(
     case 'ready':
       return info;
 
-    case 'absent':
-      triggerBuild(directory, exec);
+    case 'absent': {
+      const build = triggerBuild(directory, exec);
+      // A failed trigger carries the error reason — don't discard it for a
+      // pointless disk check that would report a generic failure.
+      if (build.state === 'failed') return build;
       return waitForBuild(info, directory, existsCheck, statCheck);
+    }
 
     case 'building':
       return waitForBuild(info, directory, existsCheck, statCheck);
 
-    case 'failed':
-      return info;
+    case 'failed': {
+      // A cached failure may be stale: the build can land moments after the
+      // verdict was recorded (build-output race). The disk is truth.
+      const current = determineGraphState(directory, existsCheck, statCheck);
+      return current.state === 'ready' ? current : info;
+    }
   }
 }

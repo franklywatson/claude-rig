@@ -1,7 +1,17 @@
 import { execSync, spawn } from 'node:child_process';
-import { basename, join } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
-import type { Environment, GraphBuildInfo } from '../types.js';
+import type { Environment, GraphBuildInfo, JcodemunchTransport } from '../types.js';
+import {
+  graphJsonPath,
+  rebuildLockPath,
+  GRAPH_JSON_REL,
+  GRAPHIFY_PLACEHOLDER_THRESHOLD,
+} from '../constants.js';
+import { resolveJcodemunchRegistration } from './claude-config.js';
+import type { McpRegistration } from './claude-config.js';
+
+export type RegistrationLookupFn = (cwd: string) => McpRegistration | null;
 
 export interface ExecFn {
   (command: string, options?: { encoding?: string; timeout?: number }): string;
@@ -80,35 +90,45 @@ export async function detectEnvironment(
   existsCheck: (path: string) => boolean = existsSync,
   statCheck: (path: string) => { size: number } | undefined = defaultStatCheck,
   mcpQuery: McpQueryFn = defaultMcpQuery,
+  registrationLookup: RegistrationLookupFn = resolveJcodemunchRegistration,
 ): Promise<Environment> {
   const rtkResult = detectRtk(exec);
-  const jmResult = await detectJcodemunch(cwd, exec, mcpQuery);
+  const jmResult = await detectJcodemunch(cwd, exec, mcpQuery, registrationLookup);
   const graphifyResult = detectGraphify(cwd, exec, existsCheck, statCheck);
 
   return {
     rtkAvailable: rtkResult.available,
     rtkPath: rtkResult.path,
+    rtkVersion: rtkResult.version,
     jcodemunchAvailable: jmResult.available,
     jcodemunchCwdIndexed: jmResult.cwdIndexed,
     jcodemunchCwdRepo: jmResult.cwdRepo,
     jcodemunchKnownRepos: jmResult.knownRepos,
+    jcodemunchTransport: jmResult.transport,
+    jcodemunchProtocolWarning: jmResult.protocolWarning,
     graphifyAvailable: graphifyResult.state === 'ready',
     graphifyGraphPath: graphifyResult.state === 'ready' ? graphifyResult.graphPath ?? null : null,
+    graphifyVersion: graphifyResult.cliVersion ?? null,
     graphBuildInfo: graphifyResult.state === 'absent' && !graphifyResult._cliFound ? undefined : graphifyResult,
     detectedAt: Date.now(),
   };
 }
 
-function detectRtk(exec: ExecFn): { available: boolean; path: string | null } {
+function detectRtk(exec: ExecFn): { available: boolean; path: string | null; version: string | null } {
   try {
     const path = exec('which rtk').trim();
-    return { available: true, path };
+    // Version probe is diagnostics-only — failure never affects availability
+    let version: string | null = null;
+    try {
+      version = exec('rtk --version', { timeout: 5000 }).match(/(\d+\.\d+\.\d+)/)?.[1] ?? null;
+    } catch {
+      // Probe failed — version stays unknown
+    }
+    return { available: true, path, version };
   } catch {
-    return { available: false, path: null };
+    return { available: false, path: null, version: null };
   }
 }
-
-const PLACEHOLDER_THRESHOLD = 1024; // bytes
 
 const defaultStatCheck = (path: string): { size: number } | undefined => {
   try {
@@ -120,43 +140,92 @@ const defaultStatCheck = (path: string): { size: number } | undefined => {
 
 export interface GraphifyDetectResult extends GraphBuildInfo {
   _cliFound: boolean;
+  cliVersion?: string;
 }
+
+/**
+ * Parse the version from `graphify --version` output. Anchors on the binary's
+ * own version line — output may also contain a skew-warning line mentioning a
+ * different version ("skill is from graphify 0.7.16, package is 0.7.18").
+ */
+function parseGraphifyVersion(output: string): string | undefined {
+  const anchored = output.match(/^graphify(?:y)?\s+(\d+\.\d+\.\d+)/m);
+  if (anchored) return anchored[1];
+  return output.match(/(\d+\.\d+\.\d+)/)?.[1];
+}
+
+const defaultMtimeCheck = (path: string): Date | undefined => {
+  try {
+    return statSync(path).mtime;
+  } catch {
+    return undefined;
+  }
+};
 
 export function detectGraphify(
   cwd: string,
   exec: ExecFn,
   existsCheck: (path: string) => boolean = existsSync,
   statCheck: (path: string) => { size: number } | undefined = defaultStatCheck,
+  mtimeCheck: (path: string) => Date | undefined = defaultMtimeCheck,
 ): GraphifyDetectResult {
   // Check for graphify CLI — package installs as 'graphifyy' (double-y)
-  let cliAvailable = false;
+  let cliBinary: string | null = null;
   try {
     exec('which graphify');
-    cliAvailable = true;
+    cliBinary = 'graphify';
   } catch {
     try {
       exec('which graphifyy');
-      cliAvailable = true;
+      cliBinary = 'graphifyy';
     } catch {
       // Neither binary found — MCP server may still be running via uvx
     }
   }
+  const cliAvailable = cliBinary !== null;
 
-  if (!cliAvailable) {
-    return { state: 'absent', _cliFound: false };
+  // Version probe is diagnostics-only — failure must never change state
+  let cliVersion: string | undefined;
+  if (cliBinary) {
+    try {
+      cliVersion = parseGraphifyVersion(exec(`${cliBinary} --version`, { timeout: 5000 }));
+    } catch {
+      // Probe failed — version stays unknown
+    }
   }
 
-  const graphPath = join(cwd, 'graphify-out', 'graph.json');
+  // A valid graph on disk is sufficient for 'ready' regardless of CLI
+  // presence — the CLI may live off the hook PATH (e.g. ~/.local/bin) and is
+  // only needed for rebuilding. _cliFound tells callers whether rebuild works.
+  const graphPath = graphJsonPath(cwd);
+  let graphValid = false;
   if (existsCheck(graphPath)) {
     const stat = statCheck(graphPath);
-    if (stat && stat.size >= PLACEHOLDER_THRESHOLD) {
-      return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: true };
-    }
+    graphValid = !!stat && stat.size >= GRAPHIFY_PLACEHOLDER_THRESHOLD;
     // Placeholder or tiny file — treat as absent
-    return { state: 'absent', _cliFound: true };
   }
 
-  return { state: 'absent', _cliFound: true };
+  // graphify leaves .rebuild.lock behind after completed builds: a lock with a
+  // graph newer than it is stale (finished build); a lock newer than the graph
+  // (or with no valid graph) means a rebuild is in progress.
+  const lockPath = rebuildLockPath(cwd);
+  if (existsCheck(lockPath)) {
+    if (!graphValid) {
+      return { state: 'building', _cliFound: cliAvailable, cliVersion };
+    }
+    const graphMtime = mtimeCheck(graphPath);
+    const lockMtime = mtimeCheck(lockPath);
+    if (graphMtime && lockMtime && lockMtime > graphMtime) {
+      return { state: 'building', _cliFound: cliAvailable, cliVersion };
+    }
+    // Stale lock (or mtimes unavailable) — the valid graph wins
+  }
+
+  if (graphValid) {
+    return { state: 'ready', graphPath: GRAPH_JSON_REL, _cliFound: cliAvailable, cliVersion };
+  }
+
+  return { state: 'absent', _cliFound: cliAvailable, cliVersion };
 }
 
 interface JcodemunchDetection {
@@ -164,37 +233,73 @@ interface JcodemunchDetection {
   cwdIndexed: boolean;
   cwdRepo: string | null;
   knownRepos: string[];
+  transport?: JcodemunchTransport;
+  protocolWarning?: string;
 }
 
 async function detectJcodemunch(
   cwd: string,
   exec: ExecFn,
   mcpQuery: McpQueryFn,
+  registrationLookup: RegistrationLookupFn,
 ): Promise<JcodemunchDetection> {
   // Try CLI binary first
   try {
     exec('which jcodemunch');
-    return detectJcodemunchCli(cwd, exec);
+    return {
+      ...detectJcodemunchCli(cwd, exec),
+      transport: { kind: 'cli', command: 'jcodemunch', args: [] },
+    };
   } catch {
-    // CLI not found — try MCP server binary
+    // CLI not found — try the registered MCP command
+  }
+
+  // Claude Code's own MCP registration is ground truth for how the server is
+  // launched (e.g. `uvx --from <wheel-url> jcodemunch-mcp` for GitHub-release
+  // installs that a bare `uvx jcodemunch-mcp` can never resolve).
+  let registration: McpRegistration | null = null;
+  try {
+    registration = registrationLookup(cwd);
+  } catch {
+    // Unreadable config — continue with the PATH-based chain
+  }
+  if (registration) {
+    const output = await mcpQuery(registration.command, registration.args, LIST_REPOS_MESSAGES, 2, 20_000);
+    if (output) {
+      return {
+        ...parseListReposResponse(cwd, output),
+        transport: {
+          kind: 'config',
+          command: registration.command,
+          args: registration.args,
+          source: registration.source,
+        },
+      };
+    }
+    // Registered command didn't respond — fall through to PATH-based detection
   }
 
   try {
     const mcpPath = exec('which jcodemunch-mcp').trim();
     if (mcpPath) {
-      return await detectJcodemunchMcp(cwd, mcpPath, mcpQuery);
+      return {
+        ...(await detectJcodemunchMcp(cwd, mcpPath, mcpQuery)),
+        transport: { kind: 'binary', command: mcpPath, args: [] },
+      };
     }
   } catch {
     // MCP binary not found either
   }
 
-  // macOS/uvx install: jcodemunch-mcp is managed by uvx and not in PATH.
-  // Claude Code's recommended install (command: "uvx", args: ["jcodemunch-mcp"])
-  // works but `which jcodemunch-mcp` fails. Send JSON-RPC via uvx directly.
-  // This also applies to Linux users who install via uvx instead of pip/pipx.
+  // Last resort: bare uvx invocation. Only works for PyPI-published installs —
+  // wheel-URL installs are covered by the registration probe above.
   try {
     exec('which uvx');
-    return await detectJcodemunchViaUvx(cwd, mcpQuery);
+    const result = await detectJcodemunchViaUvx(cwd, mcpQuery);
+    if (result.available) {
+      return { ...result, transport: { kind: 'uvx', command: 'uvx', args: ['jcodemunch-mcp'] } };
+    }
+    return result;
   } catch {
     // uvx not available
   }
@@ -212,11 +317,42 @@ function detectJcodemunchCli(cwd: string, exec: ExecFn): JcodemunchDetection {
   }
 }
 
+export const MCP_PROTOCOL_VERSION = '2025-03-26';
+
+const INITIALIZE_MESSAGE = JSON.stringify({
+  jsonrpc: '2.0',
+  method: 'initialize',
+  params: {
+    protocolVersion: MCP_PROTOCOL_VERSION,
+    capabilities: {},
+    clientInfo: { name: 'rig', version: '1.0' },
+  },
+  id: 1,
+});
+
 const LIST_REPOS_MESSAGES = [
-  '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"rig","version":"1.0"}},"id":1}',
+  INITIALIZE_MESSAGE,
   '{"jsonrpc":"2.0","method":"notifications/initialized"}',
   '{"jsonrpc":"2.0","method":"tools/call","params":{"name":"list_repos","arguments":{}},"id":2}',
 ];
+
+/**
+ * Inspect the initialize response (id:1) already present in the stdout buffer
+ * and return a warning string when the server's protocolVersion differs from
+ * ours. Returns null on match or on any parse failure — never blocks detection.
+ */
+export function extractProtocolMismatch(output: string | null): string | null {
+  if (!output) return null;
+  try {
+    const initLine = output.trim().split('\n').find(l => l.includes('"id":1'));
+    if (!initLine) return null;
+    const serverVersion = JSON.parse(initLine)?.result?.protocolVersion;
+    if (typeof serverVersion !== 'string' || serverVersion === MCP_PROTOCOL_VERSION) return null;
+    return `jcodemunch MCP protocol version mismatch (server: ${serverVersion}, expected: ${MCP_PROTOCOL_VERSION})`;
+  } catch {
+    return null;
+  }
+}
 
 async function detectJcodemunchMcp(
   cwd: string,
@@ -235,20 +371,23 @@ async function detectJcodemunchViaUvx(cwd: string, mcpQuery: McpQueryFn): Promis
 
 function parseListReposResponse(cwd: string, output: string | null): JcodemunchDetection {
   if (!output) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+  const protocolWarning = extractProtocolMismatch(output) ?? undefined;
+  const fallback: JcodemunchDetection = {
+    available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [], protocolWarning,
+  };
   try {
     const lines = output.trim().split('\n');
     const reposLine = lines.find(l => l.includes('"id":2'));
-    if (!reposLine) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+    if (!reposLine) return fallback;
 
     const rpcResponse = JSON.parse(reposLine);
     const textContent = rpcResponse?.result?.content?.[0]?.text;
-    if (!textContent) return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+    if (!textContent) return fallback;
 
     const reposData = JSON.parse(textContent);
-    const repoNames: string[] = (reposData.repos ?? []).map((r: { repo: string }) => r.repo);
-    return resolveJcodemunchRepos(cwd, repoNames);
+    return { ...resolveJcodemunchRepos(cwd, reposData.repos ?? []), protocolWarning };
   } catch {
-    return { available: true, cwdIndexed: false, cwdRepo: null, knownRepos: [] };
+    return fallback;
   }
 }
 
@@ -266,9 +405,10 @@ export async function callJcodemunchMcpTool(
   toolArgs: Record<string, string>,
   mcpQuery: McpQueryFn = defaultMcpQuery,
   timeoutMs: number = 60_000,
+  onWarning?: (msg: string) => void,
 ): Promise<string | null> {
   const messages = [
-    '{"jsonrpc":"2.0","method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"rig","version":"1.0"}},"id":1}',
+    INITIALIZE_MESSAGE,
     '{"jsonrpc":"2.0","method":"notifications/initialized"}',
     JSON.stringify({
       jsonrpc: '2.0',
@@ -280,6 +420,8 @@ export async function callJcodemunchMcpTool(
 
   const output = await mcpQuery(command, args, messages, 2, timeoutMs);
   if (!output) return null;
+  const mismatch = extractProtocolMismatch(output);
+  if (mismatch && onWarning) onWarning(mismatch);
   try {
     const lines = output.trim().split('\n');
     const responseLine = lines.find(l => l.includes('"id":2'));
@@ -291,14 +433,27 @@ export async function callJcodemunchMcpTool(
   }
 }
 
-function resolveJcodemunchRepos(cwd: string, repos: string[]): JcodemunchDetection {
+/** A repo entry from list_repos: bare name (CLI/older servers) or rich object (MCP). */
+type RepoEntry = string | { repo: string; source_root?: string };
+
+function resolveJcodemunchRepos(cwd: string, repos: RepoEntry[]): JcodemunchDetection {
+  const entries = repos
+    .map(r => (typeof r === 'string' ? { repo: r } : r))
+    .filter((e): e is { repo: string; source_root?: string } => typeof e?.repo === 'string');
+
+  // Exact source-root path match is authoritative — it disambiguates repos
+  // with the same basename and survives renamed checkouts. Basename equality
+  // is the fallback for entries that don't carry a source_root.
+  const resolvedCwd = resolve(cwd);
   const folderName = basename(cwd);
-  const cwdRepo = repos.find(r => r.split('/').pop() === folderName) ?? null;
+  const bySourceRoot = entries.find(e => e.source_root && resolve(e.source_root) === resolvedCwd);
+  const byBasename = entries.find(e => e.repo.split('/').pop() === folderName);
+  const cwdRepo = (bySourceRoot ?? byBasename)?.repo ?? null;
 
   return {
     available: true,
     cwdIndexed: cwdRepo !== null,
     cwdRepo,
-    knownRepos: repos,
+    knownRepos: entries.map(e => e.repo),
   };
 }

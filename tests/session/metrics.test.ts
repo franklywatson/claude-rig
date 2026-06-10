@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   captureMetricsBaseline,
   captureGraphifyStats,
@@ -42,6 +42,167 @@ describe('captureMetricsBaseline', () => {
     });
     const baseline = captureMetricsBaseline(exec);
     expect(baseline).toEqual({ totalSaved: 0, capturedAt: expect.any(Number) });
+  });
+
+  it.each([
+    ['missing total_saved', JSON.stringify({ summary: {} })],
+    ['string total_saved', JSON.stringify({ summary: { total_saved: '5000' } })],
+    ['array payload', JSON.stringify([1, 2])],
+    ['malformed JSON', 'not json'],
+  ])('warns on unexpected schema (%s) and returns zero', (_label, raw) => {
+    const onWarn = vi.fn();
+    const exec = makeExec({ 'rtk gain --format json': raw });
+
+    const baseline = captureMetricsBaseline(exec, onWarn);
+    expect(baseline.totalSaved).toBe(0);
+    expect(onWarn).toHaveBeenCalledTimes(1);
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining('unexpected schema'));
+  });
+
+  it('does not warn on a valid payload', () => {
+    const onWarn = vi.fn();
+    const exec = makeExec({
+      'rtk gain --format json': JSON.stringify({ summary: { total_saved: 42 } }),
+    });
+
+    expect(captureMetricsBaseline(exec, onWarn).totalSaved).toBe(42);
+    expect(onWarn).not.toHaveBeenCalled();
+  });
+
+  it('does not warn when rtk itself is absent (exec throws)', () => {
+    const onWarn = vi.fn();
+    const exec = makeExec({ 'rtk gain --format json': new Error('not found') });
+
+    expect(captureMetricsBaseline(exec, onWarn).totalSaved).toBe(0);
+    expect(onWarn).not.toHaveBeenCalled();
+  });
+});
+
+describe('stats-capture exec timeouts', () => {
+  const REPORT_TEXT =
+    '40994 nodes · 129501 edges · 439 communities detected\nExtraction: 42% EXTRACTED · 58% INFERRED · 0% AMBIGUOUS';
+
+  it('passes a 10s timeout to the GRAPH_REPORT.md read', () => {
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) return REPORT_TEXT;
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureGraphifyStatsViaReport('/proj', exec);
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('GRAPH_REPORT.md'),
+      expect.objectContaining({ timeout: 10_000 }),
+    );
+  });
+
+  it('passes a 30s timeout to the graphify benchmark fallback', () => {
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) throw new Error('no report');
+      if (cmd.includes('graphify benchmark')) return 'Graph: 1,000 nodes, 2,000 edges';
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureGraphifyStatsViaReport('/proj', exec);
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('graphify benchmark'),
+      expect.objectContaining({ timeout: 30_000 }),
+    );
+  });
+
+  it('passes a 120s timeout to the external graph build', () => {
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.startsWith('test -f')) throw new Error('absent');
+      if (cmd.includes('graphify update')) return '';
+      if (cmd.includes('GRAPH_REPORT.md')) return REPORT_TEXT;
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureExternalGraphifyStats('/ext/proj', exec);
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('graphify update'),
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+
+  it('passes a 10s timeout to rtk gain', () => {
+    const exec = vi.fn(() => JSON.stringify({ summary: { total_saved: 1 } }));
+
+    captureMetricsBaseline(exec);
+    expect(exec).toHaveBeenCalledWith(
+      'rtk gain --format json',
+      expect.objectContaining({ timeout: 10_000 }),
+    );
+  });
+});
+
+describe('captureGraphifyStatsViaReport warnings', () => {
+  const HEALTHY_REPORT =
+    '40994 nodes · 129501 edges · 439 communities detected\nExtraction: 42% EXTRACTED · 58% INFERRED · 0% AMBIGUOUS';
+
+  it('emits no warnings for a healthy report', () => {
+    const onWarn = vi.fn();
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) return HEALTHY_REPORT;
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    const stats = captureGraphifyStatsViaReport('/proj', exec, onWarn);
+    expect(stats?.nodes).toBe(40994);
+    expect(onWarn).not.toHaveBeenCalled();
+  });
+
+  it('warns when the report is present but unparseable, then tries the benchmark', () => {
+    const onWarn = vi.fn();
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) return 'TOTALLY NEW REPORT FORMAT';
+      if (cmd.includes('graphify benchmark')) return 'Graph: 1,000 nodes, 2,000 edges';
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    const stats = captureGraphifyStatsViaReport('/proj', exec, onWarn);
+    expect(stats?.nodes).toBe(1000);
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining('unparseable'));
+  });
+
+  it('warns when the benchmark fallback is used (confidence breakdown lost)', () => {
+    const onWarn = vi.fn();
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) throw new Error('no report');
+      if (cmd.includes('graphify benchmark')) return 'Graph: 1,000 nodes, 2,000 edges';
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    const stats = captureGraphifyStatsViaReport('/proj', exec, onWarn);
+    expect(stats?.nodes).toBe(1000);
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining('benchmark fallback'));
+  });
+
+  it('warns when confidence percentages do not sum to ~100 but still returns stats', () => {
+    const onWarn = vi.fn();
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) {
+        return '10 nodes · 20 edges · 3 communities detected\nExtraction: 40% EXTRACTED · 40% INFERRED · 10% AMBIGUOUS';
+      }
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    const stats = captureGraphifyStatsViaReport('/proj', exec, onWarn);
+    expect(stats).not.toBeNull();
+    expect(stats?.extractedPct).toBe(40);
+    expect(onWarn).toHaveBeenCalledWith(expect.stringContaining('sum to 90'));
+  });
+
+  it('accepts rounding slack in the percentage sum (98-102)', () => {
+    const onWarn = vi.fn();
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) {
+        return '10 nodes · 20 edges · 3 communities detected\nExtraction: 33% EXTRACTED · 33% INFERRED · 33% AMBIGUOUS';
+      }
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureGraphifyStatsViaReport('/proj', exec, onWarn);
+    expect(onWarn).not.toHaveBeenCalled();
   });
 });
 

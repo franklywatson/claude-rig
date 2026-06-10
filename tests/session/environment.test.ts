@@ -34,7 +34,10 @@ function makeMcpQuery(responses: Record<string, string | Error | null>): McpQuer
 }
 
 // Helper to build MCP JSON-RPC response for list_repos
-function mcpListReposResponse(repos: Array<{ repo: string }>): string {
+function mcpListReposResponse(
+  repos: Array<{ repo: string; source_root?: string }>,
+  protocolVersion = '2025-03-26',
+): string {
   const reposJson = JSON.stringify({ repos });
   const rpcResponse = {
     jsonrpc: '2.0',
@@ -44,7 +47,7 @@ function mcpListReposResponse(repos: Array<{ repo: string }>): string {
       isError: false,
     },
   };
-  const initResponse = { jsonrpc: '2.0', id: 1, result: { protocolVersion: '2025-03-26' } };
+  const initResponse = { jsonrpc: '2.0', id: 1, result: { protocolVersion } };
   return JSON.stringify(initResponse) + '\n' + JSON.stringify(rpcResponse);
 }
 
@@ -60,6 +63,34 @@ describe('detectEnvironment', () => {
     const env = await detectEnvironment('/fake/cwd', exec);
     expect(env.rtkAvailable).toBe(true);
     expect(env.rtkPath).toBe('/usr/local/bin/rtk');
+  });
+
+  it('captures the rtk version when the probe succeeds', async () => {
+    const exec = makeExec({
+      'which rtk': '/opt/homebrew/bin/rtk',
+      'rtk --version': 'rtk 0.39.0\n',
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec, () => false, () => undefined, makeMcpQuery({}), () => null);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkVersion).toBe('0.39.0');
+  });
+
+  it('rtk version probe failure leaves rtk available with null version', async () => {
+    const exec = makeExec({
+      'which rtk': '/opt/homebrew/bin/rtk',
+      // no 'rtk --version' key — makeExec throws for it
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec, () => false, () => undefined, makeMcpQuery({}), () => null);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkVersion).toBeNull();
   });
 
   it('detects rtk unavailable when which fails', async () => {
@@ -94,7 +125,7 @@ describe('detectEnvironment', () => {
       'which uvx': new Error('not found'),
     });
 
-    const env = await detectEnvironment('/fake/cwd', exec);
+    const env = await detectEnvironment('/fake/cwd', exec, undefined, undefined, makeMcpQuery({}), () => null);
     expect(env.jcodemunchAvailable).toBe(false);
     expect(env.jcodemunchCwdIndexed).toBe(false);
     expect(env.jcodemunchCwdRepo).toBeNull();
@@ -243,7 +274,7 @@ describe('detectEnvironment', () => {
       'which uvx': new Error('not found'),
     });
 
-    const env = await detectEnvironment('/fake/cwd', exec);
+    const env = await detectEnvironment('/fake/cwd', exec, undefined, undefined, makeMcpQuery({}), () => null);
     expect(env.rtkAvailable).toBe(false);
     expect(env.rtkPath).toBeNull();
     expect(env.jcodemunchAvailable).toBe(false);
@@ -309,7 +340,14 @@ describe('detectEnvironment', () => {
       'which uvx': new Error('not found'),
     });
 
-    const env = await detectEnvironment('/Users/jerome/Documents/Claude/Projects/forgd-onboarding', exec);
+    const env = await detectEnvironment(
+      '/Users/jerome/Documents/Claude/Projects/forgd-onboarding',
+      exec,
+      undefined,
+      undefined,
+      makeMcpQuery({}),
+      () => null,
+    );
     expect(env.jcodemunchAvailable).toBe(false);
     expect(env.jcodemunchCwdIndexed).toBe(false);
   });
@@ -357,7 +395,7 @@ describe('detectEnvironment', () => {
       return mcpListReposResponse([{ repo: 'local/my-project' }]);
     };
 
-    await detectEnvironment('/Users/jerome/projects/my-project', exec, undefined, undefined, mcpQuery);
+    await detectEnvironment('/Users/jerome/projects/my-project', exec, undefined, undefined, mcpQuery, () => null);
     expect(capturedCommand).toBe('uvx');
     expect(capturedArgs).toEqual(['jcodemunch-mcp']);
     // Must include initialize, notifications/initialized, and tools/call list_repos
@@ -399,6 +437,291 @@ describe('detectEnvironment', () => {
   });
 });
 
+describe('detectEnvironment with config-registered MCP transport', () => {
+  const WHEEL_URL =
+    'https://github.com/jgravelle/jcodemunch-mcp/releases/download/v1.108.20/jcodemunch_mcp-1.108.20-py3-none-any.whl';
+  const wheelRegistration = {
+    command: 'uvx',
+    args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+    source: 'user' as const,
+  };
+
+  const noBinariesExec = makeExec({
+    'which rtk': new Error('not found'),
+    'which jcodemunch-mcp': new Error('not found'),
+    'which jcodemunch': new Error('not found'),
+    'which uvx': '/opt/homebrew/bin/uvx',
+    'which graphify': new Error('not found'),
+  });
+
+  it('detects via registered wheel-URL command when binaries are absent (live-bug regression)', async () => {
+    const probeCalls: Array<{ command: string; args: string[] }> = [];
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      probeCalls.push({ command, args });
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([{ repo: 'franklywatson/my-project' }]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('franklywatson/my-project');
+    expect(env.jcodemunchTransport).toEqual({
+      kind: 'config',
+      command: 'uvx',
+      args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+      source: 'user',
+    });
+    // The registration command/args must be passed to the probe verbatim
+    expect(probeCalls[0]).toEqual({
+      command: 'uvx',
+      args: ['--from', WHEEL_URL, 'jcodemunch-mcp'],
+    });
+  });
+
+  it('falls through to jcodemunch-mcp binary when the registration probe fails', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': '/usr/local/bin/jcodemunch-mcp',
+      'which jcodemunch': new Error('not found'),
+      'which graphify': new Error('not found'),
+    });
+    const mcpQuery: McpQueryFn = async (command) => {
+      if (command === '/usr/local/bin/jcodemunch-mcp') {
+        return mcpListReposResponse([{ repo: 'local/my-project' }]);
+      }
+      return null; // registration probe fails
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      exec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchTransport?.kind).toBe('binary');
+    expect(env.jcodemunchTransport?.command).toBe('/usr/local/bin/jcodemunch-mcp');
+  });
+
+  it('uses the bare uvx fallback when no registration exists', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.length === 1 && args[0] === 'jcodemunch-mcp') {
+        return mcpListReposResponse([{ repo: 'local/my-project' }]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => null,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchTransport).toEqual({
+      kind: 'uvx',
+      command: 'uvx',
+      args: ['jcodemunch-mcp'],
+    });
+  });
+
+  it('records a cli transport when the jcodemunch binary is on PATH', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': '/usr/local/bin/jcodemunch',
+      'jcodemunch list_repos': JSON.stringify({ repos: ['local/my-project'] }),
+      'which graphify': new Error('not found'),
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project',
+      exec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => null,
+    );
+
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchTransport?.kind).toBe('cli');
+  });
+
+  it('source_root exact-path match wins over ambiguous basenames', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([
+          { repo: 'local/api', source_root: '/other/checkout/api' },
+          { repo: 'team/api', source_root: '/work/api' },
+        ]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/api',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('team/api');
+    expect(env.jcodemunchKnownRepos).toEqual(['local/api', 'team/api']);
+  });
+
+  it('renamed checkout matches via source_root even when basenames differ', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([
+          { repo: 'org/upstream-name', source_root: '/work/my-fork' },
+        ]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/work/my-fork',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchCwdRepo).toBe('org/upstream-name');
+  });
+
+  it('falls back to strict basename equality when source_root is absent', async () => {
+    const mcpQuery: McpQueryFn = async (command, args) => {
+      if (command === 'uvx' && args.includes(WHEEL_URL)) {
+        return mcpListReposResponse([{ repo: 'local/test-rig' }, { repo: 'local/rig' }]);
+      }
+      return null;
+    };
+
+    const env = await detectEnvironment(
+      '/home/jerome/projects/rig',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      mcpQuery,
+      () => wheelRegistration,
+    );
+
+    expect(env.jcodemunchCwdRepo).toBe('local/rig');
+  });
+
+  it('a throwing registrationLookup never breaks detection', async () => {
+    const env = await detectEnvironment(
+      '/work/my-project',
+      noBinariesExec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => { throw new Error('config unreadable'); },
+    );
+
+    expect(env.jcodemunchAvailable).toBe(false);
+  });
+});
+
+describe('MCP protocol version validation', () => {
+  const uvxExec = makeExec({
+    'which rtk': new Error('not found'),
+    'which jcodemunch-mcp': new Error('not found'),
+    'which jcodemunch': new Error('not found'),
+    'which uvx': '/opt/homebrew/bin/uvx',
+    'which graphify': new Error('not found'),
+  });
+
+  it('sets no warning when the server speaks the expected protocol version', async () => {
+    const mcpQuery = makeMcpQuery({
+      'uvx jcodemunch-mcp': mcpListReposResponse([{ repo: 'local/my-project' }]),
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project', uvxExec, () => false, () => undefined, mcpQuery, () => null,
+    );
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchProtocolWarning).toBeUndefined();
+  });
+
+  it('sets a warning on protocol version mismatch but stays available', async () => {
+    const mcpQuery = makeMcpQuery({
+      'uvx jcodemunch-mcp': mcpListReposResponse([{ repo: 'local/my-project' }], '2024-11-05'),
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project', uvxExec, () => false, () => undefined, mcpQuery, () => null,
+    );
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchCwdIndexed).toBe(true);
+    expect(env.jcodemunchProtocolWarning).toContain('2024-11-05');
+    expect(env.jcodemunchProtocolWarning).toContain('2025-03-26');
+  });
+
+  it('sets no warning when the initialize line is missing or garbled', async () => {
+    const reposJson = JSON.stringify({ repos: [{ repo: 'local/my-project' }] });
+    const onlyToolResponse = JSON.stringify({
+      jsonrpc: '2.0',
+      id: 2,
+      result: { content: [{ type: 'text', text: reposJson }], isError: false },
+    });
+    const mcpQuery = makeMcpQuery({
+      'uvx jcodemunch-mcp': '{garbled init line\n' + onlyToolResponse,
+    });
+
+    const env = await detectEnvironment(
+      '/work/my-project', uvxExec, () => false, () => undefined, mcpQuery, () => null,
+    );
+    expect(env.jcodemunchAvailable).toBe(true);
+    expect(env.jcodemunchProtocolWarning).toBeUndefined();
+  });
+
+  it('callJcodemunchMcpTool fires onWarning on mismatch and still returns the tool text', async () => {
+    const initResponse = JSON.stringify({
+      jsonrpc: '2.0', id: 1, result: { protocolVersion: '2024-11-05' },
+    });
+    const toolResponse = JSON.stringify({
+      jsonrpc: '2.0', id: 2, result: { content: [{ type: 'text', text: '{"success":true}' }] },
+    });
+    const mcpQuery = makeMcpQuery({
+      'jcodemunch-mcp': initResponse + '\n' + toolResponse,
+    });
+
+    const warnings: string[] = [];
+    const result = await callJcodemunchMcpTool(
+      'jcodemunch-mcp', [], 'index_folder', { path: '/work' }, mcpQuery, 60_000,
+      (msg) => warnings.push(msg),
+    );
+
+    expect(result).toBe('{"success":true}');
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain('2024-11-05');
+  });
+});
+
 describe('detectGraphify', () => {
   it('returns state ready with graphPath when CLI and real graph.json exist', () => {
     const exec = makeExec({
@@ -414,17 +737,33 @@ describe('detectGraphify', () => {
     expect(result.graphPath).toBe('graphify-out/graph.json');
   });
 
-  it('returns state absent when which graphify fails', () => {
+  it('returns ready when graph.json exists even if CLI is not on PATH', () => {
+    // The CLI may be installed off the hook PATH (e.g. ~/.local/bin); a valid
+    // graph on disk is sufficient for 'ready' — CLI is only needed to rebuild.
     const exec = makeExec({
       'which graphify': new Error('not found'),
       'which graphifyy': new Error('not found'),
     });
-    const existsCheck = (_path: string) => true;
-    const statCheck = (_path: string) => ({ size: 5000 });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/graph.json';
+    const statCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
 
     const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
+    expect(result.state).toBe('ready');
+    expect(result.graphPath).toBe('graphify-out/graph.json');
+    expect(result._cliFound).toBe(false);
+  });
+
+  it('returns state absent when CLI not found and no graph.json', () => {
+    const exec = makeExec({
+      'which graphify': new Error('not found'),
+      'which graphifyy': new Error('not found'),
+    });
+
+    const result = detectGraphify('/fake/cwd', exec, () => false, () => undefined);
     expect(result.state).toBe('absent');
     expect(result.graphPath).toBeUndefined();
+    expect(result._cliFound).toBe(false);
   });
 
   it('returns state absent when graphifyy (uvx) binary exists but no graph.json', () => {
@@ -487,6 +826,119 @@ describe('detectGraphify', () => {
     // Backward compat
     expect(env.graphifyAvailable).toBe(true);
     expect(env.graphifyGraphPath).toBe('graphify-out/graph.json');
+  });
+
+  it('returns building when .rebuild.lock present and no valid graph', () => {
+    const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/.rebuild.lock';
+
+    const result = detectGraphify(
+      '/fake/cwd', exec, existsCheck, () => undefined,
+      (path) => (path.endsWith('.rebuild.lock') ? new Date(2000) : undefined),
+    );
+    expect(result.state).toBe('building');
+    expect(result._cliFound).toBe(true);
+  });
+
+  it('returns ready when graph.json is newer than .rebuild.lock (stale lock from completed build)', () => {
+    // graphify leaves lock files behind after completed builds
+    const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
+    const existsCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ||
+      path === '/fake/cwd/graphify-out/.rebuild.lock';
+    const statCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
+    const mtimeCheck = (path: string) =>
+      path.endsWith('graph.json') ? new Date(5000) : new Date(1000);
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck, mtimeCheck);
+    expect(result.state).toBe('ready');
+    expect(result.graphPath).toBe('graphify-out/graph.json');
+  });
+
+  it('returns building when .rebuild.lock is newer than graph.json (active rebuild)', () => {
+    const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
+    const existsCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ||
+      path === '/fake/cwd/graphify-out/.rebuild.lock';
+    const statCheck = (path: string) =>
+      path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
+    const mtimeCheck = (path: string) =>
+      path.endsWith('graph.json') ? new Date(1000) : new Date(5000);
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck, mtimeCheck);
+    expect(result.state).toBe('building');
+  });
+
+  it('captures the CLI version when the probe succeeds', () => {
+    const exec = makeExec({
+      'which graphify': '/usr/local/bin/graphify',
+      'graphify --version': 'graphify 0.7.18',
+    });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/graph.json';
+    const statCheck = () => ({ size: 5000 });
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
+    expect(result.state).toBe('ready');
+    expect(result.cliVersion).toBe('0.7.18');
+  });
+
+  it('parses the version from the binary line, not from skew-warning noise', () => {
+    // Live output includes a warning line mentioning a different version:
+    //   warning: skill is from graphify 0.7.16, package is 0.7.18. ...
+    //   graphify 0.7.18
+    const exec = makeExec({
+      'which graphify': '/usr/local/bin/graphify',
+      'graphify --version':
+        "  warning: skill is from graphify 0.7.16, package is 0.7.18. Run 'graphify install' to update.\ngraphify 0.7.18",
+    });
+
+    const result = detectGraphify('/fake/cwd', exec, () => false, () => undefined);
+    expect(result.cliVersion).toBe('0.7.18');
+  });
+
+  it('version probe failure never changes detection state', () => {
+    const exec = makeExec({
+      'which graphify': '/usr/local/bin/graphify',
+      // no 'graphify --version' key — makeExec throws for it
+    });
+    const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/graph.json';
+    const statCheck = () => ({ size: 5000 });
+
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
+    expect(result.state).toBe('ready');
+    expect(result.cliVersion).toBeUndefined();
+  });
+
+  it('probes the graphifyy binary name when that is what resolved', () => {
+    const calls: string[] = [];
+    const exec = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd === 'which graphify') throw new Error('not found');
+      if (cmd === 'which graphifyy') return '/home/user/.local/bin/graphifyy';
+      if (cmd === 'graphifyy --version') return 'graphifyy 0.7.16';
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    const result = detectGraphify('/fake/cwd', exec, () => false, () => undefined);
+    expect(result.cliVersion).toBe('0.7.16');
+    expect(calls).toContain('graphifyy --version');
+  });
+
+  it('exposes graphifyVersion on the detected environment', async () => {
+    const exec = makeExec({
+      'which rtk': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+      'which graphify': '/usr/local/bin/graphify',
+      'graphify --version': 'graphify 0.7.18',
+    });
+
+    const env = await detectEnvironment(
+      '/project', exec, () => false, () => undefined, makeMcpQuery({}), () => null,
+    );
+    expect(env.graphifyVersion).toBe('0.7.18');
   });
 
   it('returns state ready when graphifyy binary and real graph exist', () => {
