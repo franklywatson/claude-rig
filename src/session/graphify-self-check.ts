@@ -141,5 +141,8 @@ function isRegisteredWithClaude(exec: ExecFn): boolean {
  * explicit args works for a quick fix instruction.
  */
 function buildMcpAddCommand(pythonPath: string, graphJsonPath: string): string {
-  return `claude mcp add graphify ${pythonPath} -m graphify.serve ${graphJsonPath}`;
+  // The -- separator is required: without it claude mcp add parses the
+  // server command's -m flag as its own option ("error: unknown option '-m'").
+  // -s local keeps the registration on this machine without touching .mcp.json.
+  return `claude mcp add graphify -s local -- ${pythonPath} -m graphify.serve ${graphJsonPath}`;
 }

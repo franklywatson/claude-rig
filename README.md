@@ -58,9 +58,20 @@ compression seam:
 - Trial per-invocation with `headroom wrap claude --no-context-tool` (skips the rtk hook), or
 - Install durably with `headroom init claude`, which configures only the proxy and does not touch rtk.
 
-Read savings as two separate layers: rig's `/savings` reports tool-layer savings
-(rtk/jcodemunch), Headroom's `perf` reports context-layer compression. Do not add
-them together -- they overlap at the rtk boundary.
+Rig detects Headroom automatically: when the proxy is configured for a project
+(`headroom init claude` hook marker or a localhost `ANTHROPIC_BASE_URL` in any
+settings scope), session start reports it and `/savings` pulls in `headroom perf`
+data as a separate **context layer** line:
+
+```
+[rig] Session Savings
+  rtk: 1.2M saved (42 calls, +340K this session)
+  jcodemunch: 85K saved (23 queries, 150M total all-time)
+  headroom: 40K saved (context layer -- 42 requests, 40% compression, 78% cache hits; not summed with tool-layer savings)
+```
+
+The layers overlap at the rtk boundary, so rig reports them side by side and
+never adds them together.
 
 ## Quick start
 
