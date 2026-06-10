@@ -784,6 +784,25 @@ describe('handleSessionStart', () => {
       expect(output).toContain('claude mcp list');
     });
 
+    it('renders a warning when GRAPH_REPORT.md is unparseable', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        if (cmd === 'which graphify') return '/usr/local/bin/graphify';
+        if (cmd.includes('GRAPH_REPORT.md')) return 'TOTALLY NEW REPORT FORMAT';
+        if (cmd.includes('graphify benchmark')) throw new Error('no benchmark');
+        return '';
+      });
+
+      const output = await handleSessionStart('/home/user/test-project', cache, {
+        existsCheck: (p) => p.endsWith('graph.json'),
+        statCheck: () => ({ size: 5000 }),
+      });
+
+      expect(output).toContain('[WARNING] graphify: GRAPH_REPORT.md present but unparseable');
+    });
+
     it('renders the rtk version when known', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';

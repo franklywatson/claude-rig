@@ -71,8 +71,10 @@ export async function handleSessionStart(
   const baseline = captureMetricsBaseline(execFn);
   // Capture graphify stats via report (not the 74MB graph.json)
   const graphInfo = env.graphBuildInfo;
+  const statsWarnings: string[] = [];
+  const onStatsWarn = (msg: string): void => { statsWarnings.push(msg); };
   if (graphInfo?.state === 'ready') {
-    const cwdStats = captureGraphifyStatsViaReport(cwd, execFn);
+    const cwdStats = captureGraphifyStatsViaReport(cwd, execFn, onStatsWarn);
     if (cwdStats) {
       baseline.graphifyStats = { [resolve(cwd)]: cwdStats };
     }
@@ -89,7 +91,7 @@ export async function handleSessionStart(
         env.graphBuildInfo = checkResult;
         env.graphifyAvailable = true;
         env.graphifyGraphPath = checkResult.graphPath ?? null;
-        const buildStats = captureGraphifyStatsViaReport(cwd, execFn);
+        const buildStats = captureGraphifyStatsViaReport(cwd, execFn, onStatsWarn);
         if (buildStats) {
           baseline.graphifyStats = { [resolve(cwd)]: buildStats };
         }
@@ -146,6 +148,10 @@ export async function handleSessionStart(
 
   if (env.graphifyVersion && !versionInRange(env.graphifyVersion, GRAPHIFY_TESTED_MIN, GRAPHIFY_TESTED_MAX_EXCLUSIVE)) {
     lines.push(`[WARNING] graphify ${env.graphifyVersion} is outside the tested range (>=${GRAPHIFY_TESTED_MIN} <${GRAPHIFY_TESTED_MAX_EXCLUSIVE}) — proceeding anyway`);
+  }
+
+  for (const warning of statsWarnings) {
+    lines.push(`[WARNING] ${warning}`);
   }
 
   if (graphInfo?.state === 'ready' && baseline.graphifyStats) {

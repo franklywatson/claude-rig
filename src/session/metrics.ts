@@ -47,7 +47,11 @@ export function captureGraphifyStats(cwd: string, exec: ExecFn): GraphifyProject
  * Much lighter than reading graph.json (154KB vs 74MB).
  * Falls back to `graphify benchmark` CLI if report unavailable.
  */
-export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): GraphifyProjectStats | null {
+export function captureGraphifyStatsViaReport(
+  cwd: string,
+  exec: ExecFn,
+  onWarn?: (msg: string) => void,
+): GraphifyProjectStats | null {
   // Try GRAPH_REPORT.md first (has full stats including confidence breakdown)
   try {
     const report = exec(`cat "${cwd}/graphify-out/GRAPH_REPORT.md"`, { timeout: REPORT_TIMEOUT_MS });
@@ -58,7 +62,7 @@ export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): Graphi
     const extractionMatch = report.match(/Extraction:\s*(\d+)%\s*EXTRACTED\s*·\s*(\d+)%\s*INFERRED\s*·\s*(\d+)%\s*AMBIGUOUS/);
 
     if (summaryMatch) {
-      return {
+      const stats: GraphifyProjectStats = {
         nodes: parseInt(summaryMatch[1], 10),
         edges: parseInt(summaryMatch[2], 10),
         communities: parseInt(summaryMatch[3], 10),
@@ -66,7 +70,16 @@ export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): Graphi
         inferredPct: extractionMatch ? parseInt(extractionMatch[2], 10) : 0,
         ambiguousPct: extractionMatch ? parseInt(extractionMatch[3], 10) : 0,
       };
+      if (extractionMatch) {
+        const sum = stats.extractedPct + stats.inferredPct + stats.ambiguousPct;
+        if (sum < 98 || sum > 102) {
+          onWarn?.(`graphify: confidence percentages sum to ${sum} (expected ~100) — report format may have drifted`);
+        }
+      }
+      return stats;
     }
+    // Report exists but didn't match the expected layout — format drift
+    onWarn?.('graphify: GRAPH_REPORT.md present but unparseable — format may have changed');
   } catch {
     // Report not available — fall through to benchmark
   }
@@ -76,6 +89,7 @@ export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): Graphi
     const output = exec(`graphify benchmark "${cwd}/graphify-out/graph.json"`, { timeout: BENCHMARK_TIMEOUT_MS });
     const match = output.match(/Graph:\s*(\d[\d,]*)\s+nodes,\s*(\d[\d,]*)\s+edges/);
     if (match) {
+      onWarn?.('graphify: using benchmark fallback — confidence breakdown unavailable');
       return {
         nodes: parseInt(match[1].replace(/,/g, ''), 10),
         edges: parseInt(match[2].replace(/,/g, ''), 10),
@@ -96,7 +110,11 @@ export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): Graphi
  * Build graphify graph for an external directory (if not already built)
  * and capture its stats. Returns null if graphify is unavailable or build fails.
  */
-export function captureExternalGraphifyStats(directory: string, exec: ExecFn): GraphifyProjectStats | null {
+export function captureExternalGraphifyStats(
+  directory: string,
+  exec: ExecFn,
+  onWarn?: (msg: string) => void,
+): GraphifyProjectStats | null {
   const graphPath = join(directory, 'graphify-out', 'graph.json');
 
   // Check if graph already exists
@@ -116,7 +134,7 @@ export function captureExternalGraphifyStats(directory: string, exec: ExecFn): G
     }
   }
 
-  return captureGraphifyStatsViaReport(directory, exec);
+  return captureGraphifyStatsViaReport(directory, exec, onWarn);
 }
 
 export function captureMetricsBaseline(exec: ExecFn): MetricsBaseline {
