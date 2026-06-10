@@ -71,8 +71,8 @@ Determine each directory's state from its `graphify-out/`:
 
 | State | On-disk indicator (per-directory) |
 | ----- | --------------------------------- |
-| ready | `<dir>/graphify-out/graph.json` exists and is >1KB |
-| building | `<dir>/graphify-out/.rebuild.lock` is present (another process owns this build — session-start, a git hook, or a parallel agent) |
+| ready | `<dir>/graphify-out/graph.json` exists and is >1KB — even when a `.rebuild.lock` is also present but **older** than `graph.json` (graphify leaves locks behind after completed builds; graph newer than lock = stale lock from a finished build) |
+| building | `<dir>/graphify-out/.rebuild.lock` is present and either no valid `graph.json` exists or the lock is **newer** than `graph.json` (another process owns this build — session-start, a git hook, or a parallel agent) |
 | absent | neither `graph.json` (>1KB) nor `.rebuild.lock` exists |
 | failed | a previous `graphify update` attempt errored this session for this directory |
 
@@ -91,6 +91,13 @@ Parse `<dir>/graphify-out/graph.json` directly with `python3` or `jq` to
 compute degree-ranked god nodes and community membership. Label all findings
 `(via CLI fallback)`. Do not invent fields not present in `graph.json`.
 
+**ready + graphify CLI not on PATH:**
+
+A valid `graph.json` is readable regardless of CLI presence — proceed with
+the graph data, but label findings `(graph present, CLI rebuild unavailable)`
+and do not attempt `graphify update` for this directory. Rebuilding requires
+the CLI; reading does not.
+
 **absent + graphify CLI available:**
 
 1. Run `graphify update <dir>` to build the graph for that specific directory
@@ -99,7 +106,7 @@ compute degree-ranked god nodes and community membership. Label all findings
    report the failure (see Alert Reporting). Other directories' graphs are
    unaffected.
 
-**building** (`<dir>/graphify-out/.rebuild.lock` present):
+**building** (`<dir>/graphify-out/.rebuild.lock` newer than `graph.json`, or no valid graph):
 
 Another process owns this directory's build — do not run `graphify update`
 on it; the second invocation will conflict with the first. If `graph.json`
@@ -107,6 +114,11 @@ is also present and >1KB, you may still read it (the lock indicates a
 *re*build, so the previous graph is on disk). Otherwise skip graph context
 for this directory and note `graph build in progress — retry next session`.
 Continue with any other directories whose state is independent.
+
+Note on stale locks: graphify does not clean up `.rebuild.lock` after a
+completed build, so a lock alongside a valid graph is common. Compare
+mtimes — `graph.json` newer than the lock means the build finished and the
+directory is actually **ready**, not building.
 
 **failed:** skip graph context for this directory. Report the failure.
 
