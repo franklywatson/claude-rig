@@ -97,8 +97,10 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
   }
 
   // Write default config
+  // .harness.yaml carries user enforcement policy — never reset it on --force;
+  // a template refresh must not change what the user chose to enforce.
   const configPath = join(projectDir, '.harness.yaml');
-  if (!existsSync(configPath) || options.force) {
+  if (!existsSync(configPath)) {
     writeFileSync(configPath, yamlStringify(DEFAULT_CONFIG, { lineWidth: 0 }));
   }
 

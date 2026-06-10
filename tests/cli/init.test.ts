@@ -108,6 +108,23 @@ describe('initCommand', () => {
     expect(after).toContain('brain+');
   });
 
+  it('preserves a customized .harness.yaml on --force (documented contract)', async () => {
+    // getting-started.md: --force "overwrites existing hook and skill
+    // templates but preserves your .harness.yaml config". Enforcement
+    // settings are user policy — a template refresh must never reset them.
+    await initCommand(tempDir, { force: false });
+    const configPath = join(tempDir, '.harness.yaml');
+    const customized = readFileSync(configPath, 'utf-8').replace(
+      'native_grep: advise',
+      'native_grep: block',
+    );
+    writeFileSync(configPath, customized);
+
+    await initCommand(tempDir, { force: true });
+
+    expect(readFileSync(configPath, 'utf-8')).toContain('native_grep: block');
+  });
+
   it('updates settings.json with hook registrations', async () => {
     // Create a minimal settings.json (need .claude dir first)
     const claudeDir = join(tempDir, '.claude');
