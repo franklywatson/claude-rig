@@ -36,6 +36,32 @@ Built from the [agentic-patterns](https://github.com/franklywatson/agentic-patte
   module communities, and dependency path queries that complement jcodemunch's
   symbol search)
 
+### Using rig with Headroom
+
+[Headroom](https://github.com/chopratejas/headroom) is a context-compression proxy that
+sits between the agent and the LLM API. It is **complementary** to rig -- the two operate
+at different stages of the token pipeline and can run in the same project:
+
+| | rig | Headroom |
+| --- | --- | --- |
+| Layer | Tool calls (PreToolUse/PostToolUse hooks) | API payloads (local proxy via `ANTHROPIC_BASE_URL`) |
+| Saves tokens by | Routing to cheaper tools *before* output is produced | Compressing context *after* it exists, before the API |
+| Also provides | Enforcement, skill chain, scout agent | Conversation compression, KV-cache alignment, memory |
+
+**The one conflict to avoid:** plain `headroom wrap claude` runs `rtk init --global`,
+which installs rtk's own *global* Bash-rewriting PreToolUse hook -- stacking a second
+rewriter on top of rig's project-level routing in every project on the machine.
+
+**Recommendation:** let rig own the tool-routing seam and Headroom own the
+compression seam:
+
+- Trial per-invocation with `headroom wrap claude --no-context-tool` (skips the rtk hook), or
+- Install durably with `headroom init claude`, which configures only the proxy and does not touch rtk.
+
+Read savings as two separate layers: rig's `/savings` reports tool-layer savings
+(rtk/jcodemunch), Headroom's `perf` reports context-layer compression. Do not add
+them together -- they overlap at the rtk boundary.
+
 ## Quick start
 
 ```bash
