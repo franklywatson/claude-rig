@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   captureMetricsBaseline,
   captureGraphifyStats,
@@ -42,6 +42,63 @@ describe('captureMetricsBaseline', () => {
     });
     const baseline = captureMetricsBaseline(exec);
     expect(baseline).toEqual({ totalSaved: 0, capturedAt: expect.any(Number) });
+  });
+});
+
+describe('stats-capture exec timeouts', () => {
+  const REPORT_TEXT =
+    '40994 nodes · 129501 edges · 439 communities detected\nExtraction: 42% EXTRACTED · 58% INFERRED · 0% AMBIGUOUS';
+
+  it('passes a 10s timeout to the GRAPH_REPORT.md read', () => {
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) return REPORT_TEXT;
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureGraphifyStatsViaReport('/proj', exec);
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('GRAPH_REPORT.md'),
+      expect.objectContaining({ timeout: 10_000 }),
+    );
+  });
+
+  it('passes a 30s timeout to the graphify benchmark fallback', () => {
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.includes('GRAPH_REPORT.md')) throw new Error('no report');
+      if (cmd.includes('graphify benchmark')) return 'Graph: 1,000 nodes, 2,000 edges';
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureGraphifyStatsViaReport('/proj', exec);
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('graphify benchmark'),
+      expect.objectContaining({ timeout: 30_000 }),
+    );
+  });
+
+  it('passes a 120s timeout to the external graph build', () => {
+    const exec = vi.fn((cmd: string) => {
+      if (cmd.startsWith('test -f')) throw new Error('absent');
+      if (cmd.includes('graphify update')) return '';
+      if (cmd.includes('GRAPH_REPORT.md')) return REPORT_TEXT;
+      throw new Error(`unexpected: ${cmd}`);
+    });
+
+    captureExternalGraphifyStats('/ext/proj', exec);
+    expect(exec).toHaveBeenCalledWith(
+      expect.stringContaining('graphify update'),
+      expect.objectContaining({ timeout: 120_000 }),
+    );
+  });
+
+  it('passes a 10s timeout to rtk gain', () => {
+    const exec = vi.fn(() => JSON.stringify({ summary: { total_saved: 1 } }));
+
+    captureMetricsBaseline(exec);
+    expect(exec).toHaveBeenCalledWith(
+      'rtk gain --format json',
+      expect.objectContaining({ timeout: 10_000 }),
+    );
   });
 });
 

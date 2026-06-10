@@ -66,10 +66,11 @@ export async function handleSessionStart(
   const pyEnv = await detectPythonEnv(cwd);
   cache.setPythonEnv(pyEnv);
 
-  const baseline = captureMetricsBaseline((cmd) => execSync(cmd, { encoding: 'utf-8' }));
+  const execFn: ExecFn = (cmd, opts) =>
+    execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string;
+  const baseline = captureMetricsBaseline(execFn);
   // Capture graphify stats via report (not the 74MB graph.json)
   const graphInfo = env.graphBuildInfo;
-  const execFn = (cmd: string) => execSync(cmd, { encoding: 'utf-8' });
   if (graphInfo?.state === 'ready') {
     const cwdStats = captureGraphifyStatsViaReport(cwd, execFn);
     if (cwdStats) {

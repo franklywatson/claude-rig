@@ -1,7 +1,13 @@
 import type { GraphifyProjectStats, MetricsBaseline } from '../types.js';
 import { basename, join } from 'node:path';
 
-export type ExecFn = (cmd: string) => string;
+export type ExecFn = (cmd: string, opts?: { timeout?: number }) => string;
+
+// Hooks must never hang on a stuck child process — every exec is bounded.
+const REPORT_TIMEOUT_MS = 10_000;
+const BENCHMARK_TIMEOUT_MS = 30_000;
+const BUILD_TIMEOUT_MS = 120_000;
+const GAIN_TIMEOUT_MS = 10_000;
 
 /**
  * Read graphify-out/graph.json (NetworkX node-link format) and compute stats.
@@ -10,7 +16,7 @@ export type ExecFn = (cmd: string) => string;
  */
 export function captureGraphifyStats(cwd: string, exec: ExecFn): GraphifyProjectStats | null {
   try {
-    const raw = exec(`cat "${cwd}/graphify-out/graph.json"`);
+    const raw = exec(`cat "${cwd}/graphify-out/graph.json"`, { timeout: BENCHMARK_TIMEOUT_MS });
     const data = JSON.parse(raw) as { nodes?: unknown[]; links?: unknown[] };
     const nodes = data.nodes ?? [];
     const links = data.links ?? [];
@@ -44,7 +50,7 @@ export function captureGraphifyStats(cwd: string, exec: ExecFn): GraphifyProject
 export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): GraphifyProjectStats | null {
   // Try GRAPH_REPORT.md first (has full stats including confidence breakdown)
   try {
-    const report = exec(`cat "${cwd}/graphify-out/GRAPH_REPORT.md"`);
+    const report = exec(`cat "${cwd}/graphify-out/GRAPH_REPORT.md"`, { timeout: REPORT_TIMEOUT_MS });
 
     // Match: "40994 nodes · 129501 edges · 439 communities detected"
     const summaryMatch = report.match(/(\d+)\s+nodes\s*·\s*(\d+)\s+edges\s*·\s*(\d+)\s+communities/);
@@ -67,7 +73,7 @@ export function captureGraphifyStatsViaReport(cwd: string, exec: ExecFn): Graphi
 
   // Fallback: graphify benchmark CLI (nodes/edges only)
   try {
-    const output = exec(`graphify benchmark "${cwd}/graphify-out/graph.json"`);
+    const output = exec(`graphify benchmark "${cwd}/graphify-out/graph.json"`, { timeout: BENCHMARK_TIMEOUT_MS });
     const match = output.match(/Graph:\s*(\d[\d,]*)\s+nodes,\s*(\d[\d,]*)\s+edges/);
     if (match) {
       return {
@@ -96,7 +102,7 @@ export function captureExternalGraphifyStats(directory: string, exec: ExecFn): G
   // Check if graph already exists
   let graphExists = false;
   try {
-    exec(`test -f "${graphPath}"`);
+    exec(`test -f "${graphPath}"`, { timeout: REPORT_TIMEOUT_MS });
     graphExists = true;
   } catch {
     // Graph doesn't exist — trigger build
@@ -104,7 +110,7 @@ export function captureExternalGraphifyStats(directory: string, exec: ExecFn): G
 
   if (!graphExists) {
     try {
-      exec(`graphify update "${directory}"`);
+      exec(`graphify update "${directory}"`, { timeout: BUILD_TIMEOUT_MS });
     } catch {
       return null;
     }
@@ -115,7 +121,7 @@ export function captureExternalGraphifyStats(directory: string, exec: ExecFn): G
 
 export function captureMetricsBaseline(exec: ExecFn): MetricsBaseline {
   try {
-    const raw = exec('rtk gain --format json');
+    const raw = exec('rtk gain --format json', { timeout: GAIN_TIMEOUT_MS });
     const parsed = JSON.parse(raw);
     const totalSaved = parsed?.summary?.total_saved ?? 0;
     return { totalSaved, capturedAt: Date.now() };
