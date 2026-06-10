@@ -18,6 +18,9 @@ Strongly recommended:
 - [jcodemunch](https://github.com/franklywatson/jcodemunch) -- indexed code
   search MCP server. Powers the scout agent for cross-repo indexing and
   serves as the tool router's fallback for `grep`/`find`/`cat` redirection.
+  Rig detects it via PATH or via the MCP server command registered in Claude
+  Code's config -- if session-start reports it as not detected despite a
+  working install, check `claude mcp list` for the registration.
   Note: jcodemunch indexes up to 2000 files per folder by default. For
   larger projects, increase `max_folder_files` in `~/.code-index/config.jsonc`.
   Rig emits a `[WARNING]` at session start when files are skipped.
@@ -195,7 +198,7 @@ When a Claude Code session starts, the session-start hook:
 1. Detects available tools (rtk, jcodemunch, graphify)
 2. Auto-indexes the project via jcodemunch if not already indexed
 3. Captures graphify graph stats (nodes, edges, communities) when available
-4. Caches results for the session (30-min TTL)
+4. Caches results for the session (4-hour env TTL; delete `/tmp/rig-session-*.json` to force immediate re-detection)
 
 ## Re-initialize
 
@@ -213,6 +216,7 @@ Remove the generated files:
 
 ```bash
 rm -rf .claude/hooks/ .claude/skills/ .claude/agents/scout.md .harness.yaml
+rm -f /tmp/rig-session-*.json /tmp/rig-rtk-rewrite-failures.log
 ```
 
 Then remove hook registrations from `.claude/settings.json`. The `init` command added entries under `hooks.PreToolUse` and `hooks.PostToolUse` and `hooks.SessionStart` -- remove those arrays.

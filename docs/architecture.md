@@ -99,6 +99,16 @@ rule array, so `findMatchingRule` returns the native-specific rule first. This p
 circular advice where the router would suggest "use Grep" when the agent is already
 on the Grep tool.
 
+### rtk rewrite diagnostics
+
+`rtk rewrite` declines commands it can't handle via exit 1 (no rewrite) or
+exit 2 (denied) — both fall through silently to rig's own rules by design.
+Anything else (unexpected exit codes, signals, ENOENT) is appended as a JSON
+line to `/tmp/rig-rtk-rewrite-failures.log` so silent fallthroughs are
+debuggable in the field. Set `RIG_DEBUG=1` to log expected declines too.
+Compound commands (pipes, `&&`, `;`) skip the rewrite entirely — the router
+cannot safely rewrite one segment of a pipeline.
+
 ---
 
 ## Layer 2: Enforcement Pipeline
@@ -283,6 +293,19 @@ main project and external directories referenced during cross-repo indexing.
 If graphify is not installed, the scout agent falls back to jcodemunch-only
 analysis (symbol search without relationship data).
 
+**Build-state reliability:** a valid `graph.json` (>1KB) means `ready` even
+when the graphify CLI is off the hook PATH — the CLI is only needed for
+rebuilding. graphify leaves `.rebuild.lock` behind after completed builds, so
+detection compares mtimes: graph newer than lock = ready (stale lock), lock
+newer = building. `graphify update` can return before `graph.json` lands, so
+session-start polls up to 5s for the output instead of caching a false
+failure, and a cached `failed` state is re-validated against the disk before
+being trusted. Build failures carry an `errorReason` (timeout vs AST
+recursion vs missing CLI), rendered as `build failed (<reason>)` at session
+start. Stats capture is timeout-bounded and warns on `GRAPH_REPORT.md`
+format drift; building a graph via `Bash(graphify update <dir>)` also
+triggers per-project stats capture in the PostToolUse hook.
+
 **Confidence levels:** Graph edges carry confidence labels — `EXTRACTED`
 (verified by AST analysis), `INFERRED` (heuristic), `AMBIGUOUS`. Session-start
 reports these percentages (e.g., "90% EXTRACTED, 10% INFERRED") so agents can
@@ -314,18 +337,44 @@ Loads `.harness.yaml` with layered merge (base config + local override). `getEnf
 ### Session (`src/session/`)
 
 `detectEnvironment()` checks for rtk, jcodemunch, graphify, and other tools via
-injectable `ExecFn`. `SessionCache` with 30-min TTL persists to
-`/tmp/rig-session-{cwd-hash}.json` for cross-process state sharing between hook
-invocations. Environment detection results, edited file tracking, phase, metrics
-baseline (including per-project graphify stats keyed by directory path), tool call
-counters, and a `toolsWarned` flag all persist. `handleSessionStart()` auto-indexes
-the project, captures a metrics baseline on first session, emits active enforcement
-rules from `.harness.yaml` (so skill templates can reference them dynamically),
-captures graphify graph stats for the CWD project when available, and emits a
-one-time warning if rtk or jcodemunch are not installed (suppressed for the rest
-of the session via the `toolsWarned` cache flag). A `[HINT]` is emitted when
-graphify is not installed. `SessionCache` provides `getGraphifyStats(dir)` and
-`setGraphifyStats(dir, stats)` accessors for per-directory graphify data.
+injectable `ExecFn`. `SessionCache` with a 4-hour env TTL persists to
+`/tmp/rig-session-{hash}.json` (hash of cwd + session id) for cross-process
+state sharing between hook invocations. Environment detection results, edited
+file tracking, phase, metrics baseline (including per-project graphify stats
+keyed by directory path), tool call counters, and a `toolsWarned` flag all
+persist. Deleting `/tmp/rig-session-*.json` forces immediate re-detection.
+
+**jcodemunch detection** (`environment.ts` + `claude-config.ts`) resolves a
+working transport in priority order:
+
+1. `jcodemunch` CLI binary on PATH
+2. **The MCP server command registered in Claude Code's own config** —
+   `~/.claude.json` (local scope `projects[cwd].mcpServers`, then user scope)
+   and `<cwd>/.mcp.json` (project scope). This is ground truth: it handles
+   installs a PATH probe can never find, e.g. `uvx --from <wheel-url>
+   jcodemunch-mcp` from a GitHub release.
+3. `jcodemunch-mcp` binary on PATH
+4. Bare `uvx jcodemunch-mcp` (PyPI installs only)
+
+The winning transport is recorded on `Environment.jcodemunchTransport` and
+reused verbatim for session-start auto-indexing — it is never re-derived.
+CWD-to-repo matching prefers exact `source_root` paths from `list_repos`,
+falling back to strict basename equality. The MCP `initialize` response's
+`protocolVersion` is validated (warn-only), and rtk/graphify versions are
+probed for diagnostics (graphify warns outside its tested range).
+
+`handleSessionStart()` auto-indexes the project through the detected
+transport, captures a metrics baseline on first session (with `rtk gain`
+schema validation — format drift warns instead of silently zeroing savings),
+emits active enforcement rules from `.harness.yaml` (so skill templates can
+reference them dynamically), captures graphify graph stats for the CWD
+project when available (parse-drift and benchmark-fallback warnings
+surfaced), and emits a one-time warning if rtk or jcodemunch are not
+detected — including a pointer to `claude mcp list` and an orphaned-index
+warning when `~/.code-index` holds data but no transport works. A `[HINT]`
+is emitted when graphify is not installed. `SessionCache` provides
+`getGraphifyStats(dir)` and `setGraphifyStats(dir, stats)` accessors for
+per-directory graphify data.
 
 ### CLI (`src/cli/`)
 
@@ -401,6 +450,14 @@ Key design decisions:
   this is intentional (opt-in rather than silently granting broad access).
 - **First-occurrence advisory suppression**: The tool router advises jcodemunch/scout
   once per intent type per session via `hasAdvised()`. If the agent ignores the first
-  advisory, it receives no further reminders for that session. The jcodemunch detection
-  fix (uvx support) ensures the advisory fires in the first place; suppression
-  behavior itself is tracked for future work (periodic re-advisory or escalating urgency).
+  advisory, it receives no further reminders for that session. Config-registration
+  detection ensures the advisory fires in the first place; suppression behavior
+  itself is tracked for future work (periodic re-advisory or escalating urgency).
+  For deterministic routing (demos, strict projects), set the `tool_routing`
+  rules to `block` in `.harness.yaml` — blocks cannot be ignored.
+- **Cache fragmentation across cwd/session-id**: session cache files are keyed
+  by (cwd, session id), so hooks running from a subdirectory or a subagent
+  context write advisory state and savings counters to separate files. The
+  practical effects are an occasional repeated advisory and `/savings`
+  under-counting work done in those contexts. Aggregation is tracked as
+  future work.
