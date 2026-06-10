@@ -27,7 +27,10 @@ Built from the [agentic-patterns](https://github.com/franklywatson/agentic-patte
 - Node.js 18+
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework (required; all skill chain skills wrap `superpowers:*` skills)
 - [rtk](https://github.com/franklywatson/rtk) -- token-optimized command proxy (strongly recommended; tool router redirects `grep`/`find`/`cat` through rtk when available)
-- [jcodemunch](https://github.com/franklywatson/jcodemunch) -- indexed code search MCP server (strongly recommended; powers the scout agent and tool router fallback). Detected via PATH or, failing that, the MCP server command registered in Claude Code's own config (`claude mcp list`) -- wheel-URL `uvx --from` installs work out of the box.
+- [jcodemunch](https://github.com/franklywatson/jcodemunch) -- indexed code search MCP server
+  (strongly recommended; powers the scout agent and tool router fallback). Detected via PATH or,
+  failing that, the MCP server command registered in Claude Code's own config (`claude mcp list`)
+  -- wheel-URL `uvx --from` installs work out of the box.
 - [graphify](https://github.com/safishamsi/graphify) -- knowledge graph builder
   (recommended; auto-builds graphs at session start and provides god nodes,
   module communities, and dependency path queries that complement jcodemunch's
