@@ -1,7 +1,6 @@
-import { join } from 'node:path';
 import type { Environment, GraphBuildInfo } from '../types.js';
+import { graphJsonPath, GRAPH_JSON_REL, GRAPHIFY_PLACEHOLDER_THRESHOLD } from '../constants.js';
 
-const PLACEHOLDER_THRESHOLD = 1024; // bytes
 const BUILD_TIMEOUT = 120_000; // ms
 
 type ExecFn = (cmd: string, opts?: { encoding?: string; timeout?: number }) => string;
@@ -17,18 +16,18 @@ export function determineGraphState(
   existsCheck: ExistsCheck,
   statCheck: StatCheck,
 ): GraphBuildInfo {
-  const graphJsonPath = join(cwd, 'graphify-out', 'graph.json');
+  const graphFile = graphJsonPath(cwd);
 
-  if (!existsCheck(graphJsonPath)) {
+  if (!existsCheck(graphFile)) {
     return { state: 'absent' };
   }
 
-  const stat = statCheck(graphJsonPath);
-  if (!stat || stat.size < PLACEHOLDER_THRESHOLD) {
+  const stat = statCheck(graphFile);
+  if (!stat || stat.size < GRAPHIFY_PLACEHOLDER_THRESHOLD) {
     return { state: 'absent' };
   }
 
-  return { state: 'ready', graphPath: 'graphify-out/graph.json' };
+  return { state: 'ready', graphPath: GRAPH_JSON_REL };
 }
 
 /**
@@ -59,12 +58,12 @@ export function waitForBuild(
   existsCheck: ExistsCheck,
   statCheck: StatCheck,
 ): GraphBuildInfo {
-  const graphJsonPath = join(cwd, 'graphify-out', 'graph.json');
+  const graphFile = graphJsonPath(cwd);
 
-  if (existsCheck(graphJsonPath)) {
-    const stat = statCheck(graphJsonPath);
-    if (stat && stat.size >= PLACEHOLDER_THRESHOLD) {
-      return { state: 'ready', graphPath: 'graphify-out/graph.json' };
+  if (existsCheck(graphFile)) {
+    const stat = statCheck(graphFile);
+    if (stat && stat.size >= GRAPHIFY_PLACEHOLDER_THRESHOLD) {
+      return { state: 'ready', graphPath: GRAPH_JSON_REL };
     }
   }
 

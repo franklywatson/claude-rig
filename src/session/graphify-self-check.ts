@@ -1,4 +1,5 @@
 import { join } from 'node:path';
+import { graphJsonPath as resolveGraphJsonPath } from '../constants.js';
 import type { ExecFn } from './environment.js';
 import type { Environment, GraphifyMcpReadiness } from '../types.js';
 
@@ -56,7 +57,7 @@ export function checkGraphifyMcpReadiness(
   // Step 4: Is the server registered with Claude Code?
   const registered = isRegisteredWithClaude(exec);
   if (!registered) {
-    const graphJsonPath = join(cwd, 'graphify-out', 'graph.json');
+    const graphJsonPath = resolveGraphJsonPath(cwd);
     const fixCommand = buildMcpAddCommand(pythonPath!, graphJsonPath);
     return { status: 'cli_only_not_registered', fixCommand };
   }

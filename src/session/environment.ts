@@ -2,6 +2,12 @@ import { execSync, spawn } from 'node:child_process';
 import { basename, join, resolve } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 import type { Environment, GraphBuildInfo, JcodemunchTransport } from '../types.js';
+import {
+  graphJsonPath,
+  rebuildLockPath,
+  GRAPH_JSON_REL,
+  GRAPHIFY_PLACEHOLDER_THRESHOLD,
+} from '../constants.js';
 import { resolveJcodemunchRegistration } from './claude-config.js';
 import type { McpRegistration } from './claude-config.js';
 
@@ -124,8 +130,6 @@ function detectRtk(exec: ExecFn): { available: boolean; path: string | null; ver
   }
 }
 
-const PLACEHOLDER_THRESHOLD = 1024; // bytes
-
 const defaultStatCheck = (path: string): { size: number } | undefined => {
   try {
     return statSync(path);
@@ -193,18 +197,18 @@ export function detectGraphify(
   // A valid graph on disk is sufficient for 'ready' regardless of CLI
   // presence — the CLI may live off the hook PATH (e.g. ~/.local/bin) and is
   // only needed for rebuilding. _cliFound tells callers whether rebuild works.
-  const graphPath = join(cwd, 'graphify-out', 'graph.json');
+  const graphPath = graphJsonPath(cwd);
   let graphValid = false;
   if (existsCheck(graphPath)) {
     const stat = statCheck(graphPath);
-    graphValid = !!stat && stat.size >= PLACEHOLDER_THRESHOLD;
+    graphValid = !!stat && stat.size >= GRAPHIFY_PLACEHOLDER_THRESHOLD;
     // Placeholder or tiny file — treat as absent
   }
 
   // graphify leaves .rebuild.lock behind after completed builds: a lock with a
   // graph newer than it is stale (finished build); a lock newer than the graph
   // (or with no valid graph) means a rebuild is in progress.
-  const lockPath = join(cwd, 'graphify-out', '.rebuild.lock');
+  const lockPath = rebuildLockPath(cwd);
   if (existsCheck(lockPath)) {
     if (!graphValid) {
       return { state: 'building', _cliFound: cliAvailable, cliVersion };
@@ -218,7 +222,7 @@ export function detectGraphify(
   }
 
   if (graphValid) {
-    return { state: 'ready', graphPath: 'graphify-out/graph.json', _cliFound: cliAvailable, cliVersion };
+    return { state: 'ready', graphPath: GRAPH_JSON_REL, _cliFound: cliAvailable, cliVersion };
   }
 
   return { state: 'absent', _cliFound: cliAvailable, cliVersion };

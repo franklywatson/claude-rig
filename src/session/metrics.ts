@@ -1,5 +1,6 @@
 import type { GraphifyProjectStats, MetricsBaseline } from '../types.js';
-import { basename, join } from 'node:path';
+import { basename } from 'node:path';
+import { graphJsonPath, graphReportPath } from '../constants.js';
 
 export type ExecFn = (cmd: string, opts?: { timeout?: number }) => string;
 
@@ -16,7 +17,7 @@ const GAIN_TIMEOUT_MS = 10_000;
  */
 export function captureGraphifyStats(cwd: string, exec: ExecFn): GraphifyProjectStats | null {
   try {
-    const raw = exec(`cat "${cwd}/graphify-out/graph.json"`, { timeout: BENCHMARK_TIMEOUT_MS });
+    const raw = exec(`cat "${graphJsonPath(cwd)}"`, { timeout: BENCHMARK_TIMEOUT_MS });
     const data = JSON.parse(raw) as { nodes?: unknown[]; links?: unknown[] };
     const nodes = data.nodes ?? [];
     const links = data.links ?? [];
@@ -54,7 +55,7 @@ export function captureGraphifyStatsViaReport(
 ): GraphifyProjectStats | null {
   // Try GRAPH_REPORT.md first (has full stats including confidence breakdown)
   try {
-    const report = exec(`cat "${cwd}/graphify-out/GRAPH_REPORT.md"`, { timeout: REPORT_TIMEOUT_MS });
+    const report = exec(`cat "${graphReportPath(cwd)}"`, { timeout: REPORT_TIMEOUT_MS });
 
     // Match: "40994 nodes · 129501 edges · 439 communities detected"
     const summaryMatch = report.match(/(\d+)\s+nodes\s*·\s*(\d+)\s+edges\s*·\s*(\d+)\s+communities/);
@@ -86,7 +87,7 @@ export function captureGraphifyStatsViaReport(
 
   // Fallback: graphify benchmark CLI (nodes/edges only)
   try {
-    const output = exec(`graphify benchmark "${cwd}/graphify-out/graph.json"`, { timeout: BENCHMARK_TIMEOUT_MS });
+    const output = exec(`graphify benchmark "${graphJsonPath(cwd)}"`, { timeout: BENCHMARK_TIMEOUT_MS });
     const match = output.match(/Graph:\s*(\d[\d,]*)\s+nodes,\s*(\d[\d,]*)\s+edges/);
     if (match) {
       onWarn?.('graphify: using benchmark fallback — confidence breakdown unavailable');
@@ -115,7 +116,7 @@ export function captureExternalGraphifyStats(
   exec: ExecFn,
   onWarn?: (msg: string) => void,
 ): GraphifyProjectStats | null {
-  const graphPath = join(directory, 'graphify-out', 'graph.json');
+  const graphPath = graphJsonPath(directory);
 
   // Check if graph already exists
   let graphExists = false;
