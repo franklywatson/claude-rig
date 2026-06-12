@@ -171,7 +171,21 @@ rules:
   zero_defect:
     tolerance: strict
     unrelated_errors: silent     # silent|advise|block — how to handle pre-existing failures
+  workflow:
+    branch_discipline: advise    # block | advise | silent — git commit/push on a protected branch
+    protected_branches: [master, main]
+    isolation_strategy: auto     # auto | branch | worktree
 ```
+
+**Branch discipline (`rules.workflow`):** when you commit or push on a branch
+listed in `protected_branches`, rig advises once per session (or blocks, at
+`block` level; `silent` disables the rule entirely). The same rule drives a
+session-start hint when the session opens on a protected branch.
+`isolation_strategy` controls what rig recommends instead: `worktree` or
+`branch` force one answer, while `auto` reads the signals — a dirty working
+tree means a worktree (keeps in-flight work untangled), plan execution favors
+a worktree (the `tdd+`/`sdd+` preflight), and otherwise a plain feature branch
+is enough.
 
 **Levels:**
 

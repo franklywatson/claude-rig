@@ -44,7 +44,8 @@ Rig installs the cockpit into a Claude Code project:
   advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and `rtk cat` on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, constitutional rules (real dependencies in stack/E2E tests),
   and zero-defect status (with pre-existing failure classification); a PreToolUse test-scope check redirects full-suite runs
-  to scoped tests during `tdd+`/`sdd+`. Advisories reach the agent as `additionalContext`; blocks exit 2
+  to scoped tests during `tdd+`/`sdd+`, and configurable branch/PR discipline with worktree-aware isolation advice guards
+  commits on protected branches. Advisories reach the agent as `additionalContext`; blocks exit 2
 - **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`,
   and `sdd+` for subagent-driven plan execution via typed agents (`code-reviewer`, `spec-reviewer`, `implementer`) installed into `.claude/agents/`
 - **Scout Agent** -- cross-repo indexing agent that builds a typed `CodebaseMap`
@@ -222,6 +223,10 @@ rules:
     native_grep: advise        # advise jcodemunch for Grep
     native_glob: advise        # advise jcodemunch for Glob on code patterns
     rtk_cat_code: block        # block rtk cat on code files
+  workflow:
+    branch_discipline: advise  # block | advise | silent — git commit/push on a protected branch
+    protected_branches: [master, main]
+    isolation_strategy: auto   # auto | branch | worktree — auto picks worktree when the tree is dirty
 ```
 
 Each enforcement rule can be `block` (hook exits nonzero), `advise` (prints warning),

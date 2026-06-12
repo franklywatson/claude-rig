@@ -56,7 +56,7 @@ PreToolUse Hook (handlePreToolUse)
 HookResult: { decision, reason } | { type: "rewrite", command }
 ```
 
-**Files:** `src/router/intent.ts`, `src/router/rules.ts`, `src/router/resolver.ts`, `src/router/hook.ts`
+**Files:** `src/router/intent.ts`, `src/router/rules.ts`, `src/router/resolver.ts`, `src/router/hook.ts`, `src/router/branch-discipline.ts`
 
 ### Intent types
 
@@ -118,6 +118,23 @@ cannot safely rewrite one segment of a pipeline. Blocks are different:
 destructive operations (`sed -i`, awk redirects) are detected in **every**
 quote-aware segment of a compound command, so `echo ok && sed -i ...` is
 blocked even though it would never be rewritten.
+
+### Branch discipline (commit-time)
+
+A Step 1.6 check (`src/router/branch-discipline.ts`, between the test-scope
+check and the rewrite steps) intercepts `git commit` and `git push` when the
+live branch is in `rules.workflow.protected_branches`. Like the destructive-op
+blocks, it scans **every** quote-aware compound segment, so
+`cd /tmp && git commit -m "x"` is still caught while `echo "git commit"`
+(quoted) is not. At `advise` level (the default) the recommendation — a
+worktree or a feature branch, resolved by `isolation_strategy` (`auto` picks
+worktree when the working tree is dirty) — reaches the agent **once per
+session** via the agent-visible `additionalContext` channel
+(`hasAdvised('branch_discipline')` suppresses repeats); the commit proceeds.
+At `block` level the command is rejected (exit 2) with remediation text every
+time; `silent` disables the check. It runs before the rewrite steps because a
+block must win over a rewrite. Git probes use the injectable `ExecFn`; any
+git failure (not a repo, git missing) makes the check a no-op.
 
 ---
 
@@ -457,6 +474,18 @@ warning when `~/.code-index` holds data but no transport works. A `[HINT]`
 is emitted when graphify is not installed. `SessionCache` provides
 `getGraphifyStats(dir)` and `setGraphifyStats(dir, stats)` accessors for
 per-directory graphify data.
+
+Session start also runs `checkBranchDiscipline` (`src/session/worktree.ts`):
+when the session opens on a branch listed in
+`rules.workflow.protected_branches` (default `master`/`main`), it emits a
+one-line hint naming the active level and the recommended isolation —
+worktree vs feature branch, resolved by `isolation_strategy` (`worktree` and
+`branch` force the answer; `auto` recommends a worktree when `git status
+--porcelain` shows a dirty tree, a plain branch otherwise). `silent` level
+suppresses the hint; outside a git repo it is a no-op. The same
+`rules.workflow` config drives the tool router's commit-time check (Layer 1,
+Step 1.6). `checkWorktreeSuggestion` remains as a deprecated wrapper over the
+default config.
 
 ### CLI (`src/cli/`)
 
