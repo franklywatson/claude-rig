@@ -4,11 +4,40 @@
 ![Coverage Gate](https://github.com/franklywatson/claude-rig/actions/workflows/coverage.yml/badge.svg)
 ![Docs Quality](https://github.com/franklywatson/claude-rig/actions/workflows/docs.yml/badge.svg)
 
-Agent harness that enforces tool routing, skill chains, and multi-agent discipline for [Claude Code](https://claude.ai/code).
+A cockpit for your [Claude Code](https://claude.ai/code) tooling stack.
+[rtk](https://github.com/franklywatson/rtk),
+[jcodemunch](https://github.com/franklywatson/jcodemunch),
+[graphify](https://github.com/safishamsi/graphify),
+[Headroom](https://github.com/chopratejas/headroom), and
+[superpowers](https://github.com/obra/superpowers) are each excellent
+instruments on their own — rig is the panel that wires whichever of them you
+have installed into one place, with plug-and-play detection, programmatic
+routing, and a single pane of visibility.
+
+## The cockpit
+
+Each tool in the stack answers one question well: rtk (cheap shell output),
+jcodemunch (what exists in the code), graphify (how it connects), Headroom
+(context compression), superpowers (process discipline). Run them separately
+and you carry the integration burden — remembering which is installed, which
+to reach for, and what each is saving you. Rig carries it instead:
+
+- **Plug-and-play detection** — session start probes the whole panel (PATH,
+  MCP registrations, proxy markers), auto-indexes the project, auto-builds the
+  knowledge graph, and reports what's online. Install a tool and it joins the
+  panel; remove one and rig degrades gracefully (jcodemunch-only analysis when
+  graphify fails, pass-through when rtk is absent, general-purpose subagents
+  when typed agents are deleted).
+- **Routing, not memory** — PreToolUse hooks steer every operation to the best
+  instrument available right now. You never have to remember the stack exists.
+- **One pane of glass** — `/savings` reports every layer side by side (tool
+  layer, context layer, graph stats) without double-counting;
+  `/verify-harness` is a 35-point preflight check; session start prints the
+  panel status every time you sit down.
 
 ## What it does
 
-Rig installs guardrails into a Claude Code project:
+Rig installs the cockpit into a Claude Code project:
 
 - **Tool Router** -- intercepts shell commands via PreToolUse hooks, transparently rewrites
   `grep`/`find`/`cat`/`git` to rtk when available (using Claude Code's `updatedInput` protocol);
