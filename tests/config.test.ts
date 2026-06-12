@@ -64,6 +64,13 @@ describe('config', () => {
       const config = await loadConfig(resolve(FIXTURES, 'broken-config.yaml'));
       expect(config).toEqual(DEFAULT_CONFIG);
     });
+
+    it('defaults workflow rules: advise, master/main, auto strategy', async () => {
+      const config = await loadConfig('/nonexistent/.harness.yaml');
+      expect(config.rules.workflow?.branch_discipline).toBe('advise');
+      expect(config.rules.workflow?.protected_branches).toEqual(['master', 'main']);
+      expect(config.rules.workflow?.isolation_strategy).toBe('auto');
+    });
   });
 
   describe('mergeConfigs', () => {
@@ -100,6 +107,14 @@ describe('config', () => {
       expect(merged.rules.tool_routing).toBeDefined();
       expect(merged.rules.tool_routing.grep).toBe('advise');
       expect(merged.rules.tool_routing.sed_i).toBe('block');
+    });
+
+    it('merges partial workflow overrides onto defaults', () => {
+      const merged = mergeConfigs(structuredClone(DEFAULT_CONFIG), {
+        rules: { workflow: { branch_discipline: 'block' } },
+      } as HarnessConfig);
+      expect(merged.rules.workflow?.branch_discipline).toBe('block');
+      expect(merged.rules.workflow?.protected_branches).toEqual(['master', 'main']);
     });
   });
 });

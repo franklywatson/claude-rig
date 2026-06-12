@@ -216,6 +216,12 @@ export interface ZeroDefectRules {
   unrelated_errors?: EnforcementLevel;
 }
 
+export interface WorkflowRules {
+  branch_discipline?: EnforcementLevel;
+  protected_branches?: string[];
+  isolation_strategy?: 'auto' | 'branch' | 'worktree';
+}
+
 export interface HarnessConfig {
   rules: {
     tool_routing?: ToolRoutingRules;
@@ -224,6 +230,7 @@ export interface HarnessConfig {
     stale_tests?: StaleTestRules;
     test_scope?: TestScopeRules;
     zero_defect?: ZeroDefectRules;
+    workflow?: WorkflowRules;
     enforcement?: {
       default_level: EnforcementLevel;
     };
