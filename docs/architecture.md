@@ -138,22 +138,33 @@ PostToolUse Hook (handlePostToolUse)
      |
 Each check returns a violation message or null
      |
-Combined violations joined as advisory output
-     |
-HookResult: { decision, reason }
+Combined violations joined; advise-level output emitted as
+agent-visible additionalContext JSON, block-level as exit 2 + stderr
 ```
 
-> **Note:** `checkTestScope` exists in `src/enforcement/test-scope.ts` but is not
-> yet wired into the pipeline. It redirects full-suite runs to scoped tests during
-> `tdd+` phase when implemented.
+The handler also persists state the PreToolUse hook depends on: source/test
+edits are recorded in the session cache (`addEditedFile`), and `Skill` tool
+invocations of the chain skills (`tdd-plus`, `sdd-plus`, etc.) set the current
+phase (`setPhase`). Hooks run as separate processes, so the session cache is
+the only channel that crosses invocations.
+
+A fourth check, `checkTestScope` (`src/enforcement/test-scope.ts`), runs in
+the **PreToolUse** hook rather than this pipeline: its output is a scoped-run
+redirect, which is only actionable before the full suite executes (see "Test
+scope control" below).
 
 ### Enforcement levels
 
 | Level | Behavior | Exit code |
 | ----- | -------- | -------- |
-| `block` | Hook exits nonzero, tool call rejected | 2 |
-| `advise` | Warning printed, tool call proceeds | 0 |
+| `block` | PreToolUse: tool call rejected, stderr shown to agent. PostToolUse: stderr fed back to agent as an error (tool already ran) | 2 |
+| `advise` | Advisory emitted as agent-visible `additionalContext` JSON on stdout; tool call proceeds | 0 |
 | `silent` | Logged only, no output | 0 |
+
+Advise-level output uses the hook protocol's `hookSpecificOutput.additionalContext`
+channel — Claude Code injects it next to the tool result so the **agent** sees
+it. Plain text on exit 0 only reaches the human UI, which is why earlier
+versions' advisories were invisible to the agent.
 
 ### Stale test detection
 
@@ -164,7 +175,15 @@ just made.
 
 ### Test scope control
 
-During `tdd+` phase, running the full test suite (e.g., `npm test`) is redirected to scoped runs targeting only the affected test file. This keeps iteration fast during red-green-refactor cycles.
+During `tdd+` or `sdd+` phase, running the full test suite (e.g., `npm test`,
+`npx vitest run`, `pytest`) triggers a redirect suggestion listing scoped test
+files derived from the session's recorded source edits. This keeps iteration
+fast during red-green-refactor cycles. The check runs in the **PreToolUse**
+hook (before the suite executes); the phase comes from the session cache,
+set when a chain skill is invoked. `rules.test_scope.enforcement` controls the
+level (default `advise`; `block` rejects the command), and `allowed_unscoped`
+patterns (e.g. `vitest watch`) are exempt. Unlike router advisories, test-scope
+advisories are not first-occurrence-suppressed — every unscoped run is flagged.
 
 ### Constitutional rules
 

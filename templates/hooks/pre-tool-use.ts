@@ -57,12 +57,20 @@ import { readFileSync } from 'node:fs';
       process.exit(0);
     }
 
-    // Advise or block: output plain text
+    // Block: exit 2 + stderr (rejects the tool call, agent-visible)
     if (result && typeof result === 'string') {
-      console.error(result);
       if (result.startsWith('[BLOCK]')) {
+        console.error(result);
         process.exit(2); // block
       }
+      // Advise: agent-visible additionalContext JSON. Plain text on exit 0
+      // only reaches the human UI, never the agent.
+      console.log(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PreToolUse',
+          additionalContext: result,
+        },
+      }));
     }
     process.exit(0); // allow
   }).catch(() => {

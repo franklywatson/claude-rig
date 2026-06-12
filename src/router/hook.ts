@@ -6,6 +6,7 @@ import { findMatchingRule, getDefaultRules } from './rules.js';
 import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
+import { checkTestScope } from '../enforcement/test-scope.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
 export type ExistsCheckFn = (path: string) => boolean;
@@ -192,6 +193,26 @@ export function handlePreToolUse(
         'This operation is always blocked. Use the recommended alternative.',
       ].join('\n');
     }
+  }
+
+  // Step 1.5: Test-scope check — during tdd+/sdd+, advise a scoped run before
+  // a full-suite command executes. Phase and edit history come from the
+  // session cache (persisted by the PostToolUse hook). Runs pre-execution
+  // because a scoped-run redirect is only actionable before the suite runs.
+  // No first-occurrence suppression: every unscoped run is flagged.
+  // The early return before the rewrite steps (2 and 3) is safe today because
+  // no UNSCOPED_TEST_PATTERNS command is rtk- or python-rewritable; revisit
+  // this ordering if RTK_PREFIXES ever gains test runners.
+  if (tool === 'Bash' && typeof args.command === 'string') {
+    // Hooks are separate processes, so the source-edit history comes from the
+    // session cache (persisted by the PostToolUse hook), not a FileTracker.
+    const scopeViolation = checkTestScope(
+      args.command,
+      cache.getCurrentPhase(),
+      cache.getEditedFiles('source'),
+      config,
+    );
+    if (scopeViolation) return scopeViolation;
   }
 
   // Step 2: Python environment rewrite for Bash commands (skip compound commands)

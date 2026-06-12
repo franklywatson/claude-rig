@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { handlePostToolUse } from '../../src/enforcement/post-tool-use.js';
+import { handlePostToolUse, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
+import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
 import { SessionCache } from '../../src/session/cache.js';
 import type { HarnessConfig } from '../../src/types.js';
@@ -52,7 +53,7 @@ describe('handlePostToolUse', () => {
     const testOutput = 'FAIL tests/a.test.ts\nTests: 1 failed';
     const result = handlePostToolUse('Bash', { command: 'npx vitest run', output: testOutput }, tracker, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('ZERO-DEFECT');
+    expect(result?.message).toContain('ZERO-DEFECT');
   });
 
   it('checks constitutional on stack test file edits', () => {
@@ -67,7 +68,7 @@ describe('handlePostToolUse', () => {
       config,
     );
     expect(result).not.toBeNull();
-    expect(result).toContain('no_mocks');
+    expect(result?.message).toContain('no_mocks');
   });
 
   it('combines multiple violations into single output', () => {
@@ -83,7 +84,7 @@ describe('handlePostToolUse', () => {
       config,
     );
     // Should contain the constitutional violation
-    expect(result).toContain('no_mocks');
+    expect(result?.message).toContain('no_mocks');
   });
 
   it('returns null for clean operations', () => {
@@ -285,5 +286,175 @@ describe('handlePostToolUse', () => {
     );
 
     expect(cache.getGraphifyStats('/external/unreachable')).toBeUndefined();
+  });
+
+  describe('session cache persistence of edits', () => {
+    it('persists source file edits to the session cache', () => {
+      handlePostToolUse('Edit', { file_path: 'src/router/resolver.ts' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual(['src/router/resolver.ts']);
+    });
+
+    it('persists test file edits to the session cache', () => {
+      handlePostToolUse('Write', { file_path: 'tests/router/resolver.test.ts' }, tracker, cache, config);
+      expect(cache.getEditedFiles('test')).toEqual(['tests/router/resolver.test.ts']);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+    });
+
+    it('does not persist non-source/non-test files', () => {
+      handlePostToolUse('Edit', { file_path: 'docs/architecture.md' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+      expect(cache.getEditedFiles('test')).toEqual([]);
+    });
+  });
+
+  describe('structured severity', () => {
+    it('returns level advise for an advise-level constitutional violation', () => {
+      const result = handlePostToolUse(
+        'Edit',
+        {
+          file_path: 'tests/router/resolver.stack.test.ts',
+          new_string: "vi.mock('../src/config.js');",
+        },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('advise');
+      expect(result?.message).toContain('no_mocks');
+    });
+
+    it('returns level block for a block-level constitutional violation', () => {
+      const result = handlePostToolUse(
+        'Edit',
+        { file_path: 'src/notes.ts', new_string: '// all tests pass' },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('evidence_only');
+    });
+
+    it('does not escalate an advise-level zero-defect result whose output embeds the literal [BLOCK]', () => {
+      config.rules.zero_defect = { tolerance: 'permissive' };
+      const testOutput = [
+        "FAIL tests/hooks.test.ts > emits the '[BLOCK]' prefix for block-level rules",
+        'Tests: 1 failed',
+      ].join('\n');
+
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run', output: testOutput },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('advise');
+      // The message legitimately contains the literal string '[BLOCK]' from
+      // the embedded test output — the level must come from the check, not
+      // from sniffing the message text.
+      expect(result?.message).toContain('[BLOCK]');
+    });
+
+    it('combines to level block when any violation is block-level', () => {
+      // Stale-test advisory (advise-level) + evidence_only (block-level)
+      // fire in the same call: combined level must be block.
+      tracker.recordEdit('src/other.ts');
+      tracker.nextTurn();
+      const result = handlePostToolUse(
+        'Edit',
+        { file_path: 'src/notes.ts', new_string: '// all tests pass' },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('STALE TEST');
+      expect(result?.message).toContain('evidence_only');
+      expect(result?.level).toBe('block');
+    });
+  });
+
+  describe('skill phase tracking', () => {
+    it('sets tdd+ phase when the tdd-plus skill is invoked', () => {
+      const result = handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('tdd+');
+      expect(result).toBeNull();
+    });
+
+    it('sets sdd+ phase when the sdd-plus skill is invoked', () => {
+      handlePostToolUse('Skill', { skill: 'sdd-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('sdd+');
+    });
+
+    it('sets verify+ phase when verify-plus is invoked (exits scoped-test phases)', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('verify+');
+    });
+
+    it('maps investigate to debug+ phase', () => {
+      handlePostToolUse('Skill', { skill: 'investigate' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('debug+');
+    });
+
+    it('strips plugin namespaces from skill names', () => {
+      handlePostToolUse('Skill', { skill: 'my-plugin:tdd-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('tdd+');
+    });
+
+    it('ignores skills that are not chain phases', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'savings' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('tdd+');
+    });
+
+    it('clears edited-file history when entering tdd+ from no phase', () => {
+      cache.addEditedFile('src/old-feature.ts', 'source');
+      cache.addEditedFile('tests/old-feature.test.ts', 'test');
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+      expect(cache.getEditedFiles('test')).toEqual([]);
+    });
+
+    it('clears edited-file history when entering a scoped phase from a different phase', () => {
+      handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
+      cache.addEditedFile('src/feature-one.ts', 'source');
+      handlePostToolUse('Skill', { skill: 'sdd-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+    });
+
+    it('does not clear edited-file history when re-entering the same scoped phase', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Edit', { file_path: 'src/feature.ts' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual(['src/feature.ts']);
+    });
+
+    it('does not clear edited-file history when entering a non-scoped phase', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Edit', { file_path: 'src/feature.ts' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual(['src/feature.ts']);
+    });
+
+    it('covers every phase-tracker phase in SKILL_PHASE_MAP', () => {
+      // If a future chain skill adds a phase to PHASE_ORDER without a skill
+      // name mapping here, phase tracking silently misses it.
+      const reachablePhases = new Set(Object.values(SKILL_PHASE_MAP));
+      for (const phase of new SkillPhaseTracker().getAllPhases()) {
+        expect(reachablePhases).toContain(phase);
+      }
+    });
+
+    it('maps every SKILL_PHASE_MAP value to a valid tracker phase', () => {
+      const trackerPhases = new Set<string>(new SkillPhaseTracker().getAllPhases());
+      for (const phase of Object.values(SKILL_PHASE_MAP)) {
+        expect(trackerPhases).toContain(phase);
+      }
+    });
   });
 });

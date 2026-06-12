@@ -34,8 +34,8 @@ describe('checkZeroDefect', () => {
 
     const result = checkZeroDefect(output, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('ZERO-DEFECT');
-    expect(result).toContain('FAIL');
+    expect(result?.message).toContain('ZERO-DEFECT');
+    expect(result?.message).toContain('FAIL');
   });
 
   it('detects ERROR in test output', () => {
@@ -46,7 +46,7 @@ describe('checkZeroDefect', () => {
 
     const result = checkZeroDefect(output, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('ERROR');
+    expect(result?.message).toContain('ERROR');
   });
 
   it('detects TypeScript compilation errors', () => {
@@ -56,7 +56,7 @@ describe('checkZeroDefect', () => {
 
     const result = checkZeroDefect(output, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('TS2322');
+    expect(result?.message).toContain('TS2322');
   });
 
   it('detects Python test failures', () => {
@@ -67,7 +67,7 @@ describe('checkZeroDefect', () => {
 
     const result = checkZeroDefect(output, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('FAILED');
+    expect(result?.message).toContain('FAILED');
   });
 
   it('extracts failure summary lines', () => {
@@ -79,9 +79,9 @@ describe('checkZeroDefect', () => {
     ].join('\n');
 
     const result = checkZeroDefect(output, config);
-    expect(result).toContain('2 failure(s) found');
-    expect(result).toContain('resolver.test.ts');
-    expect(result).toContain('rules.test.ts');
+    expect(result?.message).toContain('2 failure(s) found');
+    expect(result?.message).toContain('resolver.test.ts');
+    expect(result?.message).toContain('rules.test.ts');
   });
 
   it('respects permissive tolerance mode', () => {
@@ -89,14 +89,16 @@ describe('checkZeroDefect', () => {
     const output = 'FAIL tests/a.test.ts\nTests: 1 failed';
     const result = checkZeroDefect(output, config);
     // Permissive mode still flags but as advise
-    expect(result).toContain('[ADVISE]');
+    expect(result?.message).toContain('[ADVISE]');
+    expect(result?.level).toBe('advise');
   });
 
   it('uses block in strict mode', () => {
     config.rules.zero_defect = { tolerance: 'strict' };
     const output = 'FAIL tests/a.test.ts\nTests: 1 failed';
     const result = checkZeroDefect(output, config);
-    expect(result).toContain('[BLOCK]');
+    expect(result?.message).toContain('[BLOCK]');
+    expect(result?.level).toBe('block');
   });
 
   it('returns null for warning-only output in permissive mode', () => {
@@ -207,10 +209,21 @@ describe('checkZeroDefect with changedFiles', () => {
 
     const result = checkZeroDefect(output, config, ['tests/router/resolver.test.ts']);
     expect(result).not.toBeNull();
-    expect(result).toContain('[BLOCK]');
-    expect(result).toContain('regression');
-    expect(result).toContain('[ADVISE]');
-    expect(result).toContain('pre-existing');
+    expect(result?.message).toContain('[BLOCK]');
+    expect(result?.message).toContain('regression');
+    expect(result?.message).toContain('[ADVISE]');
+    expect(result?.message).toContain('pre-existing');
+    expect(result?.level).toBe('block'); // regressions present → block wins
+  });
+
+  it('reports pre-existing-only failures as advise-level', () => {
+    config.rules.zero_defect = { tolerance: 'strict', unrelated_errors: 'advise' };
+    const output = 'FAIL tests/old.test.ts';
+
+    const result = checkZeroDefect(output, config, []);
+    expect(result).not.toBeNull();
+    expect(result?.level).toBe('advise');
+    expect(result?.message).toContain('pre-existing');
   });
 
   it('blocks everything when unrelated_errors is block', () => {
@@ -218,8 +231,8 @@ describe('checkZeroDefect with changedFiles', () => {
     const output = 'FAIL tests/old.test.ts';
 
     const result = checkZeroDefect(output, config, []);
-    expect(result).toContain('[BLOCK]');
-    expect(result).not.toContain('pre-existing');
+    expect(result?.message).toContain('[BLOCK]');
+    expect(result?.message).not.toContain('pre-existing');
   });
 
   it('suppresses pre-existing when unrelated_errors is silent', () => {
@@ -237,7 +250,7 @@ describe('checkZeroDefect with changedFiles', () => {
 
     const result = checkZeroDefect(output, config, ['tests/router/resolver.test.ts']);
     expect(result).not.toBeNull();
-    expect(result).toContain('[BLOCK]');
+    expect(result?.message).toContain('[BLOCK]');
   });
 
   it('falls back to original behavior when changedFiles is undefined', () => {
@@ -245,9 +258,9 @@ describe('checkZeroDefect with changedFiles', () => {
     const output = 'FAIL tests/a.test.ts';
 
     const result = checkZeroDefect(output, config);
-    expect(result).toContain('[BLOCK]');
-    expect(result).not.toContain('regression');
-    expect(result).not.toContain('pre-existing');
+    expect(result?.message).toContain('[BLOCK]');
+    expect(result?.message).not.toContain('regression');
+    expect(result?.message).not.toContain('pre-existing');
   });
 
   it('handles mixed regressions and pre-existing with silent', () => {
@@ -259,8 +272,8 @@ describe('checkZeroDefect with changedFiles', () => {
 
     const result = checkZeroDefect(output, config, ['tests/new.test.ts']);
     expect(result).not.toBeNull();
-    expect(result).toContain('[BLOCK]');
-    expect(result).toContain('new.test.ts');
-    expect(result).not.toContain('old.test.ts');
+    expect(result?.message).toContain('[BLOCK]');
+    expect(result?.message).toContain('new.test.ts');
+    expect(result?.message).not.toContain('old.test.ts');
   });
 });

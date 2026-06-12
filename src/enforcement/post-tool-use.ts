@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { FileTracker } from './file-tracker.js';
 import { SessionCache } from '../session/cache.js';
-import type { HarnessConfig } from '../types.js';
+import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
 import { checkZeroDefect } from './zero-defect.js';
@@ -14,7 +14,9 @@ import type { ExecFn } from '../session/metrics.js';
 
 /**
  * PostToolUse hook handler. Composes all enforcement checks.
- * Returns null if all clean, or a combined violation message.
+ * Returns null if all clean, or a combined violation whose level is derived
+ * from the checks themselves (any block-level violation → 'block') — never
+ * from message text, which can embed arbitrary tool output.
  */
 export function handlePostToolUse(
   tool: string,
@@ -23,19 +25,43 @@ export function handlePostToolUse(
   cache: SessionCache,
   config: HarnessConfig,
   execFn?: ExecFn,
-): string | null {
+): EnforcementViolation | null {
   const metric = incrementMetric(tool, args);
   if (metric) {
     cache.incrementMetricCounter(metric);
   }
 
-  const violations: string[] = [];
+  const violations: EnforcementViolation[] = [];
+
+  // Track skill-chain phase transitions so other hooks (e.g. the PreToolUse
+  // test-scope check) can read the current phase from the session cache.
+  if (tool === 'Skill') {
+    const phase = skillToPhase(args.skill);
+    if (phase) {
+      // Entering a scoped-execution phase from a different phase (or none)
+      // starts a new feature: clear the edit history so test-scope
+      // suggestions don't accumulate every file edited all session.
+      // Re-entering the same phase keeps the in-progress feature's edits.
+      if (SCOPED_PHASES.includes(phase) && cache.getCurrentPhase() !== phase) {
+        cache.clearEditedFiles();
+      }
+      cache.setPhase(phase);
+    }
+  }
 
   // Track file edits
   if (tool === 'Edit' || tool === 'Write') {
     const filePath = args.file_path as string;
     if (filePath) {
       tracker.recordEdit(filePath);
+
+      // Persist to the session cache: hooks run as separate processes, so the
+      // in-memory FileTracker resets between invocations. The cache is what
+      // lets the PreToolUse test-scope check see prior source edits.
+      const category = tracker.classifyFile(filePath);
+      if (category === 'source' || category === 'test') {
+        cache.addEditedFile(filePath, category);
+      }
 
       // Constitutional check on edited test files
       const content = (args.new_string as string) ?? '';
@@ -84,8 +110,46 @@ export function handlePostToolUse(
 
   if (violations.length === 0) return null;
 
-  // Return combined violations separated by separator
-  return violations.join('\n\n---\n\n');
+  // Combine violations: level is the max severity across the checks.
+  return {
+    level: violations.some(v => v.level === 'block') ? 'block' : 'advise',
+    message: violations.map(v => v.message).join('\n\n---\n\n'),
+  };
+}
+
+/** Phases whose entry resets the edited-file history (scoped test execution).
+ * Mirrors SCOPED_PHASES in test-scope.ts — both must list the phases where
+ * test runs are scoped to the current feature's edits. */
+const SCOPED_PHASES = ['tdd+', 'sdd+'];
+
+/** Skill-name → skill-chain phase. Keys cover the installed skill directory
+ * names plus the bare phase aliases. `investigate` is an alias for debug+.
+ * Must stay in sync with PHASE_ORDER in src/skills/phase-tracker.ts — every
+ * chain phase needs a reachable skill name here (enforced by a sync test). */
+export const SKILL_PHASE_MAP: Record<string, string> = {
+  'brain-plus': 'brain+',
+  'plan-plus': 'plan+',
+  'tdd-plus': 'tdd+',
+  'sdd-plus': 'sdd+',
+  'verify-plus': 'verify+',
+  'review-plus': 'review+',
+  'debug-plus': 'debug+',
+  'investigate': 'debug+',
+  'brain+': 'brain+',
+  'plan+': 'plan+',
+  'tdd+': 'tdd+',
+  'sdd+': 'sdd+',
+  'verify+': 'verify+',
+  'review+': 'review+',
+  'debug+': 'debug+',
+};
+
+/** Map a Skill tool invocation's skill name to a chain phase, stripping any
+ * plugin namespace prefix (`my-plugin:tdd-plus` → `tdd-plus`). */
+function skillToPhase(skill: unknown): string | null {
+  if (typeof skill !== 'string') return null;
+  const bare = skill.split(':').pop() ?? '';
+  return SKILL_PHASE_MAP[bare] ?? null;
 }
 
 const BASH_GRAPHIFY_UPDATE = /\bgraphify(?:y)?\s+update\s+(?:"([^"]+)"|'([^']+)'|(\S+))/;

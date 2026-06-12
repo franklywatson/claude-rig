@@ -19,7 +19,7 @@ jest.mock('../src/router/resolver.js');`,
         config,
       );
       expect(result).not.toBeNull();
-      expect(result).toContain('mock');
+      expect(result?.message).toContain('mock');
     });
 
     it('detects vi.mock in e2e test file', () => {
@@ -29,7 +29,7 @@ jest.mock('../src/router/resolver.js');`,
         config,
       );
       expect(result).not.toBeNull();
-      expect(result).toContain('mock');
+      expect(result?.message).toContain('mock');
     });
 
     it('allows mocks in regular unit test files', () => {
@@ -68,7 +68,8 @@ jest.mock('../src/router/resolver.js');`,
         'jest.mock("foo")',
         config,
       );
-      expect(result).toContain('[BLOCK]');
+      expect(result?.message).toContain('[BLOCK]');
+      expect(result?.level).toBe('block');
     });
 
     it('advises when config says advise', () => {
@@ -78,7 +79,8 @@ jest.mock('../src/router/resolver.js');`,
         'jest.mock("foo")',
         config,
       );
-      expect(result).toContain('[ADVISE]');
+      expect(result?.message).toContain('[ADVISE]');
+      expect(result?.level).toBe('advise');
     });
 
     it('silent when config says silent', () => {
@@ -101,7 +103,7 @@ jest.mock('../src/router/resolver.js');`,
         config,
       );
       expect(result).not.toBeNull();
-      expect(result).toContain('evidence');
+      expect(result?.message).toContain('evidence');
     });
 
     it('allows "tests pass" when backed by output', () => {
@@ -179,8 +181,8 @@ jest.mock('../src/router/resolver.js');`,
         config,
       );
       expect(result).not.toBeNull();
-      expect(result).toContain('[BLOCK]');
-      expect(result).toContain('real dependencies');
+      expect(result?.message).toContain('[BLOCK]');
+      expect(result?.message).toContain('real dependencies');
     });
 
     it('advises on mocks in e2e test files', () => {
@@ -191,8 +193,8 @@ jest.mock('../src/router/resolver.js');`,
         config,
       );
       expect(result).not.toBeNull();
-      expect(result).toContain('[ADVISE]');
-      expect(result).toContain('real dependencies');
+      expect(result?.message).toContain('[ADVISE]');
+      expect(result?.message).toContain('real dependencies');
     });
 
     it('uses positive framing in violation message', () => {
@@ -202,8 +204,8 @@ jest.mock('../src/router/resolver.js');`,
         `jest.mock('../src/db.js');`,
         config,
       );
-      expect(result).toContain('Use real dependencies in stack/E2E tests.');
-      expect(result).toContain('Mocks are appropriate in unit tests for isolation.');
+      expect(result?.message).toContain('Use real dependencies in stack/E2E tests.');
+      expect(result?.message).toContain('Mocks are appropriate in unit tests for isolation.');
     });
   });
 });

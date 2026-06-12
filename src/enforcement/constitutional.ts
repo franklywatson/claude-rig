@@ -1,4 +1,4 @@
-import type { HarnessConfig } from '../types.js';
+import type { EnforcementViolation, HarnessConfig } from '../types.js';
 
 const MOCK_PATTERNS = [
   /jest\.mock\(/,
@@ -42,28 +42,32 @@ export function isStackOrE2ETest(filePath: string): boolean {
 
 /**
  * Check a file's content against constitutional rules.
- * Returns null if all rules satisfied, or a warning/error message.
+ * Returns null if all rules satisfied, or a violation carrying its level.
  */
 export function checkConstitutional(
   filePath: string,
   content: string,
   config: HarnessConfig,
-): string | null {
+): EnforcementViolation | null {
   // Rule: no_mocks — only applies to stack/E2E test files
   const mockLevel = config.rules.constitutional?.no_mocks ?? 'advise';
   if (mockLevel !== 'silent' && isStackOrE2ETest(filePath)) {
     const mockMatch = MOCK_PATTERNS.find(p => p.test(content));
     if (mockMatch) {
-      const prefix = mockLevel === 'block' ? '[BLOCK]' : '[ADVISE]';
-      return [
-        `${prefix} Constitutional Rule: no_mocks`,
-        '',
-        `Stack/E2E test file contains a mock: ${mockMatch.source}`,
-        '',
-        'Use real dependencies in stack/E2E tests.',
-        'Mocks are appropriate in unit tests for isolation.',
-        'In stack and E2E tests, use real databases, services, and caches.',
-      ].join('\n');
+      const level = mockLevel === 'block' ? 'block' : 'advise';
+      const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
+      return {
+        level,
+        message: [
+          `${prefix} Constitutional Rule: no_mocks`,
+          '',
+          `Stack/E2E test file contains a mock: ${mockMatch.source}`,
+          '',
+          'Use real dependencies in stack/E2E tests.',
+          'Mocks are appropriate in unit tests for isolation.',
+          'In stack and E2E tests, use real databases, services, and caches.',
+        ].join('\n'),
+      };
     }
   }
 
@@ -73,13 +77,17 @@ export function checkConstitutional(
     const hasEvidencelessClaim = EVIDENCELESS_PASS_PATTERNS.some(p => p.test(content));
     const hasEvidence = content.includes('```') || content.includes('✓') || content.includes('PASS');
     if (hasEvidencelessClaim && !hasEvidence) {
-      const prefix = evidenceLevel === 'block' ? '[BLOCK]' : '[ADVISE]';
-      return [
-        `${prefix} Constitutional Rule: evidence_only`,
-        '',
-        'Claim of test success without evidence. "Tests pass" is not evidence.',
-        'Show the test output — command run, actual output, then claim done.',
-      ].join('\n');
+      const level = evidenceLevel === 'block' ? 'block' : 'advise';
+      const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
+      return {
+        level,
+        message: [
+          `${prefix} Constitutional Rule: evidence_only`,
+          '',
+          'Claim of test success without evidence. "Tests pass" is not evidence.',
+          'Show the test output — command run, actual output, then claim done.',
+        ].join('\n'),
+      };
     }
   }
 

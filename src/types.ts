@@ -25,6 +25,17 @@ export interface RewriteResult {
 
 export type EnforcementLevel = 'block' | 'advise' | 'silent';
 
+/**
+ * A violation reported by an enforcement check, carrying its own severity.
+ * The combined PostToolUse result derives its level from these structured
+ * values — never from message text, which can embed arbitrary tool output
+ * (e.g. test output containing the literal string '[BLOCK]').
+ */
+export interface EnforcementViolation {
+  level: 'block' | 'advise';
+  message: string;
+}
+
 export interface ResolutionAllow {
   action: 'allow';
 }

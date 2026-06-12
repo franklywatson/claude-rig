@@ -71,6 +71,14 @@ describe('SessionCache', () => {
     expect(cache.getCurrentPhase()).toBe('tdd+');
   });
 
+  it('clears edited files for both categories via clearEditedFiles', () => {
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+    cache.addEditedFile('tests/router/resolver.test.ts', 'test');
+    cache.clearEditedFiles();
+    expect(cache.getEditedFiles('source')).toEqual([]);
+    expect(cache.getEditedFiles('test')).toEqual([]);
+  });
+
   it('clears all state on reset', () => {
     cache.setEnvironment(makeEnv());
     cache.addEditedFile('src/foo.ts', 'source');
@@ -246,6 +254,19 @@ describe('SessionCache (file-backed)', () => {
     expect(cache2.getPythonEnv()).toBeDefined();
     expect(cache2.getPythonEnv()!.venvPath).toBe('/project/.venv');
     expect(cache2.getPythonEnv()!.uvAvailable).toBe(true);
+  });
+
+  it('persists clearEditedFiles across instances', () => {
+    const cache = new SessionCache(testCwd);
+    cache.addEditedFile('src/foo.ts', 'source');
+    cache.addEditedFile('tests/foo.test.ts', 'test');
+    trackPath(sessionCachePath(testCwd));
+
+    cache.clearEditedFiles();
+
+    const cache2 = new SessionCache(testCwd);
+    expect(cache2.getEditedFiles('source')).toEqual([]);
+    expect(cache2.getEditedFiles('test')).toEqual([]);
   });
 
   it('retains stale environment on load as last-known-good', () => {

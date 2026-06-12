@@ -27,9 +27,9 @@ describe('checkStaleTests', () => {
     tracker.nextTurn();
     const result = checkStaleTests(tracker, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('STALE TEST WARNING');
-    expect(result).toContain('src/router/rules.ts');
-    expect(result).not.toContain('src/router/resolver.ts');
+    expect(result?.message).toContain('STALE TEST WARNING');
+    expect(result?.message).toContain('src/router/rules.ts');
+    expect(result?.message).not.toContain('src/router/resolver.ts');
   });
 
   it('includes enforcement level from config', () => {
@@ -37,14 +37,16 @@ describe('checkStaleTests', () => {
     tracker.recordEdit('src/router/rules.ts');
     tracker.nextTurn();
     const result = checkStaleTests(tracker, config);
-    expect(result).toContain('[BLOCK]');
+    expect(result?.message).toContain('[BLOCK]');
+    expect(result?.level).toBe('block');
   });
 
   it('shows advise level by default', () => {
     tracker.recordEdit('src/router/rules.ts');
     tracker.nextTurn();
     const result = checkStaleTests(tracker, config);
-    expect(result).toContain('[ADVISE]');
+    expect(result?.message).toContain('[ADVISE]');
+    expect(result?.level).toBe('advise');
   });
 
   it('respects grace period from config', () => {
@@ -62,7 +64,7 @@ describe('checkStaleTests', () => {
     tracker.nextTurn(); // turn 2 — grace expired
     const result = checkStaleTests(tracker, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('src/router/rules.ts');
+    expect(result?.message).toContain('src/router/rules.ts');
   });
 
   it('includes turn count for each stale file', () => {
@@ -71,7 +73,7 @@ describe('checkStaleTests', () => {
     tracker.recordEdit('src/enforcement/zero-defect.ts');
     tracker.nextTurn();
     const result = checkStaleTests(tracker, config);
-    expect(result).toContain('edited 2 turns ago');
-    expect(result).toContain('edited 1 turn ago');
+    expect(result?.message).toContain('edited 2 turns ago');
+    expect(result?.message).toContain('edited 1 turn ago');
   });
 });

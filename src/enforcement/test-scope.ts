@@ -1,4 +1,3 @@
-import { FileTracker } from './file-tracker.js';
 import type { HarnessConfig } from '../types.js';
 
 const UNSCOPED_TEST_PATTERNS = [
@@ -6,7 +5,12 @@ const UNSCOPED_TEST_PATTERNS = [
   { pattern: /^(npx\s+)?jest\s*$/, runner: 'npx jest' },
   { pattern: /^pytest\s*$/, runner: 'pytest' },
   { pattern: /^(npx\s+)?mocha\s*$/, runner: 'npx mocha' },
+  // npm passes args after `--` to the underlying test script, so the scoped
+  // suggestion stays runner-agnostic.
+  { pattern: /^npm\s+(run\s+)?test\s*$/, runner: 'npm test --' },
 ];
+
+const SCOPED_PHASES = ['tdd+', 'sdd+'];
 
 function isUnscopedTestRun(command: string): string | null {
   const trimmed = command.trim();
@@ -32,17 +36,20 @@ function deriveTestPath(sourcePath: string): string {
 
 /**
  * Check if a test command should be scoped based on the current phase and
- * recent source edits. Returns null if no redirect needed.
+ * recent source edits (file paths, e.g. from the session cache).
+ * Returns null if no redirect needed.
  */
 export function checkTestScope(
   command: string,
   currentPhase: string | null,
-  tracker: FileTracker,
+  sourceEdits: string[],
   config: HarnessConfig,
 ): string | null {
-  // Only enforce during tdd+ phase
-  // TODO: include 'sdd+' when checkTestScope is wired into the pipeline (sdd+ tasks also run scoped)
-  if (currentPhase !== 'tdd+') return null;
+  // Only enforce during scoped-execution phases (tdd+ and sdd+ tasks both run scoped)
+  if (!currentPhase || !SCOPED_PHASES.includes(currentPhase)) return null;
+
+  const enforcement = config.rules.test_scope?.enforcement ?? 'advise';
+  if (enforcement === 'silent') return null;
 
   const runner = isUnscopedTestRun(command);
   if (!runner) return null;
@@ -50,20 +57,18 @@ export function checkTestScope(
   const allowed = config.rules.test_scope?.allowed_unscoped ?? [];
   if (isAllowedUnscoped(command, allowed)) return null;
 
-  const sourceEdits = tracker.getSourceEdits();
   if (sourceEdits.length === 0) return null;
 
-  const enforcement = config.rules.test_scope?.enforcement ?? 'advise';
   const prefix = enforcement === 'block' ? '[BLOCK]' : '[ADVISE]';
 
-  const testPaths = sourceEdits.map(e => deriveTestPath(e.file));
+  const testPaths = sourceEdits.map(deriveTestPath);
   const scopedCommand = `${runner} ${testPaths.join(' ')}`;
 
   const lines = [
     `${prefix} TEST SCOPE REDIRECT`,
     '',
     `Running the full test suite, but recent changes affect:`,
-    ...sourceEdits.map(e => `  - ${e.file}`),
+    ...sourceEdits.map(f => `  - ${f}`),
     '',
     `During iterative fix cycles, run scoped tests only:`,
     `  ${scopedCommand}`,
