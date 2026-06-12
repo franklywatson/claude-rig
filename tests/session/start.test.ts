@@ -140,7 +140,21 @@ describe('handleSessionStart', () => {
     expect(output).toContain('indexed');
   });
 
-  it('includes worktree suggestion when on master', async () => {
+  it('includes branch discipline hint with worktree wording on master with dirty tree', async () => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which rtk') throw new Error('not found');
+      if (cmd === 'which jcodemunch') throw new Error('not found');
+      if (cmd === 'git branch --show-current') return 'master';
+      if (cmd === 'git status --porcelain') return ' M src/a.ts\n';
+      return '';
+    });
+
+    const output = await startSession('/home/user/test-project', cache);
+    expect(output).toContain('branch discipline');
+    expect(output).toContain('using-git-worktrees');
+  });
+
+  it('includes branch discipline hint with feature-branch wording on master with clean tree', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') throw new Error('not found');
       if (cmd === 'which jcodemunch') throw new Error('not found');
@@ -149,10 +163,11 @@ describe('handleSessionStart', () => {
     });
 
     const output = await startSession('/home/user/test-project', cache);
-    expect(output).toContain('using-git-worktrees');
+    expect(output).toContain('branch discipline');
+    expect(output).toContain('feature branch');
   });
 
-  it('omits worktree suggestion when on feature branch', async () => {
+  it('omits branch discipline hint when on feature branch', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') throw new Error('not found');
       if (cmd === 'which jcodemunch') throw new Error('not found');
@@ -162,6 +177,7 @@ describe('handleSessionStart', () => {
 
     const output = await startSession('/home/user/test-project', cache);
     expect(output).not.toContain('using-git-worktrees');
+    expect(output).not.toContain('branch discipline');
   });
 
   it('warns when rtk is not installed', async () => {

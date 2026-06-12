@@ -6,7 +6,7 @@ import type { Environment, GraphBuildInfo, HarnessConfig } from '../types.js';
 import { detectEnvironment, callJcodemunchMcpTool } from './environment.js';
 import type { ExecFn, McpQueryFn, RegistrationLookupFn } from './environment.js';
 import { detectPythonEnv } from './python-env.js';
-import { checkWorktreeSuggestion } from './worktree.js';
+import { checkBranchDiscipline } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
 import type { WaitForBuildOpts } from '../scout/graph-state.js';
@@ -203,7 +203,7 @@ export async function handleSessionStart(
     lines.push(activeRules);
   }
 
-  const suggestion = checkWorktreeSuggestion(cwd, (cmd) => execSync(cmd, { encoding: 'utf-8' }));
+  const suggestion = checkBranchDiscipline(cwd, (cmd) => execSync(cmd, { encoding: 'utf-8' }), config);
   if (suggestion) {
     lines.push(suggestion);
   }
