@@ -31,11 +31,26 @@ export function handlePostToolUse(
 
   const violations: string[] = [];
 
+  // Track skill-chain phase transitions so other hooks (e.g. the PreToolUse
+  // test-scope check) can read the current phase from the session cache.
+  if (tool === 'Skill') {
+    const phase = skillToPhase(args.skill);
+    if (phase) cache.setPhase(phase);
+  }
+
   // Track file edits
   if (tool === 'Edit' || tool === 'Write') {
     const filePath = args.file_path as string;
     if (filePath) {
       tracker.recordEdit(filePath);
+
+      // Persist to the session cache: hooks run as separate processes, so the
+      // in-memory FileTracker resets between invocations. The cache is what
+      // lets the PreToolUse test-scope check see prior source edits.
+      const category = tracker.classifyFile(filePath);
+      if (category === 'source' || category === 'test') {
+        cache.addEditedFile(filePath, category);
+      }
 
       // Constitutional check on edited test files
       const content = (args.new_string as string) ?? '';
@@ -86,6 +101,34 @@ export function handlePostToolUse(
 
   // Return combined violations separated by separator
   return violations.join('\n\n---\n\n');
+}
+
+/** Skill-name → skill-chain phase. Keys cover the installed skill directory
+ * names plus the bare phase aliases. `investigate` is an alias for debug+. */
+const SKILL_PHASE_MAP: Record<string, string> = {
+  'brain-plus': 'brain+',
+  'plan-plus': 'plan+',
+  'tdd-plus': 'tdd+',
+  'sdd-plus': 'sdd+',
+  'verify-plus': 'verify+',
+  'review-plus': 'review+',
+  'debug-plus': 'debug+',
+  'investigate': 'debug+',
+  'brain+': 'brain+',
+  'plan+': 'plan+',
+  'tdd+': 'tdd+',
+  'sdd+': 'sdd+',
+  'verify+': 'verify+',
+  'review+': 'review+',
+  'debug+': 'debug+',
+};
+
+/** Map a Skill tool invocation's skill name to a chain phase, stripping any
+ * plugin namespace prefix (`my-plugin:tdd-plus` → `tdd-plus`). */
+function skillToPhase(skill: unknown): string | null {
+  if (typeof skill !== 'string') return null;
+  const bare = skill.split(':').pop() ?? '';
+  return SKILL_PHASE_MAP[bare] ?? null;
 }
 
 const BASH_GRAPHIFY_UPDATE = /\bgraphify(?:y)?\s+update\s+(?:"([^"]+)"|'([^']+)'|(\S+))/;

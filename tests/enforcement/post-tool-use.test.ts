@@ -286,4 +286,58 @@ describe('handlePostToolUse', () => {
 
     expect(cache.getGraphifyStats('/external/unreachable')).toBeUndefined();
   });
+
+  describe('session cache persistence of edits', () => {
+    it('persists source file edits to the session cache', () => {
+      handlePostToolUse('Edit', { file_path: 'src/router/resolver.ts' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual(['src/router/resolver.ts']);
+    });
+
+    it('persists test file edits to the session cache', () => {
+      handlePostToolUse('Write', { file_path: 'tests/router/resolver.test.ts' }, tracker, cache, config);
+      expect(cache.getEditedFiles('test')).toEqual(['tests/router/resolver.test.ts']);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+    });
+
+    it('does not persist non-source/non-test files', () => {
+      handlePostToolUse('Edit', { file_path: 'docs/architecture.md' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+      expect(cache.getEditedFiles('test')).toEqual([]);
+    });
+  });
+
+  describe('skill phase tracking', () => {
+    it('sets tdd+ phase when the tdd-plus skill is invoked', () => {
+      const result = handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('tdd+');
+      expect(result).toBeNull();
+    });
+
+    it('sets sdd+ phase when the sdd-plus skill is invoked', () => {
+      handlePostToolUse('Skill', { skill: 'sdd-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('sdd+');
+    });
+
+    it('sets verify+ phase when verify-plus is invoked (exits scoped-test phases)', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('verify+');
+    });
+
+    it('maps investigate to debug+ phase', () => {
+      handlePostToolUse('Skill', { skill: 'investigate' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('debug+');
+    });
+
+    it('strips plugin namespaces from skill names', () => {
+      handlePostToolUse('Skill', { skill: 'my-plugin:tdd-plus' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('tdd+');
+    });
+
+    it('ignores skills that are not chain phases', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'savings' }, tracker, cache, config);
+      expect(cache.getCurrentPhase()).toBe('tdd+');
+    });
+  });
 });
