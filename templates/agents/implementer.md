@@ -2,7 +2,7 @@
 name: implementer
 description: "Use when dispatched by sdd+ to implement a single plan task: write tests, implement, verify, commit, self-review, report. Do not invoke proactively — this agent is dispatched explicitly by the skill chain."
 model: inherit
-maxTurns: 50
+maxTurns: 150
 ---
 
 <!-- rig-generated -->
@@ -83,6 +83,12 @@ You MUST run the task's scoped tests and show output before reporting
 completion. A claim without command output is not a completed task. If the
 plan defines a signal stack, the task's named gating signal is the completion
 gate — run it.
+
+## Turn Budget
+
+Your turn limit is a runaway backstop, not a target. If you are approaching
+it, stop at a safe point (commit what is verified), and report partial status:
+what is done, what remains, and where to resume.
 
 ## Report Format
 

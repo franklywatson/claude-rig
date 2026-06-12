@@ -41,6 +41,21 @@ describe('agent templates', () => {
     expect(content).toContain('show output before reporting');
     expect(content).toContain('BLOCKED');
   });
+
+  it('agents carry backstop-level turn budgets with partial-status guidance', () => {
+    const budgets: Record<string, number> = {
+      'code-reviewer': 75,
+      'spec-reviewer': 50,
+      'implementer': 150,
+    };
+    for (const [agent, turns] of Object.entries(budgets)) {
+      const content = read(`agents/${agent}.md`);
+      expect(content).toContain(`maxTurns: ${turns}`);
+      expect(content).toContain('runaway backstop');
+      expect(content).toContain('partial status');
+    }
+    expect(read('agents/scout.md')).toContain('maxTurns: 30');
+  });
 });
 
 describe('skill templates — typed dispatch', () => {

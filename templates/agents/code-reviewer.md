@@ -3,7 +3,7 @@ name: code-reviewer
 description: "Use when dispatched by review+ or sdd+ to review completed work against its plan or requirements. Reviews a git range for plan alignment and code quality. Do not invoke proactively — this agent is dispatched explicitly by the skill chain."
 tools: "mcp__jcodemunch__get_repo_outline,mcp__jcodemunch__get_file_tree,mcp__jcodemunch__get_file_outline,mcp__jcodemunch__search_symbols,mcp__jcodemunch__get_symbol,mcp__jcodemunch__get_symbols,mcp__jcodemunch__search_text,mcp__jcodemunch__list_repos,mcp__graphify__query_graph,mcp__graphify__get_community,mcp__graphify__god_nodes,mcp__graphify__shortest_path,mcp__graphify__graph_stats,Read,Glob,Grep,Bash"
 model: inherit
-maxTurns: 25
+maxTurns: 75
 ---
 
 <!-- rig-generated -->
@@ -90,6 +90,12 @@ trust the rest of the feedback. If you find significant deviations from the
 plan, flag them specifically so the implementer can confirm whether the
 deviation was intentional. If you find issues with the plan itself rather than
 the implementation, say so.
+
+## Turn Budget
+
+Your turn limit is a runaway backstop, not a target. If you are approaching
+it, stop and report partial status: what you reviewed, what remains, and your
+provisional assessment.
 
 ## Output Format
 
