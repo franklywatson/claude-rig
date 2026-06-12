@@ -14,7 +14,8 @@ Rig installs guardrails into a Claude Code project:
   `grep`/`find`/`cat`/`git` to rtk when available (using Claude Code's `updatedInput` protocol);
   advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and `rtk cat` on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, test scope, constitutional rules (real dependencies in stack/E2E tests), and zero-defect status (with pre-existing failure classification)
-- **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`, and `sdd+` for subagent-driven plan execution via typed agents (`code-reviewer`, `spec-reviewer`, `implementer`) installed into `.claude/agents/`
+- **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`,
+  and `sdd+` for subagent-driven plan execution via typed agents (`code-reviewer`, `spec-reviewer`, `implementer`) installed into `.claude/agents/`
 - **Scout Agent** -- cross-repo indexing agent that builds a typed `CodebaseMap`
   for context injection, enriched with graphify relationship data (god nodes,
   module communities, dependency paths) when available

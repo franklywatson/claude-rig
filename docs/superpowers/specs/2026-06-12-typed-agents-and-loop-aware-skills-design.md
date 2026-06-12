@@ -67,7 +67,7 @@ Grounding (from `~/forgd/claude-kb`, Anthropic canonical posts):
 
 ---
 
-# Part 1 — Typed subagent dispatch
+## Part 1 — Typed subagent dispatch
 
 ## 3. Agent definitions (`templates/agents/`)
 
@@ -78,7 +78,7 @@ scouts are never auto-refreshed). Frontmatter follows scout's shipped pattern:
 `tools` as a single comma-separated quoted string, `model: inherit`.
 
 | | `code-reviewer` | `spec-reviewer` | `implementer` |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **Role** | Senior code reviewer: plan alignment + code quality, ported from superpowers `requesting-code-review/code-reviewer.md` | Adversarial spec-compliance checker, ported from `subagent-driven-development/spec-reviewer-prompt.md` — "do not trust the report", line-by-line spec vs code | Task executor, ported from `implementer-prompt.md`: TDD discipline, asks before guessing, commits, self-reviews |
 | **tools** | `Read,Glob,Grep,Bash` + jcodemunch/graphify read tools (scout's list) — **no Edit/Write/NotebookEdit** | Same read-only set | Field omitted → inherits all tools |
 | **model** | `inherit` | `inherit` | `inherit` |
@@ -194,7 +194,7 @@ accordingly.
 
 ---
 
-# Part 2 — Loop-aware skill chain
+## Part 2 — Loop-aware skill chain
 
 ## 9. The reference doc (`templates/references/agent-loops.md`)
 
@@ -213,7 +213,7 @@ either skill being removed). Content, generalized from
    layers that apply. Each layer isolates exactly one failure source:
 
    | Layer | What's tested | Signal | A failure here means |
-   |---|---|---|---|
+   | --- | --- | --- | --- |
    | L0 — Deterministic logic | Golden tests: known inputs → exact outputs | binary pass/fail | code regression |
    | L1 — External contract | Read-only probes of third-party APIs: shapes, IDs, permissions | contract diff report | the dependency changed, not us |
    | L2 — Evaluation quality *(model components only)* | Calibration harness: frozen references with validated expected outputs, re-evaluated by current model+prompt; drift metrics | drift vs thresholds | model shift, prompt regression, or policy-edit side effect |

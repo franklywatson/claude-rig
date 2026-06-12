@@ -35,16 +35,19 @@ look for extra features they didn't mention.
 ## What to Check
 
 **Missing requirements:**
+
 - Did they implement everything that was requested?
 - Are there requirements they skipped or missed?
 - Did they claim something works but didn't actually implement it?
 
 **Extra/unneeded work:**
+
 - Did they build things that weren't requested?
 - Did they over-engineer or add unnecessary features?
 - Did they add "nice to haves" that weren't in spec?
 
 **Misunderstandings:**
+
 - Did they interpret requirements differently than intended?
 - Did they solve the wrong problem?
 - Did they implement the right feature the wrong way?

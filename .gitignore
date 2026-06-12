@@ -18,3 +18,6 @@ coverage/
 *.session-cache.json
 graphify-out/
 # --- end rig-managed ---
+
+# OS noise
+.DS_Store

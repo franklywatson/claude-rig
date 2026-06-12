@@ -80,7 +80,8 @@ Invoke this skill BEFORE starting any design work. It adds three capabilities on
    - [ ] Active enforcement rules acknowledged (see session-start output)
    - [ ] Protected components identified per enforcement rules (real dependencies in stack/E2E tests; mocks appropriate in unit tests)
    - [ ] Integration-layer (stack test) user journey defined (if applicable)
-   - [ ] **If loop trajectory opted in:** signal stack defined for each applicable layer (signal + failure meaning); primary system operable with the loop disabled; autonomy ceiling and orchestrator-owned gates stated
+   - [ ] **If loop trajectory opted in:** signal stack defined for each applicable layer (signal + failure meaning);
+     primary system operable with the loop disabled; autonomy ceiling and orchestrator-owned gates stated
 
 ## Output
 

@@ -23,7 +23,7 @@ Layered test signals, each isolating exactly one failure source. Projects
 include only the layers that apply.
 
 | Layer | What's tested | Signal | A failure here means |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **L0 — Deterministic logic** | Golden tests: known inputs → exact expected outputs, encoded as fixtures | binary pass/fail | code regression |
 | **L1 — External contract** | Read-only probes of third-party dependencies: field IDs resolve, response shapes unchanged, permissions intact | contract diff report | the dependency changed, not us |
 | **L2 — Evaluation quality** *(model components only)* | Calibration harness: frozen reference inputs with validated expected outputs, re-evaluated by the current model+prompt; drift metrics vs thresholds | drift metrics | model shift, prompt regression, or policy-edit side effect |

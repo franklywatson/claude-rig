@@ -1,5 +1,9 @@
 # Typed Subagent Dispatch & Loop-Aware Skill Chain Implementation Plan
 
+<!-- markdownlint-disable MD013 -->
+<!-- Working plan document: long lines are verbatim dispatch prompts and test
+     expectations whose content must not be wrapped. -->
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship three typed agent definitions (code-reviewer, spec-reviewer, implementer) plus an `sdd+` skill so rig dispatches named, tool-scoped subagents instead of general-purpose; encode the agent-loop/signal-stack operating model as an opt-in design vocabulary in brain+/plan+.
@@ -24,7 +28,7 @@ Unit tests (mocks ok): none needed. Environment detection uses injectable `ExecF
 ## File Structure
 
 | File | Action | Responsibility |
-|---|---|---|
+| --- | --- | --- |
 | `src/skills/phase-tracker.ts` | Modify | Add `sdd+` phase; widen `verify+` prerequisite |
 | `templates/agents/code-reviewer.md` | Create | Full-role reviewer agent (read-only tools) |
 | `templates/agents/spec-reviewer.md` | Create | Adversarial spec-compliance agent (read-only tools) |
@@ -49,6 +53,7 @@ Unit tests (mocks ok): none needed. Environment detection uses injectable `ExecF
 ### Task 1: Phase tracker gains `sdd+`
 
 **Files:**
+
 - Modify: `src/skills/phase-tracker.ts:1` (PHASE_ORDER) and `:27-30` (canTransitionTo)
 - Test: `tests/skills/phase-tracker.test.ts`
 
@@ -121,6 +126,7 @@ git commit -m "feat: add sdd+ phase; verify+ accepts tdd+ or sdd+ visit"
 ### Task 2: Agent template — `code-reviewer.md`
 
 **Files:**
+
 - Create: `templates/agents/code-reviewer.md`
 - Test: `tests/cli/template-content.test.ts` (new file)
 
@@ -307,6 +313,7 @@ git commit -m "feat: add code-reviewer typed agent template"
 ### Task 3: Agent template — `spec-reviewer.md`
 
 **Files:**
+
 - Create: `templates/agents/spec-reviewer.md`
 - Test: `tests/cli/template-content.test.ts`
 
@@ -425,6 +432,7 @@ git commit -m "feat: add spec-reviewer typed agent template"
 ### Task 4: Agent template — `implementer.md`
 
 **Files:**
+
 - Create: `templates/agents/implementer.md`
 - Test: `tests/cli/template-content.test.ts`
 
@@ -570,6 +578,7 @@ git commit -m "feat: add implementer typed agent template"
 ### Task 5: Install agents via init; scout gets the marker
 
 **Files:**
+
 - Modify: `templates/agents/scout.md:8` (insert marker after frontmatter)
 - Modify: `src/cli/init.ts:92` (agentFiles array)
 - Test: `tests/cli/init.test.ts`
@@ -640,6 +649,7 @@ git commit -m "feat: install typed agents via rig init; scout gets rig-generated
 ### Task 6: `sdd+` skill template + install
 
 **Files:**
+
 - Create: `templates/skills/sdd-plus/SKILL.md`
 - Modify: `src/cli/init.ts:77` (skillDirs array)
 - Test: `tests/cli/init.test.ts`, `tests/cli/template-content.test.ts`
@@ -771,6 +781,7 @@ git commit -m "feat: add sdd+ skill wrapping subagent-driven-development with ty
 ### Task 7: `review+` dispatches typed reviewers
 
 **Files:**
+
 - Modify: `templates/skills/review-plus/SKILL.md` (Phases B and C)
 - Test: `tests/cli/template-content.test.ts`
 
@@ -811,7 +822,9 @@ to:
    lives in the agent definition):
 
    ```
+
    Agent(subagent_type="spec-reviewer", prompt="Task requirements: [full task text from the plan]. Implementer's report: [what was claimed/committed for this task]. Verify the implementation matches the spec — nothing more, nothing less.")
+
    ```
 
    If the typed agent is unavailable, fall back to a general-purpose subagent
@@ -840,7 +853,9 @@ to:
    with only the per-task payload:
 
    ```
+
    Agent(subagent_type="code-reviewer", prompt="DESCRIPTION: [what was built]. PLAN_OR_REQUIREMENTS: [plan file path or task text]. BASE_SHA: [starting commit]. HEAD_SHA: [ending commit].")
+
    ```
 
    If the typed agent is unavailable, fall back to a general-purpose subagent
@@ -864,6 +879,7 @@ git commit -m "feat: review+ dispatches typed spec-reviewer and code-reviewer ag
 ### Task 8: Agent-loops reference doc + install to both skills
 
 **Files:**
+
 - Create: `templates/references/agent-loops.md`
 - Modify: `src/cli/init.ts` (after the agentFiles block, ~line 98)
 - Test: `tests/cli/init.test.ts`
@@ -933,7 +949,7 @@ Layered test signals, each isolating exactly one failure source. Projects
 include only the layers that apply.
 
 | Layer | What's tested | Signal | A failure here means |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | **L0 — Deterministic logic** | Golden tests: known inputs → exact expected outputs, encoded as fixtures | binary pass/fail | code regression |
 | **L1 — External contract** | Read-only probes of third-party dependencies: field IDs resolve, response shapes unchanged, permissions intact | contract diff report | the dependency changed, not us |
 | **L2 — Evaluation quality** *(model components only)* | Calibration harness: frozen reference inputs with validated expected outputs, re-evaluated by the current model+prompt; drift metrics vs thresholds | drift metrics | model shift, prompt regression, or policy-edit side effect |
@@ -1015,6 +1031,7 @@ git commit -m "feat: agent-loops signal-stack reference installed into brain+ an
 ### Task 9: `brain+` loop elicitation + signal-first vocabulary
 
 **Files:**
+
 - Modify: `templates/skills/brain-plus/SKILL.md`
 - Test: `tests/cli/template-content.test.ts`
 
@@ -1113,6 +1130,7 @@ git commit -m "feat: brain+ loop-fit elicitation and signal-first vocabulary"
 ### Task 10: `plan+` signal-stack-first ordering
 
 **Files:**
+
 - Modify: `templates/skills/plan-plus/SKILL.md` (Phase B)
 - Test: `tests/cli/template-content.test.ts`
 
@@ -1169,6 +1187,7 @@ git commit -m "feat: plan+ signal-stack-first ordering for loop-opted designs"
 ### Task 11: `tdd+` / `verify+` vocabulary generalization
 
 **Files:**
+
 - Modify: `templates/skills/tdd-plus/SKILL.md` (description, line 18, Phase B)
 - Modify: `templates/skills/verify-plus/SKILL.md` (line 78 area)
 - Test: `tests/cli/template-content.test.ts`
@@ -1231,6 +1250,7 @@ git commit -m "feat: generalize stack-test prose to signal-stack vocabulary in t
 ### Task 12: verify-harness checks for new agents and skill
 
 **Files:**
+
 - Modify: `templates/skills/verify-harness/SKILL.md`
 - Modify: `docs/getting-started.md:123`
 - Test: `tests/cli/template-content.test.ts`
@@ -1294,6 +1314,7 @@ git commit -m "feat: verify-harness checks typed agents and sdd+ (35-point check
 ### Task 13: Documentation
 
 **Files:**
+
 - Modify: `README.md` (high-level framing section, skill table, "What gets installed")
 - Modify: `docs/getting-started.md` (generated-files table, skill list)
 - Modify: `docs/architecture.md` (skill chain diagram, Layer 3, phase rules)
