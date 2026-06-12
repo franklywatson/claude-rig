@@ -61,3 +61,14 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('fall back to a general-purpose');
   });
 });
+
+describe('skill templates — loop-aware vocabulary', () => {
+  it('brain-plus elicits the loop trajectory opt-in', () => {
+    const content = read('skills/brain-plus/SKILL.md');
+    expect(content).toContain('references/agent-loops.md');
+    expect(content).toContain('Loop-fit assessment');
+    expect(content).toContain('opt-in');
+    expect(content).toContain('signal stack');
+    expect(content).not.toContain('Stack-first design');
+  });
+});
