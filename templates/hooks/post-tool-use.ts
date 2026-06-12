@@ -55,9 +55,22 @@ import { execSync } from 'node:child_process';
     const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn);
 
     if (result) {
-      console.error(result);
+      // Block-level violations: exit 2 + stderr. PostToolUse cannot undo the
+      // tool call, but Claude Code feeds stderr back to the agent as an error.
+      if (result.includes('[BLOCK]')) {
+        console.error(result);
+        process.exit(2); // surface to agent as error
+      }
+      // Advise-level violations: agent-visible additionalContext JSON.
+      // Plain text on exit 0 only reaches the human UI, never the agent.
+      console.log(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'PostToolUse',
+          additionalContext: result,
+        },
+      }));
     }
-    process.exit(0); // PostToolUse never blocks, only advises
+    process.exit(0);
   }).catch(() => {
     // Config load failed — exit cleanly
     process.exit(0);

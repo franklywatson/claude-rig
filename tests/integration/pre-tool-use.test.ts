@@ -1,9 +1,26 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, unlinkSync, writeFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
 import { runHook } from '../helpers/hook-runner.js';
+import { SessionCache, sessionCachePath } from '../../src/session/cache.js';
+import type { Environment } from '../../src/types.js';
+
+function makeEnv(overrides: Partial<Environment> = {}): Environment {
+  return {
+    rtkAvailable: false,
+    rtkPath: null,
+    jcodemunchAvailable: false,
+    jcodemunchCwdIndexed: false,
+    jcodemunchCwdRepo: null,
+    jcodemunchKnownRepos: [],
+    graphifyAvailable: false,
+    graphifyGraphPath: null,
+    detectedAt: Date.now(),
+    ...overrides,
+  };
+}
 
 describe('PreToolUse hook E2E', () => {
   // npx tsx may need to install on first run in CI
@@ -139,5 +156,69 @@ describe('PreToolUse hook E2E', () => {
 
     // Without jcodemunch, native_glob falls through to allow
     expectNonBlock(result);
+  });
+
+  describe('agent-visible advisories (additionalContext)', () => {
+    // Each test seeds its own session cache via a distinct session_id, so
+    // first-occurrence advisory suppression from other tests cannot leak in.
+    const sessionIds = ['advise-json', 'scope-json'];
+
+    afterAll(() => {
+      for (const id of sessionIds) {
+        const path = sessionCachePath(tempDir, id);
+        if (existsSync(path)) unlinkSync(path);
+      }
+    });
+
+    it('emits jcodemunch advisory as additionalContext JSON on exit 0', async () => {
+      const writer = new SessionCache(tempDir, 'advise-json');
+      writer.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
+
+      const result = await runHook(hookPath, {
+        session_id: 'advise-json',
+        tool_name: 'Grep',
+        tool_input: { pattern: 'function' },
+      }, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine as string);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('jcodemunch');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('[ADVISE]');
+    }, HOOK_TIMEOUT);
+
+    it('emits test-scope advisory for full-suite run during tdd+ phase', async () => {
+      const writer = new SessionCache(tempDir, 'scope-json');
+      writer.setEnvironment(makeEnv());
+      writer.setPhase('tdd+');
+      writer.addEditedFile('src/router/resolver.ts', 'source');
+
+      const result = await runHook(hookPath, {
+        session_id: 'scope-json',
+        tool_name: 'Bash',
+        tool_input: { command: 'npx vitest run' },
+      }, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine as string);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('TEST SCOPE');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('tests/router/resolver.test.ts');
+    }, HOOK_TIMEOUT);
+
+    it('still blocks with exit 2 and stderr for [BLOCK] resolutions', async () => {
+      const result = await runHook(hookPath, {
+        tool_name: 'Bash',
+        tool_input: { command: "sed -i 's/a/b/' src/file.ts" },
+      }, tempDir);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('[BLOCK]');
+      expect(result.stdout).not.toContain('hookSpecificOutput');
+    }, HOOK_TIMEOUT);
   });
 });

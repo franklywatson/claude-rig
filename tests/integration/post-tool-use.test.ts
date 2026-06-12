@@ -11,9 +11,9 @@ describe('PostToolUse hook E2E', () => {
   let tempDir: string;
   let hookPath: string;
 
-  // PostToolUse never blocks (always exits 0). In CI, npx tsx may fail
-  // to install or the dist may not be available, so we accept any
-  // exit code — the hook is advisory only.
+  // Clean operations and advise-level violations exit 0. Only block-level
+  // violations exit 2 (stderr is fed back to the agent — the tool already
+  // ran, so nothing is rejected).
   function expectNonBlock(result: { exitCode: number }) {
     expect(result.exitCode).not.toBe(2);
   }
@@ -42,10 +42,7 @@ describe('PostToolUse hook E2E', () => {
     expectNonBlock(result);
   });
 
-  it('exits 0 for mock in test file (enforcement runs but is not surfaced in subprocess)', async () => {
-    // Constitutional enforcement runs inside the hook but console.error
-    // output may not be captured by npx tsx subprocess.
-    // What we can verify: exit code is 0 (PostToolUse never blocks).
+  it('exits 0 for mock in unit test file (no_mocks only applies to stack/E2E tests)', async () => {
     const result = await runHook(hookPath, {
       tool_name: 'Edit',
       tool_input: {
@@ -71,7 +68,10 @@ describe('PostToolUse hook E2E', () => {
     expectNonBlock(result);
   });
 
-  it('exits 0 for test command with failure output', async () => {
+  it('exits 2 and surfaces zero-defect violation on stderr for failing test output', async () => {
+    // zero_defect.tolerance defaults to strict → [BLOCK]-level violation.
+    // PostToolUse exit 2 cannot undo the tool call, but Claude Code feeds
+    // stderr back to the agent as an error — the agent-visible channel.
     const result = await runHook(hookPath, {
       tool_name: 'Bash',
       tool_input: {
@@ -83,8 +83,9 @@ describe('PostToolUse hook E2E', () => {
       },
     }, tempDir);
 
-    expectNonBlock(result);
-  });
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('ZERO-DEFECT');
+  }, HOOK_TIMEOUT);
 
   it('exits 0 for test command with passing output', async () => {
     const result = await runHook(hookPath, {
@@ -110,6 +111,51 @@ describe('PostToolUse hook E2E', () => {
 
     expectNonBlock(result);
   });
+
+  it('emits advise-level violations as agent-visible additionalContext JSON', async () => {
+    // no_mocks defaults to advise; a mock in a stack test file fires it.
+    const result = await runHook(hookPath, {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: 'tests/router/resolver.stack.test.ts',
+        old_string: 'old',
+        new_string: 'vi.mock("some-module")',
+      },
+    }, tempDir);
+
+    expect(result.exitCode).toBe(0);
+    const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+    expect(jsonLine).toBeDefined();
+    const parsed = JSON.parse(jsonLine as string);
+    expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolUse');
+    expect(parsed.hookSpecificOutput.additionalContext).toContain('no_mocks');
+  }, HOOK_TIMEOUT);
+
+  it('exits 2 with stderr for block-level violations (evidence_only)', async () => {
+    // evidence_only defaults to block; an evidence-less pass claim fires it.
+    const result = await runHook(hookPath, {
+      tool_name: 'Edit',
+      tool_input: {
+        file_path: 'src/notes.ts',
+        old_string: 'old',
+        new_string: '// all tests pass',
+      },
+    }, tempDir);
+
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('evidence_only');
+    expect(result.stdout).not.toContain('hookSpecificOutput');
+  }, HOOK_TIMEOUT);
+
+  it('emits no JSON on stdout for clean operations', async () => {
+    const result = await runHook(hookPath, {
+      tool_name: 'Bash',
+      tool_input: { command: 'echo hello', output: 'hello' },
+    }, tempDir);
+
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).not.toContain('hookSpecificOutput');
+  }, HOOK_TIMEOUT);
 
   it('runs successfully for various tool types', async () => {
     // Verify multiple tool types all exit cleanly

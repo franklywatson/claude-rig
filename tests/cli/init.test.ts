@@ -313,6 +313,29 @@ describe('initCommand', () => {
     expect(content).toContain('process.exit(0)');
   });
 
+  it('generates pre-tool-use hook that emits advisories as additionalContext', async () => {
+    await initCommand(tempDir, { force: false });
+
+    const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'pre-tool-use.ts'), 'utf-8');
+    // Advisories must reach the agent via the hookSpecificOutput JSON channel,
+    // not plain text on exit 0 (which only the human UI sees).
+    expect(content).toContain('additionalContext');
+    expect(content).toContain("hookEventName: 'PreToolUse'");
+  });
+
+  it('generates post-tool-use hook that emits advisories as additionalContext and exits 2 only for BLOCK', async () => {
+    await initCommand(tempDir, { force: false });
+
+    const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'post-tool-use.ts'), 'utf-8');
+    expect(content).toContain('additionalContext');
+    expect(content).toContain("hookEventName: 'PostToolUse'");
+    // Exit 2 must be gated on a [BLOCK]-level result
+    expect(content).toContain("includes('[BLOCK]')");
+    expect(content).toContain('process.exit(2)');
+    // Final fallback must be exit 0
+    expect(content).toContain('process.exit(0)');
+  });
+
   it('generates hook scripts with error handling for malformed input', async () => {
     await initCommand(tempDir, { force: false });
 
