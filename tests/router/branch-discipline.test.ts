@@ -120,6 +120,72 @@ describe('checkBranchDisciplineCommand', () => {
     expect(calls).toEqual([]);
   });
 
+  it('re-advises on the 11th protected-branch call after ten suppressed occurrences', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    // Call 1: first advisory for the session.
+    const first = checkBranchDisciplineCommand('git commit -m "1"', cfg('advise'), cache, exec);
+    expect(first).not.toBeNull();
+    expect(first?.level).toBe('advise');
+
+    // Calls 2-10: suppressed (and cost zero subprocesses — empty exec map).
+    const silentExec = makeExec({});
+    for (let call = 2; call <= 10; call++) {
+      expect(
+        checkBranchDisciplineCommand(`git commit -m "${call}"`, cfg('advise'), cache, silentExec),
+      ).toBeNull();
+    }
+
+    // Call 11: re-advisory with the full advisory content.
+    const eleventh = checkBranchDisciplineCommand('git commit -m "11"', cfg('advise'), cache, exec);
+    expect(eleventh).not.toBeNull();
+    expect(eleventh?.level).toBe('advise');
+    expect(eleventh?.message).toContain('Branch discipline');
+    expect(eleventh?.message).toContain('master');
+    expect(eleventh?.message).toContain('rules.workflow.branch_discipline');
+
+    // The re-advisory must not double-mark / double-count: the cycle restarts
+    // cleanly, so calls 12-20 are suppressed and call 21 re-advises again.
+    for (let call = 12; call <= 20; call++) {
+      expect(
+        checkBranchDisciplineCommand(`git commit -m "${call}"`, cfg('advise'), cache, silentExec),
+      ).toBeNull();
+    }
+    const twentyFirst = checkBranchDisciplineCommand('git commit -m "21"', cfg('advise'), cache, exec);
+    expect(twentyFirst).not.toBeNull();
+    expect(twentyFirst?.level).toBe('advise');
+  });
+
+  it('consumes the re-advisory slot silently when the 11th call is on a non-protected branch', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    // Call 1 advises on master; calls 2-10 are suppressed without a git probe.
+    expect(checkBranchDisciplineCommand('git commit -m "1"', cfg('advise'), cache, exec)).not.toBeNull();
+    const silentExec = makeExec({});
+    for (let call = 2; call <= 10; call++) {
+      expect(
+        checkBranchDisciplineCommand(`git commit -m "${call}"`, cfg('advise'), cache, silentExec),
+      ).toBeNull();
+    }
+
+    // Call 11 lands on a feature branch: the re-advisory slot is consumed by
+    // the shouldAdvise call, but the branch probe finds nothing to advise on.
+    const featureExec = makeExec({ 'git branch --show-current': 'feat/x' });
+    expect(
+      checkBranchDisciplineCommand('git commit -m "11"', cfg('advise'), cache, featureExec),
+    ).toBeNull();
+
+    // The next protected-branch call starts a fresh suppression cycle: it is
+    // suppressed (null), not advised — the consumed slot is gone.
+    expect(
+      checkBranchDisciplineCommand('git commit -m "12"', cfg('advise'), cache, silentExec),
+    ).toBeNull();
+  });
+
   it('advise message names both committing and pushing', () => {
     const exec = makeExec({
       'git branch --show-current': 'master',
