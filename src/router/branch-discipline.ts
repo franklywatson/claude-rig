@@ -17,9 +17,9 @@ export interface BranchDisciplineResult {
  * Commit-time branch discipline check (PreToolUse). Scans every quote-aware
  * compound segment of a Bash command for `git commit` / `git push`, resolves
  * the live branch via the injectable ExecFn, and — when on a protected
- * branch — advises on the first occurrence and every 10th suppressed
- * occurrence thereafter (or blocks, per
- * `rules.workflow.branch_discipline`).
+ * branch — advises on the first occurrence and every
+ * ADVISORY_READVISE_PERIOD-th (10th) suppressed occurrence thereafter (or
+ * blocks, per `rules.workflow.branch_discipline`).
  */
 export function checkBranchDisciplineCommand(
   command: string,
@@ -34,8 +34,13 @@ export function checkBranchDisciplineCommand(
 
   // A consumed advisory must cost zero subprocesses, so the suppression
   // check runs before any git probe. shouldAdvise counts each suppressed
-  // occurrence and re-advises on every 10th, so an ignored advisory
-  // resurfaces instead of disappearing for the session. The hasAdvised guard
+  // occurrence and re-advises on every ADVISORY_READVISE_PERIOD-th, so an
+  // ignored advisory resurfaces instead of disappearing for the session.
+  // Because it runs pre-probe, git writes on NON-protected branches also
+  // advance — and can consume — the cycle: a re-advisory slot that lands on
+  // a feature-branch call is spent silently (the probe finds nothing to
+  // advise on) and the cycle restarts. Acceptable drift — the alternative
+  // is a git subprocess on every suppressed call. The hasAdvised guard
   // keeps the counter untouched until the first advisory has actually fired
   // (which requires the git probe below to confirm a protected branch).
   if (

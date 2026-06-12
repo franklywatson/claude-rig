@@ -172,7 +172,8 @@ export function handlePreToolUse(
       const enforcement = getEffectiveEnforcement('scout_explore', config, match.enforcement);
       if (enforcement === 'silent') return null;
       // Advisory suppression with periodic re-advisory: first occurrence
-      // advises, then every 10th suppressed occurrence re-advises.
+      // advises, then every ADVISORY_READVISE_PERIOD-th suppressed
+      // occurrence re-advises.
       if (enforcement === 'advise' && !cache.shouldAdvise('scout_explore')) return null;
       const prefix = enforcement === 'block' ? '[BLOCK]' : '[ADVISE]';
       return [
@@ -229,8 +230,9 @@ export function handlePreToolUse(
     }
 
     // Step 1.6: Branch discipline — git commit/push on a protected branch
-    // advises on the first occurrence and every 10th suppressed occurrence
-    // thereafter (or blocks, per rules.workflow). Scans every
+    // advises on the first occurrence and every ADVISORY_READVISE_PERIOD-th
+    // suppressed occurrence thereafter (or blocks, per rules.workflow).
+    // Scans every
     // quote-aware compound segment, so `cd /tmp && git commit` is still
     // caught. A suppressed advisory still costs zero git subprocesses.
     const branchExec: ExecFn = resolvedOptions.branchExec
@@ -285,8 +287,9 @@ export function handlePreToolUse(
   if (enforcementLevel === 'silent') return null;
 
   // Advisory suppression with periodic re-advisory: the first occurrence per
-  // intent advises, then every 10th suppressed occurrence re-advises so an
-  // ignored advisory resurfaces instead of disappearing for the session.
+  // intent advises, then every ADVISORY_READVISE_PERIOD-th suppressed
+  // occurrence re-advises so an ignored advisory resurfaces instead of
+  // disappearing for the session.
   if (resolution.action === 'advise' && enforcementLevel === 'advise') {
     if (!cache.shouldAdvise(match.intent)) return null;
   }
