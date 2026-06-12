@@ -49,11 +49,18 @@ Run each check and report PASS/FAIL with evidence.
 - [ ] **SK3**: `/tdd+` shows in skill list
 - [ ] **SK4**: `/verify+` shows in skill list
 - [ ] **SK5**: `/review+` shows in skill list
+- [ ] **SK6**: `/sdd+` shows in skill list
 
 ### Agents
 
 - [ ] **AG1**: Scout agent definition exists
 - [ ] **AG2**: Scout can be invoked with `Agent(subagent_type="scout")`
+- [ ] **AG3**: code-reviewer agent definition exists
+- [ ] **AG4**: code-reviewer can be invoked with `Agent(subagent_type="code-reviewer")`
+- [ ] **AG5**: spec-reviewer agent definition exists
+- [ ] **AG6**: spec-reviewer can be invoked with `Agent(subagent_type="spec-reviewer")`
+- [ ] **AG7**: implementer agent definition exists
+- [ ] **AG8**: implementer can be invoked with `Agent(subagent_type="implementer")`
 
 ### Configuration
 
@@ -68,11 +75,11 @@ Session Verification Report
 Session Start:  X/5 passed
 Tool Router:    X/8 passed
 Enforcement:    X/6 passed
-Skills:         X/5 passed
-Agents:         X/2 passed
+Skills:         X/6 passed
+Agents:         X/8 passed
 Configuration:  X/2 passed
 
-TOTAL: XX/28 passed
+TOTAL: XX/35 passed
 
 Failures:
 - [ID]: [what happened]. Expected: [expected]. Got: [actual].

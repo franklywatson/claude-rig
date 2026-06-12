@@ -124,7 +124,7 @@ Start a Claude Code session in your project and run:
 /verify-harness
 ```
 
-This runs a 28-point checklist confirming hooks, skills, agents, and config are correctly wired.
+This runs a 35-point checklist confirming hooks, skills, agents, and config are correctly wired.
 
 ## Use the skill chain
 
