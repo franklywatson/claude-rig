@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import type { HarnessConfig, RewriteResult } from '../types.js';
 import { SessionCache } from '../session/cache.js';
@@ -7,6 +7,7 @@ import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
 import { checkTestScope } from '../enforcement/test-scope.js';
+import { checkBranchDisciplineCommand, type ExecFn } from './branch-discipline.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
 export type ExistsCheckFn = (path: string) => boolean;
@@ -14,6 +15,8 @@ export type ExistsCheckFn = (path: string) => boolean;
 export interface HookOptions {
   execRewrite?: ExecRewriteFn;
   existsCheck?: ExistsCheckFn;
+  /** Injectable exec for branch-discipline git probes (testability). */
+  branchExec?: ExecFn;
 }
 
 export type RawExecFileFn = (file: string, args: string[], opts: object) => string;
@@ -213,6 +216,18 @@ export function handlePreToolUse(
       config,
     );
     if (scopeViolation) return scopeViolation;
+  }
+
+  // Step 1.6: Branch discipline — git commit/push on a protected branch
+  // advises once per session (or blocks, per rules.workflow). Scans every
+  // quote-aware compound segment, so `cd /tmp && git commit` is still caught.
+  // Runs before the rewrite steps because a block must win over a rewrite,
+  // and the once-per-session advisory costs at most one rtk rewrite.
+  if (tool === 'Bash' && typeof args.command === 'string') {
+    const branchExec: ExecFn = resolvedOptions.branchExec
+      ?? ((cmd) => execSync(cmd, { encoding: 'utf-8', cwd: effectiveCwd, timeout: 5000 }) as string);
+    const discipline = checkBranchDisciplineCommand(args.command, config, cache, branchExec);
+    if (discipline) return discipline.message;
   }
 
   // Step 2: Python environment rewrite for Bash commands (skip compound commands)
