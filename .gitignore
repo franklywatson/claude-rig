@@ -1,4 +1,5 @@
-node_modules/
+# no trailing slash: must also match a stray node_modules symlink, not just the directory
+node_modules
 dist/
 coverage/
 *.js.map
