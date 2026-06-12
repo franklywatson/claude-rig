@@ -89,6 +89,28 @@ describe('classifyIntent', () => {
     it('still classifies grep && grep as text_search', () => {
       expect(classifyIntent('Bash', { command: 'grep "TODO" src/a.ts && grep "FIXME" src/b.ts' })).toBe('text_search');
     });
+
+    it('classifies sed -i after a pass_through segment as file_modify', () => {
+      expect(
+        classifyIntent('Bash', { command: 'echo "const x = 1;" > /tmp/f.ts && sed -i \'\' \'s/x/y/\' /tmp/f.ts' }),
+      ).toBe('file_modify');
+    });
+
+    it('classifies sed -i after a semicolon as file_modify', () => {
+      expect(classifyIntent('Bash', { command: "cd /tmp; sed -i 's/a/b/' file.ts" })).toBe('file_modify');
+    });
+
+    it('classifies sed -i on the right side of a pipe as file_modify', () => {
+      expect(classifyIntent('Bash', { command: "cat list.txt | sed -i 's/a/b/' file.ts" })).toBe('file_modify');
+    });
+
+    it('classifies awk redirect after && as file_modify', () => {
+      expect(classifyIntent('Bash', { command: "mkdir -p out && awk '{print}' a.txt > out/b.txt" })).toBe('file_modify');
+    });
+
+    it('does not classify quoted sed -i text as file_modify', () => {
+      expect(classifyIntent('Bash', { command: 'echo "run sed -i later && sed -i fake"' })).toBe('pass_through');
+    });
   });
 
   describe('Claude tool classification', () => {

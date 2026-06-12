@@ -43,6 +43,19 @@ const TOOL_INTENT_MAP: Record<string, IntentType> = {
 };
 
 function classifyBashCommand(command: string): IntentType {
+  // Destructive operations are flagged wherever they appear in a chain — a
+  // sed -i behind `&&`, `;`, or a pipe still modifies files. Scan every
+  // quote-aware segment for file_modify before positional classification.
+  for (const segment of splitCompoundSegments(command)) {
+    const trimmed = segment.trim();
+    for (const { pattern, intent } of BASH_INTENT_PATTERNS) {
+      if (pattern.test(trimmed)) {
+        if (intent === 'file_modify') return 'file_modify';
+        break; // first matching pattern decides this segment
+      }
+    }
+  }
+
   // Only classify the first segment (before any pipe).
   // grep/find/cat on the right side of | is output filtering, not code search.
   const pipeIndex = command.indexOf('|');
@@ -77,6 +90,56 @@ function classifyBashCommand(command: string): IntentType {
   }
 
   return highest;
+}
+
+/**
+ * Split a command into segments on chaining/piping operators (`&&`, `||`,
+ * `;`, `|`) that appear outside quoted strings. Mirrors isCompoundCommand's
+ * quote handling so operators inside quotes never produce false segments.
+ */
+export function splitCompoundSegments(command: string): string[] {
+  const segments: string[] = [];
+  let inSingle = false;
+  let inDouble = false;
+  let start = 0;
+  let i = 0;
+
+  while (i < command.length) {
+    const ch = command[i];
+
+    if (ch === '\'' && !inDouble) {
+      inSingle = !inSingle;
+      i++;
+      continue;
+    }
+    if (ch === '"' && !inSingle) {
+      inDouble = !inDouble;
+      i++;
+      continue;
+    }
+    if (inSingle || inDouble) {
+      i++;
+      continue;
+    }
+
+    if ((ch === '&' && command[i + 1] === '&') || (ch === '|' && command[i + 1] === '|')) {
+      segments.push(command.slice(start, i));
+      i += 2;
+      start = i;
+      continue;
+    }
+    if (ch === ';' || ch === '|') {
+      segments.push(command.slice(start, i));
+      i += 1;
+      start = i;
+      continue;
+    }
+
+    i++;
+  }
+
+  segments.push(command.slice(start));
+  return segments;
 }
 
 /**

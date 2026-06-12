@@ -114,7 +114,10 @@ signals, ENOENT) is appended as a JSON line to
 `/tmp/rig-rtk-rewrite-failures.log` so silent fallthroughs are
 debuggable in the field. Set `RIG_DEBUG=1` to log expected declines too.
 Compound commands (pipes, `&&`, `;`) skip the rewrite entirely — the router
-cannot safely rewrite one segment of a pipeline.
+cannot safely rewrite one segment of a pipeline. Blocks are different:
+destructive operations (`sed -i`, awk redirects) are detected in **every**
+quote-aware segment of a compound command, so `echo ok && sed -i ...` is
+blocked even though it would never be rewritten.
 
 ---
 
