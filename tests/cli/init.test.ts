@@ -72,6 +72,12 @@ describe('initCommand', () => {
     expect(readFileSync(agentPath, 'utf-8')).toBe('# My custom implementer\n');
   });
 
+  it('installs agent-loops reference into brain-plus and plan-plus', async () => {
+    await initCommand(tempDir, { force: false });
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'brain-plus', 'references', 'agent-loops.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'plan-plus', 'references', 'agent-loops.md'))).toBe(true);
+  });
+
   it('creates .harness.yaml with defaults', async () => {
     await initCommand(tempDir, { force: false });
     const configPath = join(tempDir, '.harness.yaml');

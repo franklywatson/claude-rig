@@ -96,6 +96,20 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
     copyUserTemplate(src, join(claudeDir, 'agents', agentFile), renderContext, options.force);
   }
 
+  // Copy shared skill references (one source template, installed into each
+  // consuming skill's references/ directory)
+  const referenceInstalls: Array<{ file: string; skill: string }> = [
+    { file: 'agent-loops.md', skill: 'brain-plus' },
+    { file: 'agent-loops.md', skill: 'plan-plus' },
+  ];
+  for (const ref of referenceInstalls) {
+    const src = join(TEMPLATES_DIR, 'references', ref.file);
+    if (!existsSync(src)) continue;
+    const destDir = join(claudeDir, 'skills', ref.skill, 'references');
+    mkdirSync(destDir, { recursive: true });
+    copyUserTemplate(src, join(destDir, ref.file), renderContext, options.force);
+  }
+
   // Write default config
   // .harness.yaml carries user enforcement policy — never reset it on --force;
   // a template refresh must not change what the user chose to enforce.
