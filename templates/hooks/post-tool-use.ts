@@ -55,10 +55,13 @@ import { execSync } from 'node:child_process';
     const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn);
 
     if (result) {
-      // Block-level violations: exit 2 + stderr. PostToolUse cannot undo the
-      // tool call, but Claude Code feeds stderr back to the agent as an error.
-      if (result.includes('[BLOCK]')) {
-        console.error(result);
+      // The severity comes from the structured result's level, derived by the
+      // checks themselves — never from sniffing the message text, which can
+      // embed arbitrary tool output (e.g. the literal string '[BLOCK]').
+      if (result.level === 'block') {
+        // Block-level violations: exit 2 + stderr. PostToolUse cannot undo the
+        // tool call, but Claude Code feeds stderr back to the agent as an error.
+        console.error(result.message);
         process.exit(2); // surface to agent as error
       }
       // Advise-level violations: agent-visible additionalContext JSON.
@@ -66,7 +69,7 @@ import { execSync } from 'node:child_process';
       console.log(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PostToolUse',
-          additionalContext: result,
+          additionalContext: result.message,
         },
       }));
     }

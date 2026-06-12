@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { FileTracker } from './file-tracker.js';
 import { SessionCache } from '../session/cache.js';
-import type { HarnessConfig } from '../types.js';
+import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
 import { checkZeroDefect } from './zero-defect.js';
@@ -14,7 +14,9 @@ import type { ExecFn } from '../session/metrics.js';
 
 /**
  * PostToolUse hook handler. Composes all enforcement checks.
- * Returns null if all clean, or a combined violation message.
+ * Returns null if all clean, or a combined violation whose level is derived
+ * from the checks themselves (any block-level violation → 'block') — never
+ * from message text, which can embed arbitrary tool output.
  */
 export function handlePostToolUse(
   tool: string,
@@ -23,13 +25,13 @@ export function handlePostToolUse(
   cache: SessionCache,
   config: HarnessConfig,
   execFn?: ExecFn,
-): string | null {
+): EnforcementViolation | null {
   const metric = incrementMetric(tool, args);
   if (metric) {
     cache.incrementMetricCounter(metric);
   }
 
-  const violations: string[] = [];
+  const violations: EnforcementViolation[] = [];
 
   // Track skill-chain phase transitions so other hooks (e.g. the PreToolUse
   // test-scope check) can read the current phase from the session cache.
@@ -99,8 +101,11 @@ export function handlePostToolUse(
 
   if (violations.length === 0) return null;
 
-  // Return combined violations separated by separator
-  return violations.join('\n\n---\n\n');
+  // Combine violations: level is the max severity across the checks.
+  return {
+    level: violations.some(v => v.level === 'block') ? 'block' : 'advise',
+    message: violations.map(v => v.message).join('\n\n---\n\n'),
+  };
 }
 
 /** Skill-name → skill-chain phase. Keys cover the installed skill directory

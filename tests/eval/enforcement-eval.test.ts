@@ -133,7 +133,7 @@ describe('Context Eval: enforcement pipeline', () => {
 
       const actualViolation = result !== null;
       const violationCorrect = actualViolation === scenario.expectedViolation;
-      const matchCorrect = !scenario.expectedMatch || (result !== null && result.toLowerCase().includes(scenario.expectedMatch.toLowerCase()));
+      const matchCorrect = !scenario.expectedMatch || (result !== null && result.message.toLowerCase().includes(scenario.expectedMatch.toLowerCase()));
       const score = violationCorrect && matchCorrect ? 1.0 : violationCorrect ? 0.5 : 0.0;
       const pass = score >= 0.5;
 
@@ -148,7 +148,7 @@ describe('Context Eval: enforcement pipeline', () => {
 
       if (!pass) {
         expect.fail(
-          `Enforcement mismatch:\n  Expected violation: ${scenario.expectedViolation}\n  Actual violation: ${actualViolation}\n  Output: ${result ?? '(none)'}`,
+          `Enforcement mismatch:\n  Expected violation: ${scenario.expectedViolation}\n  Actual violation: ${actualViolation}\n  Output: ${result?.message ?? '(none)'}`,
         );
       }
 

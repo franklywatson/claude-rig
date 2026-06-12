@@ -52,7 +52,7 @@ describe('handlePostToolUse', () => {
     const testOutput = 'FAIL tests/a.test.ts\nTests: 1 failed';
     const result = handlePostToolUse('Bash', { command: 'npx vitest run', output: testOutput }, tracker, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('ZERO-DEFECT');
+    expect(result?.message).toContain('ZERO-DEFECT');
   });
 
   it('checks constitutional on stack test file edits', () => {
@@ -67,7 +67,7 @@ describe('handlePostToolUse', () => {
       config,
     );
     expect(result).not.toBeNull();
-    expect(result).toContain('no_mocks');
+    expect(result?.message).toContain('no_mocks');
   });
 
   it('combines multiple violations into single output', () => {
@@ -83,7 +83,7 @@ describe('handlePostToolUse', () => {
       config,
     );
     // Should contain the constitutional violation
-    expect(result).toContain('no_mocks');
+    expect(result?.message).toContain('no_mocks');
   });
 
   it('returns null for clean operations', () => {
@@ -303,6 +303,77 @@ describe('handlePostToolUse', () => {
       handlePostToolUse('Edit', { file_path: 'docs/architecture.md' }, tracker, cache, config);
       expect(cache.getEditedFiles('source')).toEqual([]);
       expect(cache.getEditedFiles('test')).toEqual([]);
+    });
+  });
+
+  describe('structured severity', () => {
+    it('returns level advise for an advise-level constitutional violation', () => {
+      const result = handlePostToolUse(
+        'Edit',
+        {
+          file_path: 'tests/router/resolver.stack.test.ts',
+          new_string: "vi.mock('../src/config.js');",
+        },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('advise');
+      expect(result?.message).toContain('no_mocks');
+    });
+
+    it('returns level block for a block-level constitutional violation', () => {
+      const result = handlePostToolUse(
+        'Edit',
+        { file_path: 'src/notes.ts', new_string: '// all tests pass' },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('evidence_only');
+    });
+
+    it('does not escalate an advise-level zero-defect result whose output embeds the literal [BLOCK]', () => {
+      config.rules.zero_defect = { tolerance: 'permissive' };
+      const testOutput = [
+        "FAIL tests/hooks.test.ts > emits the '[BLOCK]' prefix for block-level rules",
+        'Tests: 1 failed',
+      ].join('\n');
+
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run', output: testOutput },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('advise');
+      // The message legitimately contains the literal string '[BLOCK]' from
+      // the embedded test output — the level must come from the check, not
+      // from sniffing the message text.
+      expect(result?.message).toContain('[BLOCK]');
+    });
+
+    it('combines to level block when any violation is block-level', () => {
+      // Stale-test advisory (advise-level) + evidence_only (block-level)
+      // fire in the same call: combined level must be block.
+      tracker.recordEdit('src/other.ts');
+      tracker.nextTurn();
+      const result = handlePostToolUse(
+        'Edit',
+        { file_path: 'src/notes.ts', new_string: '// all tests pass' },
+        tracker,
+        cache,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('STALE TEST');
+      expect(result?.message).toContain('evidence_only');
+      expect(result?.level).toBe('block');
     });
   });
 

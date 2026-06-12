@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
@@ -155,6 +155,48 @@ describe('PostToolUse hook E2E', () => {
 
     expect(result.exitCode).toBe(0);
     expect(result.stdout).not.toContain('hookSpecificOutput');
+  }, HOOK_TIMEOUT);
+
+  it('does not escalate advise-level output that embeds the literal [BLOCK] string', async () => {
+    // Severity must come from the checks' structured level, not from
+    // sniffing the message text: an advise-level zero-defect violation whose
+    // embedded test output contains the literal string '[BLOCK]' (e.g. a
+    // failing test that asserts on the prefix) must stay advise-level.
+    const adviseDir = mkdtempSync(join(tmpdir(), 'rig-e2e-post-advise-'));
+    try {
+      await initCommand(adviseDir, { force: false });
+      // Lower zero_defect to advise-level so the violation is advisory.
+      writeFileSync(join(adviseDir, '.harness.yaml'), [
+        'rules:',
+        '  zero_defect:',
+        '    tolerance: permissive',
+        '    unrelated_errors: advise',
+        '',
+      ].join('\n'));
+
+      const result = await runHook(
+        join(adviseDir, '.claude', 'hooks', 'scripts', 'post-tool-use.ts'),
+        {
+          tool_name: 'Bash',
+          tool_input: {
+            command: 'npx vitest run',
+            output: "FAIL tests/hooks.test.ts > emits the '[BLOCK]' prefix\n" +
+              'Tests: 1 failed',
+          },
+        },
+        adviseDir,
+      );
+
+      expect(result.exitCode).toBe(0);
+      const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine as string);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('PostToolUse');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('ZERO-DEFECT');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('[BLOCK]');
+    } finally {
+      rmSync(adviseDir, { recursive: true, force: true });
+    }
   }, HOOK_TIMEOUT);
 
   it('runs successfully for various tool types', async () => {
