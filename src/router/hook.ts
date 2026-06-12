@@ -201,6 +201,9 @@ export function handlePreToolUse(
   // session cache (persisted by the PostToolUse hook). Runs pre-execution
   // because a scoped-run redirect is only actionable before the suite runs.
   // No first-occurrence suppression: every unscoped run is flagged.
+  // The early return before the rewrite steps (2 and 3) is safe today because
+  // no UNSCOPED_TEST_PATTERNS command is rtk- or python-rewritable; revisit
+  // this ordering if RTK_PREFIXES ever gains test runners.
   if (tool === 'Bash' && typeof args.command === 'string') {
     const scopeViolation = checkTestScope(
       args.command,
