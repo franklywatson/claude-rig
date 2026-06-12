@@ -5,6 +5,13 @@ import type { Environment, GraphBuildInfo, GraphifyProjectStats, MetricsBaseline
 
 const ENV_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
+/**
+ * Advisory re-advisory cycle length: after an advisory fires, shouldAdvise()
+ * suppresses the next ADVISORY_READVISE_PERIOD - 1 occurrences and re-advises
+ * on the ADVISORY_READVISE_PERIOD-th — i.e. calls 1, 11, 21, ... advise.
+ */
+export const ADVISORY_READVISE_PERIOD = 10;
+
 export function sessionCachePath(cwd: string, sessionId?: string): string {
   // Canonicalize the cwd so callers that pass an unresolved path (e.g. macOS
   // /var/folders/... which resolves to /private/var/folders/...) hash to the
@@ -35,6 +42,7 @@ export class SessionCache {
   private toolsWarned = false;
   private pythonEnv: PythonEnv | undefined;
   private advisedIntents: Set<string> = new Set();
+  private advisorySuppressCounts: Map<string, number> = new Map();
 
   constructor(cwd?: string, sessionId?: string) {
     this.cwd = cwd;
@@ -149,6 +157,42 @@ export class SessionCache {
     this.save();
   }
 
+  /**
+   * Stateful advisory gate with periodic re-advisory. Returns true on the
+   * first call for an intent (and marks it advised), then false for the next
+   * nine occurrences, then true again on the tenth suppressed occurrence —
+   * i.e. calls 1, 11, 21, ... advise (cycle length ADVISORY_READVISE_PERIOD);
+   * everything in between is suppressed. The suppression counter is
+   * persisted alongside advisedIntents so the cycle survives across hook
+   * processes. hasAdvised() remains a pure query.
+   *
+   * WARNING: every call consumes one slot in the suppression cycle, whether
+   * or not the caller acts on the result. Call it at most once per advisory
+   * decision, and mind evaluation order when composing with hasAdvised() —
+   * `hasAdvised(x) && !shouldAdvise(x)` only spends a slot once the intent
+   * is already marked, whereas calling shouldAdvise() first would advance
+   * the cycle on paths that never advise.
+   */
+  shouldAdvise(intent: string): boolean {
+    if (!this.advisedIntents.has(intent)) {
+      // No counter seed needed: a missing key reads as 0 via `?? 0` below,
+      // which is also the state markAdvised() leaves behind.
+      this.advisedIntents.add(intent);
+      this.save();
+      return true;
+    }
+    const suppressed = (this.advisorySuppressCounts.get(intent) ?? 0) + 1;
+    if (suppressed >= ADVISORY_READVISE_PERIOD) {
+      // Final suppressed occurrence of the cycle — re-advise and restart.
+      this.advisorySuppressCounts.set(intent, 0);
+      this.save();
+      return true;
+    }
+    this.advisorySuppressCounts.set(intent, suppressed);
+    this.save();
+    return false;
+  }
+
   getPythonEnv(): PythonEnv | undefined {
     return this.pythonEnv;
   }
@@ -188,6 +232,7 @@ export class SessionCache {
     this.changedFiles = [];
     this.pythonEnv = undefined;
     this.advisedIntents = new Set();
+    this.advisorySuppressCounts = new Map();
     this.save();
   }
 
@@ -209,6 +254,7 @@ export class SessionCache {
       changedFiles: [...this.changedFiles],
       pythonEnv: this.pythonEnv ?? null,
       advisedIntents: Array.from(this.advisedIntents),
+      advisorySuppressCounts: Object.fromEntries(this.advisorySuppressCounts),
     };
   }
 
@@ -246,6 +292,7 @@ export class SessionCache {
       this.changedFiles = data.changedFiles ?? [];
       this.pythonEnv = data.pythonEnv ?? undefined;
       this.advisedIntents = new Set(data.advisedIntents ?? []);
+      this.advisorySuppressCounts = new Map(Object.entries(data.advisorySuppressCounts ?? {}));
     } catch {
       // Corrupt or unreadable file — start fresh
     }

@@ -171,9 +171,10 @@ export function handlePreToolUse(
     if (env.jcodemunchAvailable) {
       const enforcement = getEffectiveEnforcement('scout_explore', config, match.enforcement);
       if (enforcement === 'silent') return null;
-      // First-occurrence suppression for scout_explore advisory
-      if (enforcement === 'advise' && cache.hasAdvised('scout_explore')) return null;
-      cache.markAdvised('scout_explore');
+      // Advisory suppression with periodic re-advisory: first occurrence
+      // advises, then every ADVISORY_READVISE_PERIOD-th suppressed
+      // occurrence re-advises.
+      if (enforcement === 'advise' && !cache.shouldAdvise('scout_explore')) return null;
       const prefix = enforcement === 'block' ? '[BLOCK]' : '[ADVISE]';
       return [
         `${prefix} Tool Router: scout_explore detected`,
@@ -229,9 +230,11 @@ export function handlePreToolUse(
     }
 
     // Step 1.6: Branch discipline — git commit/push on a protected branch
-    // advises once per session (or blocks, per rules.workflow). Scans every
+    // advises on the first occurrence and every ADVISORY_READVISE_PERIOD-th
+    // suppressed occurrence thereafter (or blocks, per rules.workflow).
+    // Scans every
     // quote-aware compound segment, so `cd /tmp && git commit` is still
-    // caught. The once-per-session advisory costs at most one rtk rewrite.
+    // caught. A suppressed advisory still costs zero git subprocesses.
     const branchExec: ExecFn = resolvedOptions.branchExec
       ?? ((cmd) => execSync(cmd, { encoding: 'utf-8', cwd: effectiveCwd, timeout: 5000 }) as string);
     const discipline = checkBranchDisciplineCommand(args.command, config, cache, branchExec);
@@ -283,10 +286,12 @@ export function handlePreToolUse(
 
   if (enforcementLevel === 'silent') return null;
 
-  // First-occurrence suppression: advise once per intent per session
+  // Advisory suppression with periodic re-advisory: the first occurrence per
+  // intent advises, then every ADVISORY_READVISE_PERIOD-th suppressed
+  // occurrence re-advises so an ignored advisory resurfaces instead of
+  // disappearing for the session.
   if (resolution.action === 'advise' && enforcementLevel === 'advise') {
-    if (cache.hasAdvised(match.intent)) return null;
-    cache.markAdvised(match.intent);
+    if (!cache.shouldAdvise(match.intent)) return null;
   }
 
   const prefix = enforcementLevel === 'block' ? '[BLOCK]' : '[ADVISE]';

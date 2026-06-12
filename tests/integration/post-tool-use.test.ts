@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
 import { runHook, readSessionCache } from '../helpers/hook-runner.js';
+import { sessionCachePath } from '../../src/session/cache.js';
 
 describe('PostToolUse hook E2E', () => {
   // npx tsx may need to install on first run in CI
@@ -26,6 +27,12 @@ describe('PostToolUse hook E2E', () => {
   }, HOOK_TIMEOUT);
 
   afterAll(() => {
+    // The hook subprocess persists edit tracking to a session cache keyed by
+    // tempDir (no session_id) — remove the exact path so /tmp doesn't
+    // accumulate fixtures. Never glob-delete: real sessions own sibling
+    // cache files.
+    const cachePath = sessionCachePath(tempDir);
+    if (existsSync(cachePath)) unlinkSync(cachePath);
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -195,6 +202,8 @@ describe('PostToolUse hook E2E', () => {
       expect(parsed.hookSpecificOutput.additionalContext).toContain('ZERO-DEFECT');
       expect(parsed.hookSpecificOutput.additionalContext).toContain('[BLOCK]');
     } finally {
+      const adviseCachePath = sessionCachePath(adviseDir);
+      if (existsSync(adviseCachePath)) unlinkSync(adviseCachePath);
       rmSync(adviseDir, { recursive: true, force: true });
     }
   }, HOOK_TIMEOUT);

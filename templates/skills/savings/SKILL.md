@@ -15,16 +15,33 @@ Report token savings from rtk and jcodemunch usage during this session.
 
 1. Run `rtk gain --format json` to get current savings data. If rtk is not
    available, skip rtk reporting.
-2. Find the session cache file:
+2. Gather the session cache files (aggregate, do not pick one):
    - Use `Bash(ls /tmp/rig-session-*.json)` to list candidates (or the Glob tool
      with pattern `/tmp/rig-session-*.json`).
    - For each candidate path, use the **Read tool** (not `cat` or `grep`) to load
-     the JSON and check the `cwd` field. Use the file whose `cwd` matches the
-     current project directory (`$CLAUDE_PROJECT_DIR` or `pwd`). If no file has
-     a matching `cwd`, fall back to the most recent by modification time.
-   - The cache file contains `metricsBaseline`, `metricCounters` (rtkCalls,
-     jmCalls, efficientCalls), and `environment` (rtkAvailable,
-     jcodemunchAvailable).
+     the JSON and check the `cwd` field. Collect ALL files whose `cwd` matches
+     the current project directory (`$CLAUDE_PROJECT_DIR` or `pwd`) — hooks
+     running from subagent contexts or under different session ids write
+     separate cache files keyed by (cwd, session id), and each holds part of
+     this session's tool-call counters.
+   - Anchor staleness to session start: session-start recaptures the metrics
+     baseline every session, so the most recent matching file **with a
+     non-null `metricsBaseline`** (highest `updatedAt` among those) provides
+     the session-start anchor via its `metricsBaseline.capturedAt` —
+     subagent-context fragments never run session-start and carry a null
+     baseline, so they cannot anchor.
+     Discard matching files whose `updatedAt` predates the anchor, and as an
+     outer bound discard any file older than 24 hours — files from earlier
+     sessions today (same cwd, different session ids) hold a previous
+     session's work and would inflate "this session" counts.
+   - Sum `metricCounters` (rtkCalls, jmCalls, efficientCalls, graphifyCalls)
+     across the remaining matching files. These summed values are the session
+     call counts used in the report.
+   - Take `metricsBaseline` and `environment` (rtkAvailable,
+     jcodemunchAvailable) from the most recent matching file (highest
+     `updatedAt`) — baselines and environment snapshots must not be summed.
+   - If no file has a matching `cwd`, fall back to the single most recent
+     file by modification time.
    - `rig init` auto-allows `Bash(ls /tmp/rig-session-*)` and
      `Read(/tmp/rig-session-*.json)`, so this flow should not prompt for
      permission. If it does, `.claude/settings.json` is out of date — re-run
@@ -35,13 +52,14 @@ Report token savings from rtk and jcodemunch usage during this session.
    `tool_breakdown` directly. These are reliable per-session counters
    maintained by the MCP server process. If jcodemunch MCP is not available,
    skip jcodemunch reporting.
-5. For graphify: check the session cache file for `graphifyStats` in the
+5. For graphify: check the most recent matching cache file for `graphifyStats` in the
    `metricsBaseline` field. This is a per-directory record mapping absolute
    paths to `GraphifyProjectStats` objects. If present, include the graphify
    section in the report (see Output Format below). Alternatively, if graphify
    MCP is available, call `mcp__graphify__graph_stats` to get live stats.
    If graphify is not available, skip graphify reporting.
-6. For headroom (context-compression proxy): check the session cache file's
+6. For headroom (context-compression proxy): check the most recent matching
+   cache file's
    `environment.headroomInitialized` field. If true, run
    `headroom perf --format json --hours 24` and read `tokens_saved`,
    `savings_pct`, `total_requests`, and `cache_hit_pct`. Include the headroom

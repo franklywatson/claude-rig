@@ -45,6 +45,11 @@ describe('PreToolUse hook E2E', () => {
   }, HOOK_TIMEOUT);
 
   afterAll(() => {
+    // Hook subprocesses invoked without a session_id key their session cache
+    // by tempDir alone — remove the exact path so /tmp doesn't accumulate
+    // fixtures. Never glob-delete: real sessions own sibling cache files.
+    const cachePath = sessionCachePath(tempDir);
+    if (existsSync(cachePath)) unlinkSync(cachePath);
     rmSync(tempDir, { recursive: true, force: true });
   });
 
@@ -256,6 +261,9 @@ describe('PreToolUse hook E2E', () => {
         const path = sessionCachePath(gitDir, id);
         if (existsSync(path)) unlinkSync(path);
       }
+      // Also remove the no-session-id cache in case a hook ran without one.
+      const noIdPath = sessionCachePath(gitDir);
+      if (existsSync(noIdPath)) unlinkSync(noIdPath);
       rmSync(gitDir, { recursive: true, force: true });
     });
 

@@ -17,8 +17,9 @@ export interface BranchDisciplineResult {
  * Commit-time branch discipline check (PreToolUse). Scans every quote-aware
  * compound segment of a Bash command for `git commit` / `git push`, resolves
  * the live branch via the injectable ExecFn, and — when on a protected
- * branch — advises once per session (or blocks, per
- * `rules.workflow.branch_discipline`).
+ * branch — advises on the first occurrence and every
+ * ADVISORY_READVISE_PERIOD-th (10th) suppressed occurrence thereafter (or
+ * blocks, per `rules.workflow.branch_discipline`).
  */
 export function checkBranchDisciplineCommand(
   command: string,
@@ -31,9 +32,24 @@ export function checkBranchDisciplineCommand(
   if (level === 'silent') return null;
   if (!splitCompoundSegments(command).some(s => GIT_WRITE_PATTERN.test(s.trim()))) return null;
 
-  // A consumed once-per-session advisory must cost zero subprocesses, so the
-  // suppression check runs before any git probe.
-  if (level === 'advise' && cache.hasAdvised('branch_discipline')) return null;
+  // A consumed advisory must cost zero subprocesses, so the suppression
+  // check runs before any git probe. shouldAdvise counts each suppressed
+  // occurrence and re-advises on every ADVISORY_READVISE_PERIOD-th, so an
+  // ignored advisory resurfaces instead of disappearing for the session.
+  // Because it runs pre-probe, git writes on NON-protected branches also
+  // advance — and can consume — the cycle: a re-advisory slot that lands on
+  // a feature-branch call is spent silently (the probe finds nothing to
+  // advise on) and the cycle restarts. Acceptable drift — the alternative
+  // is a git subprocess on every suppressed call. The hasAdvised guard
+  // keeps the counter untouched until the first advisory has actually fired
+  // (which requires the git probe below to confirm a protected branch).
+  if (
+    level === 'advise' &&
+    cache.hasAdvised('branch_discipline') &&
+    !cache.shouldAdvise('branch_discipline')
+  ) {
+    return null;
+  }
 
   let branch: string;
   try {
@@ -45,7 +61,10 @@ export function checkBranchDisciplineCommand(
   if (!protectedBranches.includes(branch)) return null;
 
   if (level === 'advise') {
-    cache.markAdvised('branch_discipline');
+    // First advisory for the session: start the suppression cycle. On a
+    // periodic re-advisory the intent is already marked and the counter was
+    // reset by the shouldAdvise call above.
+    if (!cache.hasAdvised('branch_discipline')) cache.markAdvised('branch_discipline');
     const strategy = resolveIsolationStrategy(wf?.isolation_strategy ?? WORKFLOW_DEFAULTS.isolation_strategy, exec);
     const isolation = strategy === 'worktree'
       ? 'a worktree (/using-git-worktrees)'

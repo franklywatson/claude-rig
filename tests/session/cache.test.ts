@@ -119,6 +119,49 @@ describe('SessionCache', () => {
     cache.incrementMetricCounter('jmCalls');
     expect(cache.getMetricCounters()).toEqual({ rtkCalls: 2, jmCalls: 1, efficientCalls: 0, graphifyCalls: 0 });
   });
+
+  describe('shouldAdvise (advisory re-suppression)', () => {
+    it('returns true on the first call for an intent', () => {
+      expect(cache.shouldAdvise('native_grep')).toBe(true);
+    });
+
+    it('returns false on the second call (suppressed)', () => {
+      cache.shouldAdvise('native_grep');
+      expect(cache.shouldAdvise('native_grep')).toBe(false);
+    });
+
+    it('stays suppressed through the 10th call, re-advises on the 11th', () => {
+      expect(cache.shouldAdvise('native_grep')).toBe(true); // call 1
+      for (let call = 2; call <= 10; call++) {
+        expect(cache.shouldAdvise('native_grep')).toBe(false); // calls 2-10
+      }
+      expect(cache.shouldAdvise('native_grep')).toBe(true); // call 11 — re-advisory
+      expect(cache.shouldAdvise('native_grep')).toBe(false); // call 12 — cycle restarts
+    });
+
+    it('tracks suppression counters independently per intent', () => {
+      expect(cache.shouldAdvise('native_grep')).toBe(true);
+      expect(cache.shouldAdvise('native_read')).toBe(true);
+      expect(cache.shouldAdvise('native_grep')).toBe(false);
+      expect(cache.shouldAdvise('native_read')).toBe(false);
+    });
+
+    it('marks the intent as advised (hasAdvised stays a pure query)', () => {
+      expect(cache.hasAdvised('native_grep')).toBe(false);
+      cache.shouldAdvise('native_grep');
+      expect(cache.hasAdvised('native_grep')).toBe(true);
+      // hasAdvised does not mutate the counter
+      cache.hasAdvised('native_grep');
+      expect(cache.shouldAdvise('native_grep')).toBe(false); // call 2, not call 3
+    });
+
+    it('clears suppression counters on reset', () => {
+      cache.shouldAdvise('native_grep');
+      cache.shouldAdvise('native_grep');
+      cache.reset();
+      expect(cache.shouldAdvise('native_grep')).toBe(true);
+    });
+  });
 });
 
 describe('SessionCache (file-backed)', () => {
@@ -254,6 +297,25 @@ describe('SessionCache (file-backed)', () => {
     expect(cache2.getPythonEnv()).toBeDefined();
     expect(cache2.getPythonEnv()!.venvPath).toBe('/project/.venv');
     expect(cache2.getPythonEnv()!.uvAvailable).toBe(true);
+  });
+
+  it('persists advisory suppression counters across cache instances', () => {
+    const path = sessionCachePath(testCwd);
+    if (existsSync(path)) { unlinkSync(path); }
+    trackPath(path);
+
+    const cache = new SessionCache(testCwd);
+    expect(cache.shouldAdvise('native_grep')).toBe(true); // call 1
+    expect(cache.shouldAdvise('native_grep')).toBe(false); // call 2
+    expect(cache.shouldAdvise('native_grep')).toBe(false); // call 3
+
+    // A fresh instance (separate hook process) continues the same sequence
+    const cache2 = new SessionCache(testCwd);
+    expect(cache2.hasAdvised('native_grep')).toBe(true);
+    for (let call = 4; call <= 10; call++) {
+      expect(cache2.shouldAdvise('native_grep')).toBe(false); // calls 4-10
+    }
+    expect(cache2.shouldAdvise('native_grep')).toBe(true); // call 11 — re-advisory
   });
 
   it('persists clearEditedFiles across instances', () => {
