@@ -6,6 +6,8 @@ import { findMatchingRule, getDefaultRules } from './rules.js';
 import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
+import { FileTracker } from '../enforcement/file-tracker.js';
+import { checkTestScope } from '../enforcement/test-scope.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
 export type ExistsCheckFn = (path: string) => boolean;
@@ -194,6 +196,21 @@ export function handlePreToolUse(
     }
   }
 
+  // Step 1.5: Test-scope check — during tdd+/sdd+, advise a scoped run before
+  // a full-suite command executes. Phase and edit history come from the
+  // session cache (persisted by the PostToolUse hook). Runs pre-execution
+  // because a scoped-run redirect is only actionable before the suite runs.
+  // No first-occurrence suppression: every unscoped run is flagged.
+  if (tool === 'Bash' && typeof args.command === 'string') {
+    const scopeViolation = checkTestScope(
+      args.command,
+      cache.getCurrentPhase(),
+      buildTrackerFromCache(cache),
+      config,
+    );
+    if (scopeViolation) return scopeViolation;
+  }
+
   // Step 2: Python environment rewrite for Bash commands (skip compound commands)
   if (tool === 'Bash' && typeof args.command === 'string' && !isCompoundCommand(args.command)) {
     const pythonEnv = cache.getPythonEnv();
@@ -254,6 +271,18 @@ export function handlePreToolUse(
   }
 
   return null;
+}
+
+/**
+ * Hydrate a FileTracker from the session cache's persisted edit history.
+ * Hooks are separate processes, so the PostToolUse FileTracker never survives
+ * to the next PreToolUse invocation — the cache is the cross-process channel.
+ */
+function buildTrackerFromCache(cache: SessionCache): FileTracker {
+  const tracker = new FileTracker();
+  for (const file of cache.getEditedFiles('source')) tracker.recordEdit(file);
+  for (const file of cache.getEditedFiles('test')) tracker.recordEdit(file);
+  return tracker;
 }
 
 const INTENT_CONFIG_KEYS: Record<string, string> = {

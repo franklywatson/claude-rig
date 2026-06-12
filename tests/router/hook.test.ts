@@ -381,3 +381,90 @@ describe('handlePreToolUse with file-backed cache (long-running session)', () =>
     });
   });
 });
+
+describe('handlePreToolUse test-scope check', () => {
+  let cache: SessionCache;
+  let config: HarnessConfig;
+
+  beforeEach(() => {
+    cache = new SessionCache();
+    cache.setEnvironment(makeEnv());
+    config = structuredClone(DEFAULT_CONFIG);
+  });
+
+  it('advises scoped run for full-suite command during tdd+ phase', () => {
+    cache.setPhase('tdd+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+
+    const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    expect(result).not.toBeNull();
+    expect(result).toContain('[ADVISE]');
+    expect(result).toContain('TEST SCOPE');
+    expect(result).toContain('tests/router/resolver.test.ts');
+  });
+
+  it('advises scoped run for npm test during sdd+ phase', () => {
+    cache.setPhase('sdd+');
+    cache.addEditedFile('src/enforcement/test-scope.ts', 'source');
+
+    const result = handlePreToolUse('Bash', { command: 'npm test' }, cache, config);
+    expect(result).not.toBeNull();
+    expect(result).toContain('TEST SCOPE');
+    expect(result).toContain('npm test -- tests/enforcement/test-scope.test.ts');
+  });
+
+  it('blocks full-suite run when config says block', () => {
+    cache.setPhase('tdd+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+    config.rules.test_scope = { enforcement: 'block', allowed_unscoped: [] };
+
+    const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    expect(result).not.toBeNull();
+    expect(result).toContain('[BLOCK]');
+  });
+
+  it('passes through full-suite run when no phase is set', () => {
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+
+    const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    expect(result).toBeNull();
+  });
+
+  it('passes through full-suite run during verify+ phase', () => {
+    cache.setPhase('verify+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+
+    const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    expect(result).toBeNull();
+  });
+
+  it('passes through scoped test runs during tdd+ phase', () => {
+    cache.setPhase('tdd+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'npx vitest run tests/router/resolver.test.ts' },
+      cache,
+      config,
+    );
+    expect(result).toBeNull();
+  });
+
+  it('passes through full-suite run when no source edits are cached', () => {
+    cache.setPhase('tdd+');
+
+    const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    expect(result).toBeNull();
+  });
+
+  it('repeats the advisory on every unscoped run (no first-occurrence suppression)', () => {
+    cache.setPhase('tdd+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+
+    const first = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    const second = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
+    expect(first).toContain('TEST SCOPE');
+    expect(second).toContain('TEST SCOPE');
+  });
+});
