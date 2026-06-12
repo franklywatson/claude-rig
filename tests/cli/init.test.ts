@@ -40,6 +40,7 @@ describe('initCommand', () => {
     expect(existsSync(join(tempDir, '.claude', 'skills', 'review-plus', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(tempDir, '.claude', 'skills', 'verify-harness', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(tempDir, '.claude', 'skills', 'savings', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'sdd-plus', 'SKILL.md'))).toBe(true);
   });
 
   it('creates scout agent definition', async () => {

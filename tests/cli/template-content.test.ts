@@ -42,3 +42,15 @@ describe('agent templates', () => {
     expect(content).toContain('BLOCKED');
   });
 });
+
+describe('skill templates — typed dispatch', () => {
+  it('sdd-plus dispatches all three typed agents with fallback', () => {
+    const content = read('skills/sdd-plus/SKILL.md');
+    expect(content).toContain('Agent(subagent_type="implementer"');
+    expect(content).toContain('Agent(subagent_type="spec-reviewer"');
+    expect(content).toContain('Agent(subagent_type="code-reviewer"');
+    expect(content).toContain('superpowers:subagent-driven-development');
+    expect(content).toContain('fall back to a general-purpose');
+    expect(content).toContain('signal stack');
+  });
+});

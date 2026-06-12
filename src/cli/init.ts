@@ -74,7 +74,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
   }
 
   // Copy skill templates
-  const skillDirs = ['brain-plus', 'plan-plus', 'tdd-plus', 'verify-plus', 'review-plus', 'debug-plus', 'verify-harness', 'savings', 'investigate'];
+  const skillDirs = ['brain-plus', 'plan-plus', 'tdd-plus', 'sdd-plus', 'verify-plus', 'review-plus', 'debug-plus', 'verify-harness', 'savings', 'investigate'];
   for (const skillDir of skillDirs) {
     const srcDir = join(TEMPLATES_DIR, 'skills', skillDir);
     if (!existsSync(srcDir)) continue;
