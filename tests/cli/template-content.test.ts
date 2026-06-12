@@ -31,4 +31,14 @@ describe('agent templates', () => {
     expect(content).not.toMatch(/tools: "[^"]*Write/);
     expect(content).toContain('Do Not Trust the Report');
   });
+
+  it('implementer has full tools, marker, and evidence discipline', () => {
+    const content = read('agents/implementer.md');
+    expect(content).toContain('<!-- rig-generated -->');
+    expect(content).toContain('name: implementer');
+    expect(content).toContain('Do not invoke proactively');
+    expect(content).not.toContain('tools:'); // omitted -> inherits all tools
+    expect(content).toContain('show output before reporting');
+    expect(content).toContain('BLOCKED');
+  });
 });
