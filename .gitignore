@@ -11,7 +11,7 @@ coverage/
 .claude/settings.json
 .claude/hooks/
 .claude/skills/
-.claude/agents/scout.md
+.claude/agents/
 
 # --- rig-managed (do not edit below) ---
 .harness.yaml.local
