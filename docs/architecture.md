@@ -151,9 +151,10 @@ blocks, it scans **every** quote-aware compound segment, so
 `cd /tmp && git commit -m "x"` is still caught while `echo "git commit"`
 (quoted) is not. At `advise` level (the default) the recommendation — a
 worktree or a feature branch, resolved by `isolation_strategy` (`auto` picks
-worktree when the working tree is dirty) — reaches the agent **once per
-session** via the agent-visible `additionalContext` channel
-(`hasAdvised('branch_discipline')` suppresses repeats); the commit proceeds.
+worktree when the working tree is dirty) — reaches the agent via the
+agent-visible `additionalContext` channel on the **first occurrence and every
+10th suppressed occurrence thereafter** (`SessionCache.shouldAdvise()`); the
+commit proceeds.
 At `block` level the command is rejected (exit 2) with remediation text every
 time; `silent` disables the check. It runs before the rewrite steps because a
 block must win over a rewrite. Git probes use the injectable `ExecFn`; any
@@ -588,14 +589,16 @@ Key design decisions:
   `rig init --broad-permissions` pre-authorizes common read-only operations to
   reduce this friction. Without the flag, users will see more approval dialogs —
   this is intentional (opt-in rather than silently granting broad access).
-- **First-occurrence advisory suppression**: The tool router advises jcodemunch/scout
-  once per intent type per session via `hasAdvised()` (branch-discipline advisories
-  are also once-per-session). If the agent ignores the first
-  advisory, it receives no further reminders for that session. Config-registration
-  detection ensures the advisory fires in the first place; suppression behavior
-  itself is tracked for future work (periodic re-advisory or escalating urgency).
-  For deterministic routing (demos, strict projects), set the `tool_routing`
-  rules to `block` in `.harness.yaml` — blocks cannot be ignored.
+- **Advisory suppression with periodic re-advisory**: The tool router advises
+  jcodemunch/scout on the first occurrence per intent type, then suppresses
+  repeats — but re-advises on every 10th suppressed occurrence
+  (`SessionCache.shouldAdvise()`; calls 1, 11, 21, ... advise). Branch-discipline
+  advisories follow the same cycle. An ignored advisory therefore resurfaces
+  periodically instead of disappearing for the session, at the cost of the
+  agent occasionally seeing a reminder it has already dismissed. The cycle
+  length is fixed (not configurable). For deterministic routing (demos, strict
+  projects), set the `tool_routing` rules to `block` in `.harness.yaml` —
+  blocks cannot be ignored.
 - **Cache fragmentation across cwd/session-id**: session cache files are keyed
   by (cwd, session id), so hooks running from a subdirectory or a subagent
   context write advisory state and savings counters to separate files. The

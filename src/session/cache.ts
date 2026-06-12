@@ -35,6 +35,7 @@ export class SessionCache {
   private toolsWarned = false;
   private pythonEnv: PythonEnv | undefined;
   private advisedIntents: Set<string> = new Set();
+  private advisorySuppressCounts: Map<string, number> = new Map();
 
   constructor(cwd?: string, sessionId?: string) {
     this.cwd = cwd;
@@ -149,6 +150,33 @@ export class SessionCache {
     this.save();
   }
 
+  /**
+   * Stateful advisory gate with periodic re-advisory. Returns true on the
+   * first call for an intent (and marks it advised), then false for the next
+   * nine occurrences, then true again on the tenth suppressed occurrence —
+   * i.e. calls 1, 11, 21, ... advise; everything in between is suppressed.
+   * The suppression counter is persisted alongside advisedIntents so the
+   * cycle survives across hook processes. hasAdvised() remains a pure query.
+   */
+  shouldAdvise(intent: string): boolean {
+    if (!this.advisedIntents.has(intent)) {
+      this.advisedIntents.add(intent);
+      this.advisorySuppressCounts.set(intent, 0);
+      this.save();
+      return true;
+    }
+    const suppressed = (this.advisorySuppressCounts.get(intent) ?? 0) + 1;
+    if (suppressed >= 10) {
+      // Tenth suppressed occurrence — re-advise and restart the cycle.
+      this.advisorySuppressCounts.set(intent, 0);
+      this.save();
+      return true;
+    }
+    this.advisorySuppressCounts.set(intent, suppressed);
+    this.save();
+    return false;
+  }
+
   getPythonEnv(): PythonEnv | undefined {
     return this.pythonEnv;
   }
@@ -188,6 +216,7 @@ export class SessionCache {
     this.changedFiles = [];
     this.pythonEnv = undefined;
     this.advisedIntents = new Set();
+    this.advisorySuppressCounts = new Map();
     this.save();
   }
 
@@ -209,6 +238,7 @@ export class SessionCache {
       changedFiles: [...this.changedFiles],
       pythonEnv: this.pythonEnv ?? null,
       advisedIntents: Array.from(this.advisedIntents),
+      advisorySuppressCounts: Object.fromEntries(this.advisorySuppressCounts),
     };
   }
 
@@ -246,6 +276,7 @@ export class SessionCache {
       this.changedFiles = data.changedFiles ?? [];
       this.pythonEnv = data.pythonEnv ?? undefined;
       this.advisedIntents = new Set(data.advisedIntents ?? []);
+      this.advisorySuppressCounts = new Map(Object.entries(data.advisorySuppressCounts ?? {}));
     } catch {
       // Corrupt or unreadable file — start fresh
     }

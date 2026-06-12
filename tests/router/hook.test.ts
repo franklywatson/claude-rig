@@ -91,6 +91,22 @@ describe('handlePreToolUse', () => {
     expect(result).toBeNull();
   });
 
+  it('re-advises on the 11th occurrence after 9 suppressions (periodic re-advisory)', () => {
+    cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
+    // Call 1 — advises
+    expect(handlePreToolUse('Grep', { pattern: 'p1' }, cache, config)).not.toBeNull();
+    // Calls 2-10 — suppressed
+    for (let call = 2; call <= 10; call++) {
+      expect(handlePreToolUse('Grep', { pattern: `p${call}` }, cache, config)).toBeNull();
+    }
+    // Call 11 — re-advisory fires
+    const readvisory = handlePreToolUse('Grep', { pattern: 'p11' }, cache, config);
+    expect(readvisory).not.toBeNull();
+    expect(readvisory).toContain('jcodemunch');
+    // Call 12 — suppressed again
+    expect(handlePreToolUse('Grep', { pattern: 'p12' }, cache, config)).toBeNull();
+  });
+
   it('advises for native Read on code file when jcodemunch indexed (first call)', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Read', { file_path: '/some/file.ts' }, cache, config);

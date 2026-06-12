@@ -182,7 +182,8 @@ rules:
 ```
 
 **Branch discipline (`rules.workflow`):** when you commit or push on a branch
-listed in `protected_branches`, rig advises once per session (or blocks, at
+listed in `protected_branches`, rig advises on the first occurrence and every
+10th suppressed occurrence thereafter (or blocks, at
 `block` level; `silent` disables the rule entirely). The same rule drives a
 session-start hint when the session opens on a protected branch.
 `isolation_strategy` controls what rig recommends instead: `worktree` or

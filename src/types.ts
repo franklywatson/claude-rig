@@ -169,6 +169,7 @@ export interface SessionCacheFile {
   changedFiles: string[];
   pythonEnv: PythonEnv | null;
   advisedIntents?: string[];
+  advisorySuppressCounts?: Record<string, number>;
   scoutedDirs?: string[];
 }
 
