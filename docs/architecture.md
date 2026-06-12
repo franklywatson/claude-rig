@@ -601,7 +601,11 @@ Key design decisions:
   blocks cannot be ignored.
 - **Cache fragmentation across cwd/session-id**: session cache files are keyed
   by (cwd, session id), so hooks running from a subdirectory or a subagent
-  context write advisory state and savings counters to separate files. The
-  practical effects are an occasional repeated advisory and `/savings`
-  under-counting work done in those contexts. Aggregation is tracked as
-  future work.
+  context write advisory state and savings counters to separate files.
+  `/savings` now compensates for the counter side: it aggregates every
+  `/tmp/rig-session-*.json` whose `cwd` matches the project (ignoring files
+  older than 24 hours), summing `metricCounters` across them and taking the
+  baseline/environment from the most recent file. Advisory-state fragmentation
+  remains: a fragmented cache can repeat an advisory sooner than the
+  periodic re-advisory cycle intends (see "Advisory suppression with periodic
+  re-advisory" above).

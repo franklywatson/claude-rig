@@ -122,3 +122,17 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(read('skills/review-plus/SKILL.md')).toContain('gh pr create');
   });
 });
+
+describe('skill templates — savings aggregation', () => {
+  it('savings aggregates counters across all matching session cache files', () => {
+    const content = read('skills/savings/SKILL.md');
+    // Gather every cache file for this project, not just one
+    expect(content).toContain('ALL files whose `cwd` matches');
+    // Sum tool-call counters across the matching files
+    expect(content).toContain('Sum `metricCounters`');
+    // Baseline and environment come from the most recent file only
+    expect(content).toMatch(/`metricsBaseline` and `environment`[\s\S]{0,120}?most recent matching file/);
+    // Stale-session guard
+    expect(content).toContain('older than 24 hours');
+  });
+});
