@@ -79,6 +79,10 @@ describe('Context Eval: config override routing', () => {
         cache,
         config,
         scenario.cwd,
+        // Declining mock: without it, rtk-enabled scenarios spawn the real
+        // rtkPath, polluting /tmp/rig-rtk-rewrite-failures.log and making
+        // outcomes depend on whether rtk exists on the host.
+        { execRewrite: () => null },
       );
 
       const parsed = parseResult(actual);

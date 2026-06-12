@@ -1,8 +1,11 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { handlePreToolUse } from '../../src/router/hook.js';
-import { SessionCache } from '../../src/session/cache.js';
+import { SessionCache, sessionCachePath } from '../../src/session/cache.js';
 import type { Environment, HarnessConfig, PythonEnv } from '../../src/types.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
+import { mkdtempSync, rmSync, unlinkSync, existsSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 function makeEnv(overrides: Partial<Environment> = {}): Environment {
   return {
@@ -50,9 +53,11 @@ describe('handlePreToolUse', () => {
     expect(result).toContain('Edit');
   });
 
-  it('advises rtk for grep when rtk available', () => {
+  it('advises rtk for grep when rtk available but rewrite declines', () => {
     cache.setEnvironment(makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk' }));
-    const result = handlePreToolUse('Bash', { command: 'grep -r pattern .' }, cache, config);
+    // Declining mock: without it this test spawned the real rtkPath and only
+    // passed because the spawn failed (ENOENT), polluting the field diag log.
+    const result = handlePreToolUse('Bash', { command: 'grep -r pattern .' }, cache, config, undefined, () => null);
     expect(result).not.toBeNull();
     expect(result).toContain('rtk');
   });
@@ -324,5 +329,55 @@ describe('scout_explore advisory', () => {
     expect(result).not.toBeNull();
     expect(result).toContain('BLOCK');
     expect(result).toContain('scout');
+  });
+});
+
+describe('handlePreToolUse with file-backed cache (long-running session)', () => {
+  // Regression for the field failure where a >4h session lost its cached
+  // environment: SessionCache.load() cleared the stale env, handlePreToolUse
+  // fell back to defaultEnv() (rtkAvailable: false), and every rtk rewrite
+  // silently stopped for the rest of the session. The hook must keep routing
+  // on the last-known-good environment.
+  let testCwd: string;
+  let config: HarnessConfig;
+
+  beforeEach(() => {
+    testCwd = mkdtempSync(join(tmpdir(), 'rig-hook-test-'));
+    config = structuredClone(DEFAULT_CONFIG);
+  });
+
+  afterEach(() => {
+    const path = sessionCachePath(testCwd);
+    if (existsSync(path)) unlinkSync(path);
+    rmSync(testCwd, { recursive: true, force: true });
+  });
+
+  it('still rewrites via rtk after the env TTL expires mid-session', () => {
+    // Session-start persisted the environment 5 hours ago
+    const writer = new SessionCache(testCwd);
+    writer.setEnvironment(makeEnv({
+      rtkAvailable: true,
+      rtkPath: '/usr/bin/rtk',
+      detectedAt: Date.now() - 5 * 60 * 60 * 1000,
+    }));
+
+    // A later hook invocation loads the cache from disk
+    const cache = new SessionCache(testCwd);
+    const execRewrite = vi.fn(() => 'rtk grep -r pattern .');
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'grep -r pattern .' },
+      cache,
+      config,
+      testCwd,
+      execRewrite,
+    );
+
+    expect(execRewrite).toHaveBeenCalled();
+    expect(result).toEqual({
+      type: 'rewrite',
+      command: 'rtk grep -r pattern .',
+      original: 'grep -r pattern .',
+    });
   });
 });

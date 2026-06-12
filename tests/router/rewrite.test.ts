@@ -48,6 +48,56 @@ describe('makeDefaultExecRewrite diagnostics', () => {
     expect(writeDiag).not.toHaveBeenCalled();
   });
 
+  // rtk rewrite exit-code protocol (src/hooks/rewrite_cmd.rs in rtk):
+  //   0 + stdout  rewrite, safe to auto-allow
+  //   1           no RTK equivalent
+  //   2           deny rule matched
+  //   3 + stdout  "Ask" — rewrite valid, but the hook must not auto-allow.
+  // rig never auto-allows (it emits updatedInput without permissionDecision),
+  // so an exit-3 rewrite is used exactly like an exit-0 rewrite. Field bug:
+  // rtk maps git commands to Ask (Default verdict), so dropping exit-3 output
+  // silently lost every git rewrite.
+  it('uses the stdout rewrite on exit 3 (rtk Ask verdict) without diagnostics', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(
+      writeDiag,
+      execError({ status: 3, stdout: 'rtk git status' }),
+    );
+
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git status'])).toBe('rtk git status');
+    expect(writeDiag).not.toHaveBeenCalled();
+  });
+
+  it('handles Buffer stdout on exit 3', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(
+      writeDiag,
+      execError({ status: 3, stdout: Buffer.from('rtk git log --oneline\n') }),
+    );
+
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git log --oneline'])).toBe('rtk git log --oneline');
+    expect(writeDiag).not.toHaveBeenCalled();
+  });
+
+  it('logs exit 3 with empty stdout as a fallthrough', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(writeDiag, execError({ status: 3, stdout: '' }));
+
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git status'])).toBeNull();
+    expect(writeDiag).toHaveBeenCalledTimes(1);
+  });
+
+  it('never uses stdout on exit 2 (deny rule)', () => {
+    const writeDiag = vi.fn();
+    const rewrite = makeDefaultExecRewrite(
+      writeDiag,
+      execError({ status: 2, stdout: 'rtk rm -rf /' }),
+    );
+
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'rm -rf /'])).toBeNull();
+    expect(writeDiag).not.toHaveBeenCalled();
+  });
+
   it('logs unexpected exit codes with stderr context', () => {
     const writeDiag = vi.fn();
     const rewrite = makeDefaultExecRewrite(

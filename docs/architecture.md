@@ -101,10 +101,17 @@ on the Grep tool.
 
 ### rtk rewrite diagnostics
 
-`rtk rewrite` declines commands it can't handle via exit 1 (no rewrite) or
-exit 2 (denied) — both fall through silently to rig's own rules by design.
-Anything else (unexpected exit codes, signals, ENOENT) is appended as a JSON
-line to `/tmp/rig-rtk-rewrite-failures.log` so silent fallthroughs are
+`rtk rewrite` follows a four-code permission protocol (rtk
+`src/hooks/rewrite_cmd.rs`): exit 0 + stdout = rewrite (safe to auto-allow),
+exit 1 = no RTK equivalent, exit 2 = deny rule matched, exit 3 + stdout =
+"Ask" verdict (rewrite valid, must not be auto-allowed). Rig uses exit-0 and
+exit-3 rewrites identically because it never auto-allows — the hook emits
+`updatedInput` without a `permissionDecision`, so Claude Code's own
+permission flow applies to the rewritten command. Exits 1 and 2 fall through
+silently to rig's own rules by design (stdout is never used on exit 2).
+Anything outside the protocol (exit 3 without output, other exit codes,
+signals, ENOENT) is appended as a JSON line to
+`/tmp/rig-rtk-rewrite-failures.log` so silent fallthroughs are
 debuggable in the field. Set `RIG_DEBUG=1` to log expected declines too.
 Compound commands (pipes, `&&`, `;`) skip the rewrite entirely — the router
 cannot safely rewrite one segment of a pipeline.

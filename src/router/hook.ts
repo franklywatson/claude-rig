@@ -28,11 +28,24 @@ const defaultWriteDiag = (line: string): void => {
 };
 
 /**
- * Build the default ExecRewriteFn. Exit codes 1 (no rewrite) and 2 (denied)
- * are rtk's expected decline contract and stay silent; anything else —
- * unexpected exit codes, signals, ENOENT — is appended as a JSON line to
- * the diagnostic log so silent fallthroughs become debuggable in the field.
- * Set RIG_DEBUG to log expected declines too. Null-fallthrough is unchanged.
+ * Build the default ExecRewriteFn implementing rtk's rewrite exit-code
+ * protocol (rtk src/hooks/rewrite_cmd.rs):
+ *
+ *   0 + stdout  rewrite, safe to auto-allow
+ *   1           no RTK equivalent — pass through
+ *   2           deny rule matched — pass through (never use stdout)
+ *   3 + stdout  "Ask" verdict — rewrite valid, but must not be auto-allowed
+ *
+ * rig never auto-allows (the hook emits updatedInput without a
+ * permissionDecision, so Claude Code's own permission flow applies to the
+ * rewritten command), which makes exit 3 equivalent to exit 0 here. rtk maps
+ * commands without an explicit allow rule — notably all git commands — to
+ * Ask, so dropping exit-3 output would lose the most common rewrites.
+ *
+ * Anything outside the protocol — exit 3 without output, other exit codes,
+ * signals, ENOENT — is appended as a JSON line to the diagnostic log so
+ * silent fallthroughs become debuggable in the field. Set RIG_DEBUG to log
+ * expected declines too. Null-fallthrough is unchanged.
  */
 export function makeDefaultExecRewrite(
   writeDiag: (line: string) => void = defaultWriteDiag,
@@ -47,7 +60,21 @@ export function makeDefaultExecRewrite(
       });
       return result.trim() || null;
     } catch (err) {
-      const e = err as { status?: number; signal?: string; code?: string; stderr?: unknown };
+      const e = err as { status?: number; signal?: string; code?: string; stdout?: unknown; stderr?: unknown };
+
+      // Exit 3 = rtk's "Ask" verdict: the rewrite is on stdout.
+      if (e?.status === 3) {
+        const stdout =
+          typeof e.stdout === 'string'
+            ? e.stdout
+            : Buffer.isBuffer(e.stdout)
+              ? e.stdout.toString('utf-8')
+              : '';
+        const rewritten = stdout.trim();
+        if (rewritten) return rewritten;
+        // Exit 3 without output violates the protocol — fall through to diag.
+      }
+
       const expectedDecline = e?.status === 1 || e?.status === 2;
       if (!expectedDecline || process.env.RIG_DEBUG) {
         const stderr =

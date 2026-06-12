@@ -210,14 +210,15 @@ export class SessionCache {
       const raw = readFileSync(path, 'utf-8');
       const data = JSON.parse(raw) as SessionCacheFile;
 
-      // Restore environment, checking TTL
+      // Restore environment unconditionally as last-known-good. The TTL is
+      // reported via isEnvironmentStale() so SessionStart re-detects, but the
+      // env is never dropped here: clearing it made hooks fall back to
+      // defaultEnv() (everything unavailable) and silently disabled rtk and
+      // jcodemunch routing for the remainder of any session older than the
+      // TTL. A stale rtkPath degrades gracefully — the spawn fails and the
+      // command falls through unrewritten.
       if (data.environment) {
-        if (Date.now() - data.environment.detectedAt > ENV_TTL_MS) {
-          // Stale — clear environment but keep other fields
-          this.environment = undefined;
-        } else {
-          this.environment = data.environment;
-        }
+        this.environment = data.environment;
       }
 
       // Restore edited files
