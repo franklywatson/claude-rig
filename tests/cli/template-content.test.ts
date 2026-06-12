@@ -53,4 +53,11 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('fall back to a general-purpose');
     expect(content).toContain('signal stack');
   });
+
+  it('review-plus dispatches spec-reviewer and code-reviewer', () => {
+    const content = read('skills/review-plus/SKILL.md');
+    expect(content).toContain('Agent(subagent_type="spec-reviewer"');
+    expect(content).toContain('Agent(subagent_type="code-reviewer"');
+    expect(content).toContain('fall back to a general-purpose');
+  });
 });
