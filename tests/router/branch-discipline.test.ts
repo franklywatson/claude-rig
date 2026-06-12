@@ -233,6 +233,48 @@ describe('handlePreToolUse branch discipline wiring', () => {
     expect(result).toContain('Branch discipline');
   });
 
+  it('branch-discipline block wins for a compound command during tdd+ phase', () => {
+    // Regression guard for check ordering: a pre-rewrite advisory (test
+    // scope) must never preempt a pre-rewrite block (branch discipline).
+    config = cfg('block');
+    cache.setPhase('tdd+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+    const exec = makeExec({ 'git branch --show-current': 'master' });
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'npm test && git commit -m "x"' },
+      cache,
+      config,
+      undefined,
+      { branchExec: exec },
+    );
+    expect(typeof result).toBe('string');
+    expect(result).toContain('[BLOCK]');
+    expect(result).toContain('Branch discipline');
+  });
+
+  it('test-scope block wins over a branch-discipline advisory on the same command', () => {
+    config = cfg('advise');
+    config.rules.test_scope = { enforcement: 'block', allowed_unscoped: [] };
+    cache.setPhase('tdd+');
+    cache.addEditedFile('src/router/resolver.ts', 'source');
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'npm test' },
+      cache,
+      config,
+      undefined,
+      { branchExec: exec },
+    );
+    expect(typeof result).toBe('string');
+    expect(result).toContain('[BLOCK]');
+    expect(result).toContain('TEST SCOPE');
+  });
+
   it('passes git commit through on a feature branch', () => {
     config = cfg('advise');
     const exec = makeExec({ 'git branch --show-current': 'feat/x' });

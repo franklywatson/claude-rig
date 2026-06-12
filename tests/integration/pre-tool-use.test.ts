@@ -229,7 +229,7 @@ describe('PreToolUse hook E2E', () => {
     // the once-per-session advisory suppression cannot leak between them.
     let gitDir: string;
     let gitHookPath: string;
-    const gitSessionIds = ['branch-advise', 'branch-block'];
+    const gitSessionIds = ['branch-advise', 'branch-block', 'branch-scope-block'];
 
     function workflowYaml(level: string): string {
       return [
@@ -293,6 +293,24 @@ describe('PreToolUse hook E2E', () => {
 
       expect(result.exitCode).toBe(2);
       expect(result.stderr).toContain('[BLOCK]');
+      expect(result.stderr).toContain('Branch discipline');
+      expect(result.stdout).not.toContain('hookSpecificOutput');
+    }, HOOK_TIMEOUT);
+
+    it('exits 2 for a compound test+commit command during tdd+ phase (block must beat any advisory)', async () => {
+      writeFileSync(join(gitDir, '.harness.yaml'), workflowYaml('block'), 'utf-8');
+      const writer = new SessionCache(gitDir, 'branch-scope-block');
+      writer.setEnvironment(makeEnv());
+      writer.setPhase('tdd+');
+      writer.addEditedFile('src/router/resolver.ts', 'source');
+
+      const result = await runHook(gitHookPath, {
+        session_id: 'branch-scope-block',
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test && git commit -m "x"' },
+      }, gitDir);
+
+      expect(result.exitCode).toBe(2);
       expect(result.stderr).toContain('Branch discipline');
       expect(result.stdout).not.toContain('hookSpecificOutput');
     }, HOOK_TIMEOUT);
