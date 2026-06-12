@@ -111,6 +111,8 @@ After review+ passes:
 
 - The implementation is complete
 - Proceed to merge/PR decision (superpowers:finishing-a-development-branch)
+- If branch discipline is active, finish with a PR (`gh pr create` via
+  `superpowers:finishing-a-development-branch`) rather than a local merge.
 
 ## Completion
 

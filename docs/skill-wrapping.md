@@ -46,6 +46,7 @@ brain+                           superpowers:brainstorming
 | `requesting-code-review` | Code quality review | Two-stage review (spec + quality), constitutional checklist, typed code-reviewer/spec-reviewer agent dispatch (tool-scoped, no file edits) |
 | `systematic-debugging` | Structured debugging | Scout-harvested context, no phase prerequisite |
 | `subagent-driven-development` | Per-task subagent execution | Typed implementer/spec-reviewer/code-reviewer dispatch via `sdd+`, enforcement rules in each agent's system prompt, signal-stack gating |
+| `using-git-worktrees` | Workspace isolation | Config-gated, strategy-aware advisory (`rules.workflow`): rig recommends worktree vs branch from tree state and plan context |
 
 Without wrapping, superpowers gives you generic process discipline. With
 wrapping, every phase automatically carries your project's non-negotiables --
@@ -231,8 +232,9 @@ just `git push` and hope.
 
 ## Scenario 6: Wrapping unwrapped superpowers skills
 
-Rig wraps 6 of 14 superpowers skills. The remaining 8 are available for
-wrapping with project-specific context:
+Rig wraps eight superpowers skills out of the box (the table above). The rest
+of the superpowers catalog is available for wrapping with project-specific
+context:
 
 ### debug+ (wraps `superpowers:systematic-debugging`)
 

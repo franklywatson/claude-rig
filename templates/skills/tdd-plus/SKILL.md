@@ -34,6 +34,11 @@ Wraps `superpowers:test-driven-development`. Requires superpowers to be installe
 
 3. Identify the task(s) to implement.
 
+4. If branch discipline is active (see session-start output) and you are on a
+   protected branch, create an isolated workspace before implementing — a
+   worktree (`superpowers:using-git-worktrees`) when the plan is multi-task or
+   the working tree is dirty, a plain feature branch otherwise.
+
 ### Phase B: Implement Each Task (delegate to superpowers:test-driven-development)
 
 1. For each task in the plan, follow RED-GREEN-REFACTOR:

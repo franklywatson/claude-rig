@@ -1,4 +1,4 @@
-import { execFileSync } from 'node:child_process';
+import { execFileSync, execSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
 import type { HarnessConfig, RewriteResult } from '../types.js';
 import { SessionCache } from '../session/cache.js';
@@ -7,6 +7,8 @@ import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
 import { checkTestScope } from '../enforcement/test-scope.js';
+import { checkBranchDisciplineCommand } from './branch-discipline.js';
+import type { ExecFn } from '../session/worktree.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
 export type ExistsCheckFn = (path: string) => boolean;
@@ -14,6 +16,8 @@ export type ExistsCheckFn = (path: string) => boolean;
 export interface HookOptions {
   execRewrite?: ExecRewriteFn;
   existsCheck?: ExistsCheckFn;
+  /** Injectable exec for branch-discipline git probes (testability). */
+  branchExec?: ExecFn;
 }
 
 export type RawExecFileFn = (file: string, args: string[], opts: object) => string;
@@ -195,24 +199,47 @@ export function handlePreToolUse(
     }
   }
 
-  // Step 1.5: Test-scope check — during tdd+/sdd+, advise a scoped run before
-  // a full-suite command executes. Phase and edit history come from the
-  // session cache (persisted by the PostToolUse hook). Runs pre-execution
-  // because a scoped-run redirect is only actionable before the suite runs.
-  // No first-occurrence suppression: every unscoped run is flagged.
-  // The early return before the rewrite steps (2 and 3) is safe today because
-  // no UNSCOPED_TEST_PATTERNS command is rtk- or python-rewritable; revisit
-  // this ordering if RTK_PREFIXES ever gains test runners.
+  // Steps 1.5 + 1.6: pre-rewrite Bash checks, evaluated collect-then-pick:
+  // every check runs before anything is returned, any block-level result
+  // wins over any advisory, and only when nothing blocks does the first
+  // advisory surface. This guarantees an advisory from one check can never
+  // preempt a block from another. Both run before the rewrite steps (2 and
+  // 3) because a block must win over a rewrite; that early return is safe
+  // today because no UNSCOPED_TEST_PATTERNS command is rtk- or
+  // python-rewritable — revisit if RTK_PREFIXES ever gains test runners.
   if (tool === 'Bash' && typeof args.command === 'string') {
-    // Hooks are separate processes, so the source-edit history comes from the
-    // session cache (persisted by the PostToolUse hook), not a FileTracker.
+    const preflight: { level: 'advise' | 'block'; message: string }[] = [];
+
+    // Step 1.5: Test-scope check — during tdd+/sdd+, advise a scoped run
+    // before a full-suite command executes. Hooks are separate processes, so
+    // phase and source-edit history come from the session cache (persisted
+    // by the PostToolUse hook), not a FileTracker. No first-occurrence
+    // suppression: every unscoped run is flagged.
     const scopeViolation = checkTestScope(
       args.command,
       cache.getCurrentPhase(),
       cache.getEditedFiles('source'),
       config,
     );
-    if (scopeViolation) return scopeViolation;
+    if (scopeViolation) {
+      preflight.push({
+        level: scopeViolation.startsWith('[BLOCK]') ? 'block' : 'advise',
+        message: scopeViolation,
+      });
+    }
+
+    // Step 1.6: Branch discipline — git commit/push on a protected branch
+    // advises once per session (or blocks, per rules.workflow). Scans every
+    // quote-aware compound segment, so `cd /tmp && git commit` is still
+    // caught. The once-per-session advisory costs at most one rtk rewrite.
+    const branchExec: ExecFn = resolvedOptions.branchExec
+      ?? ((cmd) => execSync(cmd, { encoding: 'utf-8', cwd: effectiveCwd, timeout: 5000 }) as string);
+    const discipline = checkBranchDisciplineCommand(args.command, config, cache, branchExec);
+    if (discipline) preflight.push(discipline);
+
+    const blocked = preflight.find(r => r.level === 'block');
+    if (blocked) return blocked.message;
+    if (preflight.length > 0) return preflight[0].message;
   }
 
   // Step 2: Python environment rewrite for Bash commands (skip compound commands)

@@ -5,9 +5,9 @@
 - [Claude Code](https://claude.ai/code) CLI installed and configured
 - Node.js 18+
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework.
-  **Required.** Every skill in the chain (`brain+`, `plan+`, `tdd+`,
-  `verify+`, `review+`) wraps a `superpowers:*` skill. Without superpowers
-  installed, the skill chain will not function.
+  **Required.** Every skill in the chain (`brain+`, `plan+`, `tdd+`, `sdd+`,
+  `verify+`, `review+`, `debug+`) wraps a `superpowers:*` skill. Without
+  superpowers installed, the skill chain will not function.
 - A project you want to add guardrails to
 
 Strongly recommended:
@@ -62,7 +62,9 @@ This generates:
 | `.claude/hooks/scripts/post-tool-use.ts` | Enforcement -- stale tests, constitutional, zero-defect |
 | `.claude/hooks/scripts/session-start.ts` | Auto-indexes your project on session start |
 | `.claude/skills/brain-plus/` | Ideation skill |
+| `.claude/skills/brain-plus/references/agent-loops.md` | Signal-stack / maintainer-loop reference |
 | `.claude/skills/plan-plus/` | Planning skill |
+| `.claude/skills/plan-plus/references/agent-loops.md` | Same reference, installed for plan+ |
 | `.claude/skills/tdd-plus/` | Test-driven development skill |
 | `.claude/skills/sdd-plus/` | Subagent-driven plan execution with typed agents |
 | `.claude/skills/verify-plus/` | Verification skill |
@@ -142,10 +144,12 @@ Skills are invoked as slash commands in Claude Code:
 /investigate -> Alias for /debug+
 ```
 
-Skills enforce ordering. You can't run `/tdd+` until you've visited `/plan+`. You can't run
-`/verify+` until you've visited `/tdd+` or `/sdd+`. `/debug+`, `/savings`, and `/investigate` have no
-prerequisites and work from any phase. `/debug+` mandates scout agent context harvesting
-before debugging.
+The chain is ordered by convention rather than hard gates: each skill's procedure
+text points to the next phase, and the phase tracker's transition rules carry one
+prerequisite — `/verify+` requires a prior `/tdd+` or `/sdd+` visit. All other
+transitions are free. `/debug+`, `/savings`, and `/investigate` have no
+prerequisites and work from any phase. `/debug+` mandates scout agent context
+harvesting before debugging.
 
 `/sdd+` is an alternative to `/tdd+` for plans with independent tasks; `/verify+` accepts
 either path. During `/brain+`, projects that fit the agent-loop pattern are offered an
@@ -170,8 +174,23 @@ rules:
     full_accounting: advise
   zero_defect:
     tolerance: strict
-    unrelated_errors: silent     # silent|advise|block — how to handle pre-existing failures
+    unrelated_errors: block      # silent|advise|block — how to handle pre-existing failures
+  workflow:
+    branch_discipline: advise    # block | advise | silent — git commit/push on a protected branch
+    protected_branches: [master, main]
+    isolation_strategy: auto     # auto | branch | worktree
 ```
+
+**Branch discipline (`rules.workflow`):** when you commit or push on a branch
+listed in `protected_branches`, rig advises once per session (or blocks, at
+`block` level; `silent` disables the rule entirely). The same rule drives a
+session-start hint when the session opens on a protected branch.
+`isolation_strategy` controls what rig recommends instead: `worktree` or
+`branch` force one answer, while `auto` resolves on a single signal — a dirty
+working tree means a worktree (keeps in-flight work untangled), a clean tree
+means a plain feature branch (`resolveIsolationStrategy`). Separately from the
+config resolver, the `tdd+`/`sdd+` preflight (skill guidance, not config)
+recommends a worktree when the plan is multi-task or the tree is dirty.
 
 **Levels:**
 
@@ -224,6 +243,9 @@ rig init --force
 ```
 
 This overwrites existing hook and skill templates but preserves your `.harness.yaml` config and any custom settings in `.claude/settings.json`.
+`rig init` never rewrites an existing `.harness.yaml`; new rule sections added
+in later releases (e.g. `workflow:`) apply via built-in defaults even when
+absent from your file.
 
 ## Uninstall
 
@@ -236,9 +258,15 @@ rm -f /tmp/rig-session-*.json /tmp/rig-rtk-rewrite-failures.log
 
 Then remove hook registrations from `.claude/settings.json`. The `init` command added entries under `hooks.PreToolUse` and `hooks.PostToolUse` and `hooks.SessionStart` -- remove those arrays.
 
+Also remove the rig-managed block from `.gitignore` (delimited by
+`# --- rig-managed (do not edit below) ---` / `# --- end rig-managed ---`)
+and the `graphify-out/` directory that `rig init` created.
+
 ## Next steps
 
 - Read [docs/architecture.md](architecture.md) for the full system design
 - Read [docs/extending.md](extending.md) to add custom enforcement checks and skills
 - Read [docs/skill-wrapping.md](skill-wrapping.md) to wrap superpowers skills
   with domain-specific enforcement (security, compliance, performance)
+- Read [docs/troubleshooting.md](troubleshooting.md) when permission prompts,
+  cache state, or tool detection misbehave

@@ -6,6 +6,7 @@ import type {
   StaleTestRules,
   TestScopeRules,
   ZeroDefectRules,
+  WorkflowRules,
 } from './types.js';
 
 export const DEFAULT_CONFIG: HarnessConfig = {
@@ -46,6 +47,11 @@ export const DEFAULT_CONFIG: HarnessConfig = {
       tolerance: 'strict',
       unrelated_errors: 'block',
     },
+    workflow: {
+      branch_discipline: 'advise',
+      protected_branches: ['master', 'main'],
+      isolation_strategy: 'auto',
+    },
     enforcement: {
       default_level: 'advise',
     },
@@ -74,6 +80,7 @@ export function mergeConfigs(base: HarnessConfig, override: HarnessConfig): Harn
       stale_tests: { ...(base.rules.stale_tests ?? {}), ...override.rules.stale_tests } as StaleTestRules,
       test_scope: { ...(base.rules.test_scope ?? {}), ...override.rules.test_scope } as TestScopeRules,
       zero_defect: { ...(base.rules.zero_defect ?? {}), ...override.rules.zero_defect } as ZeroDefectRules,
+      workflow: { ...(base.rules.workflow ?? {}), ...override.rules.workflow } as WorkflowRules,
       enforcement: { ...(base.rules.enforcement ?? {}), ...override.rules.enforcement } as { default_level: EnforcementLevel },
     },
   };

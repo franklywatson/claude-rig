@@ -140,7 +140,21 @@ describe('handleSessionStart', () => {
     expect(output).toContain('indexed');
   });
 
-  it('includes worktree suggestion when on master', async () => {
+  it('includes branch discipline hint with worktree wording on master with dirty tree', async () => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which rtk') throw new Error('not found');
+      if (cmd === 'which jcodemunch') throw new Error('not found');
+      if (cmd === 'git branch --show-current') return 'master';
+      if (cmd === 'git status --porcelain') return ' M src/a.ts\n';
+      return '';
+    });
+
+    const output = await startSession('/home/user/test-project', cache);
+    expect(output).toContain('branch discipline');
+    expect(output).toContain('using-git-worktrees');
+  });
+
+  it('includes branch discipline hint with feature-branch wording on master with clean tree', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') throw new Error('not found');
       if (cmd === 'which jcodemunch') throw new Error('not found');
@@ -149,10 +163,11 @@ describe('handleSessionStart', () => {
     });
 
     const output = await startSession('/home/user/test-project', cache);
-    expect(output).toContain('using-git-worktrees');
+    expect(output).toContain('branch discipline');
+    expect(output).toContain('feature branch');
   });
 
-  it('omits worktree suggestion when on feature branch', async () => {
+  it('omits branch discipline hint when on feature branch', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') throw new Error('not found');
       if (cmd === 'which jcodemunch') throw new Error('not found');
@@ -162,6 +177,7 @@ describe('handleSessionStart', () => {
 
     const output = await startSession('/home/user/test-project', cache);
     expect(output).not.toContain('using-git-worktrees');
+    expect(output).not.toContain('branch discipline');
   });
 
   it('warns when rtk is not installed', async () => {
@@ -307,6 +323,47 @@ describe('handleSessionStart', () => {
     expect(output).toContain('no_mocks');
   });
 
+  it('includes branch_discipline in active enforcement when not silent', async () => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which rtk') return '/usr/bin/rtk';
+      if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+      if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+      return '';
+    });
+
+    // Default config: branch_discipline is advise — it must appear in the
+    // active-rules line so skill templates' "see session-start output"
+    // anchor is never empty for branch discipline.
+    const output = await startSession('/home/user/test-project', cache);
+    expect(output).toContain('Active enforcement');
+    expect(output).toContain('branch_discipline (advise)');
+  });
+
+  it('omits branch_discipline from active enforcement when silent', async () => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which rtk') return '/usr/bin/rtk';
+      if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+      if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+      return '';
+    });
+
+    const { writeFileSync, mkdirSync, rmSync } = await import('node:fs');
+    const { join } = await import('node:path');
+    const configDir = '/tmp/rig-test-config-' + process.pid + '-bd-silent';
+    mkdirSync(configDir, { recursive: true });
+    writeFileSync(join(configDir, '.harness.yaml'), [
+      'rules:',
+      '  workflow:',
+      '    branch_discipline: silent',
+    ].join('\n'));
+
+    const output = await startSession(configDir, cache);
+    expect(output).toContain('Active enforcement'); // constitutional defaults still active
+    expect(output).not.toContain('branch_discipline');
+
+    rmSync(configDir, { recursive: true });
+  });
+
   it('omits active enforcement line when all constitutional rules are silent', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') return '/usr/bin/rtk';
@@ -326,6 +383,8 @@ describe('handleSessionStart', () => {
       '    no_mocks: silent',
       '    evidence_only: silent',
       '    full_accounting: silent',
+      '  workflow:',
+      '    branch_discipline: silent',
     ].join('\n'));
 
     const output = await startSession(configDir, cache);

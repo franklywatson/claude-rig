@@ -28,8 +28,23 @@ User types: grep -r "TODO" src/
 PreToolUse Hook (handlePreToolUse)
      |
   +--------------------------------------+
+  | Step 0: Scout explore advisory       |
+  |   Agent(Explore) + jcodemunch ready  |
+  |   -> advise scout subagent           |
+  +--------------------------------------+
+     |
+  +--------------------------------------+
   | Step 1: Resolution blocks            |
   |   file_modify, rtk_cat_code -> block |
+  +--------------------------------------+
+     |
+  +--------------------------------------+
+  | Steps 1.5 + 1.6: Bash preflight      |
+  |   1.5: test scope (tdd+/sdd+ phase)  |
+  |   1.6: branch discipline (git        |
+  |        commit/push, protected branch)|
+  |   collect-then-pick: any block wins  |
+  |   over any advisory                  |
   +--------------------------------------+
      |
   +--------------------------------------+
@@ -46,6 +61,8 @@ PreToolUse Hook (handlePreToolUse)
      |
   +--------------------------------------+
   | Step 4: No match -> pass through     |
+  |   4b: compound command -> skip       |
+  |       advisory (blocks already won)  |
   +--------------------------------------+
      |
   +--------------------------------------+
@@ -53,10 +70,12 @@ PreToolUse Hook (handlePreToolUse)
   |   jcodemunch ready? -> advise jm     |
   +--------------------------------------+
      |
-HookResult: { decision, reason } | { type: "rewrite", command }
+Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
+                           block    -> stderr + exit 2
+                           rewrite  -> updatedInput JSON (exit 0)
 ```
 
-**Files:** `src/router/intent.ts`, `src/router/rules.ts`, `src/router/resolver.ts`, `src/router/hook.ts`
+**Files:** `src/router/intent.ts`, `src/router/rules.ts`, `src/router/resolver.ts`, `src/router/hook.ts`, `src/router/branch-discipline.ts`
 
 ### Intent types
 
@@ -70,6 +89,10 @@ HookResult: { decision, reason } | { type: "rewrite", command }
 | `file_discovery` | Bash `find`, `fd` | jcodemunch `get_file_tree` |
 | `file_read` | Bash `cat`, `head`, `tail` | rtk or jcodemunch `get_symbol` |
 | `file_modify` | Bash `sed -i`, `awk >` | Block, redirect to Edit tool |
+| `scout_explore` | `Agent` tool dispatching the `Explore` subagent | Advise scout subagent (jcodemunch + graphify) |
+
+Git `commit`/`push` interception is not an intent type — it is handled by the
+branch-discipline step (Step 1.6, see "Branch discipline (commit-time)" below).
 
 ### Python environment detection
 
@@ -118,6 +141,23 @@ cannot safely rewrite one segment of a pipeline. Blocks are different:
 destructive operations (`sed -i`, awk redirects) are detected in **every**
 quote-aware segment of a compound command, so `echo ok && sed -i ...` is
 blocked even though it would never be rewritten.
+
+### Branch discipline (commit-time)
+
+A Step 1.6 check (`src/router/branch-discipline.ts`, between the test-scope
+check and the rewrite steps) intercepts `git commit` and `git push` when the
+live branch is in `rules.workflow.protected_branches`. Like the destructive-op
+blocks, it scans **every** quote-aware compound segment, so
+`cd /tmp && git commit -m "x"` is still caught while `echo "git commit"`
+(quoted) is not. At `advise` level (the default) the recommendation — a
+worktree or a feature branch, resolved by `isolation_strategy` (`auto` picks
+worktree when the working tree is dirty) — reaches the agent **once per
+session** via the agent-visible `additionalContext` channel
+(`hasAdvised('branch_discipline')` suppresses repeats); the commit proceeds.
+At `block` level the command is rejected (exit 2) with remediation text every
+time; `silent` disables the check. It runs before the rewrite steps because a
+block must win over a rewrite. Git probes use the injectable `ExecFn`; any
+git failure (not a repo, git missing) makes the check a no-op.
 
 ---
 
@@ -266,8 +306,14 @@ below are what make that hierarchy reliable in practice:
   state is shared mutable state, and commits land wherever HEAD points at
   commit time. Dispatch implementers into a worktree; read-only agents
   (scout, reviewers) don't need isolation.
-- **One implementer at a time per workspace.** Reviewers are read-only and
-  can overlap; implementers cannot.
+- **One implementer per branch/worktree — not one globally.** Within a single
+  plan on a single branch, implementers run sequentially: tasks routinely
+  share files and a merge chain, and two writers on one branch race. Across
+  *orthogonal work items* — different branches, disjoint files, no
+  merge-order dependency — implementers may run concurrently, each in its
+  own worktree. The parallelization heuristic: read-only agents (scout,
+  reviewers) are always parallelizable; implementers are parallelizable
+  across branches; serialize only within a branch or across a merge chain.
 - **Enforcement reaches subagents the same way it reaches the orchestrator**:
   advisories via `additionalContext`, blocks via exit 2, and the typed
   agents' system prompts instruct reading `.harness.yaml` at runtime.
@@ -458,6 +504,18 @@ is emitted when graphify is not installed. `SessionCache` provides
 `getGraphifyStats(dir)` and `setGraphifyStats(dir, stats)` accessors for
 per-directory graphify data.
 
+Session start also runs `checkBranchDiscipline` (`src/session/worktree.ts`):
+when the session opens on a branch listed in
+`rules.workflow.protected_branches` (default `master`/`main`), it emits a
+one-line hint naming the active level and the recommended isolation —
+worktree vs feature branch, resolved by `isolation_strategy` (`worktree` and
+`branch` force the answer; `auto` recommends a worktree when `git status
+--porcelain` shows a dirty tree, a plain branch otherwise). `silent` level
+suppresses the hint; outside a git repo it is a no-op. The same
+`rules.workflow` config drives the tool router's commit-time check (Layer 1,
+Step 1.6). `checkWorktreeSuggestion` remains as a deprecated wrapper over the
+default config.
+
 ### CLI (`src/cli/`)
 
 `initCommand()` generates hooks, skills, agents, and config from templates via
@@ -475,23 +533,25 @@ npx rig init
 initCommand(options)
      |
 copyTemplate() for each:
-  - hooks/pre-tool-use.ts
-  - hooks/post-tool-use.ts
-  - hooks/session-start.ts
-  - skills/brain-plus/SKILL.md
-  - skills/plan-plus/SKILL.md
-  - skills/tdd-plus/SKILL.md
-  - skills/verify-plus/SKILL.md
-  - skills/review-plus/SKILL.md
-  - skills/verify-harness/SKILL.md
-  - skills/savings/SKILL.md
-  - agents/scout.md
+  - hooks: pre-tool-use.ts, post-tool-use.ts, session-start.ts
+  - skills (10): brain-plus, plan-plus, tdd-plus, sdd-plus,
+    verify-plus, review-plus, debug-plus, verify-harness,
+    savings, investigate
+  - agents (4): scout.md, code-reviewer.md, spec-reviewer.md,
+    implementer.md
+  - references: agent-loops.md installed into
+    skills/brain-plus/references/ and skills/plan-plus/references/
      |
 renderTemplate() replaces {{VAR}} placeholders
      |
 updateSettingsJson() registers hooks in .claude/settings.json
      |
 Writes .harness.yaml with default enforcement config
+  (only if absent — never reset, even with --force)
+     |
+Creates graphify-out/ (graph built on demand)
+     |
+Updates .gitignore with the rig-managed section
 ```
 
 ---
@@ -507,15 +567,13 @@ Key design decisions:
 | File-backed cache in /tmp | Cross-process state sharing; hooks are separate processes that need shared state. OS cleans /tmp automatically. |
 | `npx` over global install | Lower barrier, no global package management |
 | Separate `.harness.yaml` over CLAUDE.md injection | Cleaner separation of concerns, version-controllable |
-| Static SKILL.md templates over resolver pipeline | Simpler for 5 skills; resolver pipeline deferred |
+| Static SKILL.md templates over resolver pipeline | Simpler for 10 skills; resolver pipeline deferred |
 
 ---
 
 ## Known limitations
 
 - No auto-test generation for coverage gaps
-- No mode-aware enforcement (same thresholds regardless of workflow phase)
-- No multi-agent specialist review pattern (single review+ pass)
 - No REPO_MODE awareness (solo vs collaborative)
 - jcodemunch silently caps indexing at 2000 files per folder (`max_folder_files`
   in `~/.code-index/config.jsonc`). Session-start emits a `[WARNING]` when files
@@ -531,7 +589,8 @@ Key design decisions:
   reduce this friction. Without the flag, users will see more approval dialogs —
   this is intentional (opt-in rather than silently granting broad access).
 - **First-occurrence advisory suppression**: The tool router advises jcodemunch/scout
-  once per intent type per session via `hasAdvised()`. If the agent ignores the first
+  once per intent type per session via `hasAdvised()` (branch-discipline advisories
+  are also once-per-session). If the agent ignores the first
   advisory, it receives no further reminders for that session. Config-registration
   detection ensures the advisory fires in the first place; suppression behavior
   itself is tracked for future work (periodic re-advisory or escalating urgency).

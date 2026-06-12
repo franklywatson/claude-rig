@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, unlinkSync, writeFileSync, existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
@@ -218,6 +219,99 @@ describe('PreToolUse hook E2E', () => {
 
       expect(result.exitCode).toBe(2);
       expect(result.stderr).toContain('[BLOCK]');
+      expect(result.stdout).not.toContain('hookSpecificOutput');
+    }, HOOK_TIMEOUT);
+  });
+
+  describe('branch discipline (git fixture)', () => {
+    // Separate git-initialized fixture so the shared tempDir stays a plain
+    // directory for the other tests. Each test uses its own session_id so
+    // the once-per-session advisory suppression cannot leak between them.
+    let gitDir: string;
+    let gitHookPath: string;
+    const gitSessionIds = ['branch-advise', 'branch-block', 'branch-scope-block'];
+
+    function workflowYaml(level: string): string {
+      return [
+        'rules:',
+        '  workflow:',
+        `    branch_discipline: ${level}`,
+        '    protected_branches: [master, main]',
+        '    isolation_strategy: auto',
+        '',
+      ].join('\n');
+    }
+
+    beforeAll(async () => {
+      gitDir = mkdtempSync(join(tmpdir(), 'rig-e2e-branch-'));
+      await initCommand(gitDir, { force: false });
+      gitHookPath = join(gitDir, '.claude', 'hooks', 'scripts', 'pre-tool-use.ts');
+      expect(existsSync(gitHookPath)).toBe(true);
+      execSync('git init -b master', { cwd: gitDir });
+      execSync('git -c user.email=rig@test.dev -c user.name=rig commit --allow-empty -m init', { cwd: gitDir });
+    }, HOOK_TIMEOUT);
+
+    afterAll(() => {
+      for (const id of gitSessionIds) {
+        const path = sessionCachePath(gitDir, id);
+        if (existsSync(path)) unlinkSync(path);
+      }
+      rmSync(gitDir, { recursive: true, force: true });
+    });
+
+    it('emits branch-discipline advisory as additionalContext for git commit on master', async () => {
+      writeFileSync(join(gitDir, '.harness.yaml'), workflowYaml('advise'), 'utf-8');
+      const writer = new SessionCache(gitDir, 'branch-advise');
+      writer.setEnvironment(makeEnv());
+
+      const result = await runHook(gitHookPath, {
+        session_id: 'branch-advise',
+        tool_name: 'Bash',
+        tool_input: { command: 'git commit -m "test"' },
+      }, gitDir);
+
+      expect(result.exitCode).toBe(0);
+      const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine as string);
+      expect(parsed.hookSpecificOutput.hookEventName).toBe('PreToolUse');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('[ADVISE]');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('Branch discipline');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('master');
+    }, HOOK_TIMEOUT);
+
+    it('blocks git push on master with exit 2 when level is block', async () => {
+      writeFileSync(join(gitDir, '.harness.yaml'), workflowYaml('block'), 'utf-8');
+      const writer = new SessionCache(gitDir, 'branch-block');
+      writer.setEnvironment(makeEnv());
+
+      const result = await runHook(gitHookPath, {
+        session_id: 'branch-block',
+        tool_name: 'Bash',
+        tool_input: { command: 'git push origin master' },
+      }, gitDir);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('[BLOCK]');
+      expect(result.stderr).toContain('Branch discipline');
+      expect(result.stdout).not.toContain('hookSpecificOutput');
+    }, HOOK_TIMEOUT);
+
+    it('exits 2 for a compound test+commit command during tdd+ phase (block must beat any advisory)', async () => {
+      writeFileSync(join(gitDir, '.harness.yaml'), workflowYaml('block'), 'utf-8');
+      const writer = new SessionCache(gitDir, 'branch-scope-block');
+      writer.setEnvironment(makeEnv());
+      writer.setPhase('tdd+');
+      writer.addEditedFile('src/router/resolver.ts', 'source');
+
+      const result = await runHook(gitHookPath, {
+        session_id: 'branch-scope-block',
+        tool_name: 'Bash',
+        tool_input: { command: 'npm test && git commit -m "x"' },
+      }, gitDir);
+
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('Branch discipline');
       expect(result.stdout).not.toContain('hookSpecificOutput');
     }, HOOK_TIMEOUT);
   });

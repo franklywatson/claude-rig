@@ -39,6 +39,10 @@ subagent using the superpowers prompt template for that role.
 3. If the plan defines a signal stack, note each task's named gating signal:
    that signal is the task's completion gate, and the implementer dispatch
    prompt must say so.
+4. If branch discipline is active (see session-start output) and you are on a
+   protected branch, create an isolated workspace before implementing — a
+   worktree (`superpowers:using-git-worktrees`) when the plan is multi-task or
+   the working tree is dirty, a plain feature branch otherwise.
 
 ### Phase B: Execute (delegate to superpowers:subagent-driven-development)
 
@@ -49,6 +53,12 @@ subagent using the superpowers prompt template for that role.
    with the reviewer's findings included in the payload.
 4. Do not pause between tasks. Stop only for BLOCKED you cannot resolve,
    genuine ambiguity, or plan completion.
+5. Parallelism: this plan's tasks run **sequentially** — they share a branch
+   and usually files, so one implementer at a time per branch/worktree (the
+   wrapped skill's no-parallel rule applies within the plan). Orthogonal work
+   *outside* this plan (a different branch, disjoint files, no merge-order
+   dependency) may proceed concurrently in its own worktree; reviewers are
+   read-only and always safe to run in parallel.
 
 ### Phase C: Wrap Up
 
