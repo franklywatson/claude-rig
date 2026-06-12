@@ -47,6 +47,30 @@ describe('initCommand', () => {
     expect(existsSync(join(tempDir, '.claude', 'agents', 'scout.md'))).toBe(true);
   });
 
+  it('creates typed agent definitions', async () => {
+    await initCommand(tempDir, { force: false });
+    expect(existsSync(join(tempDir, '.claude', 'agents', 'code-reviewer.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'agents', 'spec-reviewer.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'agents', 'implementer.md'))).toBe(true);
+  });
+
+  it('updates unmodified rig-installed agents without --force', async () => {
+    await initCommand(tempDir, { force: false });
+    const agentPath = join(tempDir, '.claude', 'agents', 'code-reviewer.md');
+    writeFileSync(agentPath, '<!-- rig-generated -->\n# old agent content\n');
+    await initCommand(tempDir, { force: false });
+    const content = readFileSync(agentPath, 'utf-8');
+    expect(content).toContain('Senior Code Reviewer');
+  });
+
+  it('preserves user-modified agent files without --force', async () => {
+    await initCommand(tempDir, { force: false });
+    const agentPath = join(tempDir, '.claude', 'agents', 'implementer.md');
+    writeFileSync(agentPath, '# My custom implementer\n');
+    await initCommand(tempDir, { force: false });
+    expect(readFileSync(agentPath, 'utf-8')).toBe('# My custom implementer\n');
+  });
+
   it('creates .harness.yaml with defaults', async () => {
     await initCommand(tempDir, { force: false });
     const configPath = join(tempDir, '.harness.yaml');

@@ -89,7 +89,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
   }
 
   // Copy agent templates
-  const agentFiles = ['scout.md'];
+  const agentFiles = ['scout.md', 'code-reviewer.md', 'spec-reviewer.md', 'implementer.md'];
   for (const agentFile of agentFiles) {
     const src = join(TEMPLATES_DIR, 'agents', agentFile);
     if (!existsSync(src)) continue;
