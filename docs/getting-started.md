@@ -177,8 +177,8 @@ rules:
 
 | Level | What happens |
 | ----- | ------------ |
-| `block` | Hook rejects the tool call (exit 2) |
-| `advise` | Warning printed, tool call proceeds |
+| `block` | PreToolUse rejects the tool call; PostToolUse feeds the violation back to the agent as an error (exit 2) |
+| `advise` | Advisory injected into the agent's context via `additionalContext` JSON, tool call proceeds |
 | `silent` | Logged only, no visible output |
 
 ## How the hooks work
@@ -199,7 +199,12 @@ After each tool use, the post-tool-use hook runs three checks:
 2. **Constitutional** -- Are there mocks in stack/E2E test files? (mocks are appropriate in unit tests; configurable — set `no_mocks: silent` to disable)
 3. **Zero defect** -- Do the test results show failures?
 
-Each check returns a violation message or null. All violations are combined as advisory output.
+Each check returns a violation message or null. Advise-level violations are
+emitted as agent-visible `additionalContext` (the agent sees them next to the
+tool result); block-level violations exit 2 so the agent receives them as an
+error. A fourth check, **test scope**, runs in the PreToolUse hook: during
+`tdd+`/`sdd+` phases a full-suite run (e.g. `npm test`) gets a scoped-run
+suggestion before it executes.
 
 ### Session Start: Auto-indexing
 
