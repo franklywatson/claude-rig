@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { checkWorktreeSuggestion, checkBranchDiscipline } from '../../src/session/worktree.js';
+import { checkWorktreeSuggestion, checkBranchDiscipline, resolveIsolationStrategy } from '../../src/session/worktree.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 
 function makeExec(results: Record<string, string | Error>) {
@@ -80,5 +80,12 @@ describe('checkBranchDiscipline', () => {
     expect(checkBranchDiscipline(exec, cfg('advise'))).toBe('');
     const noGit = makeExec({ 'git branch --show-current': new Error('not a repo') });
     expect(checkBranchDiscipline(noGit, cfg('advise'))).toBe('');
+  });
+});
+
+describe('resolveIsolationStrategy', () => {
+  it('falls back to branch when git status throws after branch resolution succeeds', () => {
+    const exec = makeExec({ 'git status --porcelain': new Error('git status failed') });
+    expect(resolveIsolationStrategy('auto', exec)).toBe('branch');
   });
 });

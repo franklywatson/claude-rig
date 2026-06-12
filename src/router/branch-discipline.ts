@@ -31,6 +31,10 @@ export function checkBranchDisciplineCommand(
   if (level === 'silent') return null;
   if (!splitCompoundSegments(command).some(s => GIT_WRITE_PATTERN.test(s.trim()))) return null;
 
+  // A consumed once-per-session advisory must cost zero subprocesses, so the
+  // suppression check runs before any git probe.
+  if (level === 'advise' && cache.hasAdvised('branch_discipline')) return null;
+
   let branch: string;
   try {
     branch = exec('git branch --show-current').trim();
@@ -41,7 +45,6 @@ export function checkBranchDisciplineCommand(
   if (!protectedBranches.includes(branch)) return null;
 
   if (level === 'advise') {
-    if (cache.hasAdvised('branch_discipline')) return null;
     cache.markAdvised('branch_discipline');
     const strategy = resolveIsolationStrategy(wf?.isolation_strategy ?? WORKFLOW_DEFAULTS.isolation_strategy, exec);
     const isolation = strategy === 'worktree'
@@ -50,7 +53,7 @@ export function checkBranchDisciplineCommand(
     return {
       level: 'advise',
       message:
-        `[ADVISE] Branch discipline: committing on ${branch}. ` +
+        `[ADVISE] Branch discipline: committing or pushing on ${branch}. ` +
         `Consider ${isolation} and finishing with a PR. ` +
         `(rules.workflow.branch_discipline — set to silent to disable)`,
     };
@@ -59,7 +62,7 @@ export function checkBranchDisciplineCommand(
   return {
     level: 'block',
     message:
-      `[BLOCK] Branch discipline: direct ${branch} commits are blocked by config. ` +
+      `[BLOCK] Branch discipline: direct ${branch} commits/pushes are blocked by config. ` +
       `Create a feature branch (or worktree via /using-git-worktrees) and open a PR. ` +
       `(rules.workflow.branch_discipline: block — set to advise/silent to relax)`,
   };

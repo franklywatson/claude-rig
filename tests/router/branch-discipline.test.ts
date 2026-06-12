@@ -105,6 +105,36 @@ describe('checkBranchDisciplineCommand', () => {
     expect(calls).toEqual([]); // never resolves the branch for a quoted mention
   });
 
+  it('consumed advisory costs zero subprocesses on subsequent calls', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    const first = checkBranchDisciplineCommand('git commit -m "x"', cfg('advise'), cache, exec);
+    expect(first).not.toBeNull();
+
+    const calls: string[] = [];
+    const exec2 = makeExec({}, calls);
+    const second = checkBranchDisciplineCommand('git commit -m "y"', cfg('advise'), cache, exec2);
+    expect(second).toBeNull();
+    expect(calls).toEqual([]);
+  });
+
+  it('advise message names both committing and pushing', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    const result = checkBranchDisciplineCommand('git push', cfg('advise'), cache, exec);
+    expect(result?.message).toContain('committing or pushing on master');
+  });
+
+  it('block message names both commits and pushes', () => {
+    const exec = makeExec({ 'git branch --show-current': 'master' });
+    const result = checkBranchDisciplineCommand('git push', cfg('block'), cache, exec);
+    expect(result?.message).toContain('direct master commits/pushes are blocked');
+  });
+
   it('catches git commit behind a -c key=value global option', () => {
     const exec = makeExec({
       'git branch --show-current': 'master',
