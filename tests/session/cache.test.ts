@@ -248,15 +248,41 @@ describe('SessionCache (file-backed)', () => {
     expect(cache2.getPythonEnv()!.uvAvailable).toBe(true);
   });
 
-  it('clears stale environment on load', () => {
+  it('retains stale environment on load as last-known-good', () => {
+    // Regression: long-running sessions (>4h) used to lose their environment
+    // on load, silently disabling all rtk/jcodemunch routing until the next
+    // SessionStart. The stale env must be retained — tool availability rarely
+    // changes mid-session, and a wrong rtkPath degrades gracefully (spawn
+    // fails, command falls through). Staleness is reported via
+    // isEnvironmentStale() so SessionStart still re-detects.
     const cache = new SessionCache(testCwd);
-    cache.setEnvironment(makeEnv({ detectedAt: Date.now() - 5 * 60 * 60 * 1000 }));
+    cache.setEnvironment(makeEnv({
+      rtkAvailable: true,
+      rtkPath: '/usr/bin/rtk',
+      detectedAt: Date.now() - 5 * 60 * 60 * 1000,
+    }));
     const path = sessionCachePath(testCwd);
     trackPath(path);
 
-    // Load into new instance — stale env should be cleared
     const cache2 = new SessionCache(testCwd);
-    expect(cache2.getEnvironment()).toBeUndefined();
+    expect(cache2.getEnvironment()).toBeDefined();
+    expect(cache2.getEnvironment()!.rtkAvailable).toBe(true);
+    expect(cache2.getEnvironment()!.rtkPath).toBe('/usr/bin/rtk');
+    expect(cache2.isEnvironmentStale()).toBe(true);
+  });
+
+  it('retains a days-old environment on load', () => {
+    const cache = new SessionCache(testCwd);
+    cache.setEnvironment(makeEnv({
+      rtkAvailable: true,
+      rtkPath: '/usr/bin/rtk',
+      detectedAt: Date.now() - 3 * 24 * 60 * 60 * 1000,
+    }));
+    trackPath(sessionCachePath(testCwd));
+
+    const cache2 = new SessionCache(testCwd);
+    expect(cache2.getEnvironment()?.rtkAvailable).toBe(true);
+    expect(cache2.isEnvironmentStale()).toBe(true);
   });
 
   it('preserves fresh environment on load', () => {

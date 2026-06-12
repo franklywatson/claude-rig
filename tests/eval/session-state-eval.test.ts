@@ -49,7 +49,7 @@ const SESSION_STATE_SCENARIOS: SessionStateScenario[] = [
   },
   {
     id: 'state_stale_env',
-    description: 'cat with stale environment (5h old) → allow (env cleared, cat rule advises)',
+    description: 'cat with stale environment (5h old, no tools) → advise (stale env retained as last-known-good)',
     toolCall: { tool: 'Bash', args: { command: 'cat src/main.py' } },
     setupCache: (cache) => {
       cache.setEnvironment({
@@ -149,7 +149,9 @@ describe('Context Eval: session state routing', () => {
         cache,
         config,
         scenario.cwd,
-        { existsCheck: (p) => p.startsWith('/project/.venv/bin/') },
+        // Declining execRewrite mock: keeps rtk-enabled scenarios off the
+        // real binary (no /tmp diag pollution, no host dependence).
+        { existsCheck: (p) => p.startsWith('/project/.venv/bin/'), execRewrite: () => null },
       );
 
       const parsed = parseResult(actual);
