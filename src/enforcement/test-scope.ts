@@ -41,6 +41,7 @@ export function checkTestScope(
   config: HarnessConfig,
 ): string | null {
   // Only enforce during tdd+ phase
+  // TODO: include 'sdd+' when checkTestScope is wired into the pipeline (sdd+ tasks also run scoped)
   if (currentPhase !== 'tdd+') return null;
 
   const runner = isUnscopedTestRun(command);

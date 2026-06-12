@@ -1,6 +1,6 @@
 ---
 name: verify+
-description: "Invoke AFTER tdd+ implementation is complete. Wraps superpowers:verification-before-completion with evidence standards, spec drift check, and full-suite test run. This is the ONLY phase where full test suite runs are appropriate."
+description: "Invoke AFTER tdd+ or sdd+ implementation is complete. Wraps superpowers:verification-before-completion with evidence standards, spec drift check, and full-suite test run. This is the ONLY phase where full test suite runs are appropriate."
 argument-hint: "[plan file path]"
 user-invocable: true
 ---
@@ -82,7 +82,7 @@ Wraps `superpowers:verification-before-completion`. Requires superpowers to be i
    ```
 
 2. If ALL checks pass, verification is complete.
-   If ANY check fails, return to tdd+ phase to fix.
+   If ANY check fails, return to the implementation phase (tdd+ or sdd+) to fix.
 
 ## Skill Chain
 

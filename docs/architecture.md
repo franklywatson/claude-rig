@@ -188,10 +188,10 @@ Skills are ordered workflow stages. The `SkillPhaseTracker` enforces valid trans
 
 ```
 brain+ -> plan+ -> tdd+|sdd+ -> verify+ -> review+
-   |        |       |        |          |
-   |        |       |        |          +-- accessible from any phase
-   |        |       |        +-- requires tdd+ or sdd+ visit
-   |        |       +-- free transition
+   |        |        |             |          |
+   |        |        |             |          +-- accessible from any phase
+   |        |        |             +-- requires tdd+ or sdd+ visit
+   |        |        +-- free transition
    |        +-- free transition
    +-- free transition
 
@@ -214,13 +214,13 @@ keeps template prose in sync with `.harness.yaml` configuration.
 
 **Files:** `src/skills/phase-tracker.ts`, `templates/skills/`
 
-### Standalone skills
+### Chain alternatives and standalone skills
 
 `sdd+` wraps `superpowers:subagent-driven-development` with typed agent
 dispatch: a fresh `implementer` subagent per plan task, followed by
 `spec-reviewer` and `code-reviewer` subagents. Typed definitions live in
 `.claude/agents/` (installed by `rig init`) and carry tool restrictions --
-reviewers cannot edit files. Where the wrapped superpowers skill says
+reviewers have no Edit/Write tools. Where the wrapped superpowers skill says
 "general-purpose", the rig skill dispatches the typed agent with payload-only
 prompts, falling back to general-purpose if the definition is missing.
 `brain+` and `plan+` load `references/agent-loops.md` for the opt-in

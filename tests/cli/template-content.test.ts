@@ -37,7 +37,7 @@ describe('agent templates', () => {
     expect(content).toContain('<!-- rig-generated -->');
     expect(content).toContain('name: implementer');
     expect(content).toContain('Do not invoke proactively');
-    expect(content).not.toContain('tools:'); // omitted -> inherits all tools
+    expect(content).not.toMatch(/^tools:/m); // frontmatter omits tools -> inherits all
     expect(content).toContain('show output before reporting');
     expect(content).toContain('BLOCKED');
   });

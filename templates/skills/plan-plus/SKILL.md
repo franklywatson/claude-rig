@@ -98,6 +98,7 @@ Save the plan to `docs/plans/` and feed into `tdd+` for implementation.
 After completing plan+, the next step is:
 
 - Invoke `/tdd+` to implement the plan task-by-task with RED-GREEN-REFACTOR
+- Or invoke `/sdd+` to execute the plan via typed subagents (implementer → spec-reviewer → code-reviewer) — best for plans with independent tasks
 
 ## Completion
 

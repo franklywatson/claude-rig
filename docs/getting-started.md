@@ -225,7 +225,7 @@ This overwrites existing hook and skill templates but preserves your `.harness.y
 Remove the generated files:
 
 ```bash
-rm -rf .claude/hooks/ .claude/skills/ .claude/agents/scout.md .harness.yaml
+rm -rf .claude/hooks/ .claude/skills/ .claude/agents/ .harness.yaml
 rm -f /tmp/rig-session-*.json /tmp/rig-rtk-rewrite-failures.log
 ```
 
