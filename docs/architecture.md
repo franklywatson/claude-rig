@@ -28,8 +28,23 @@ User types: grep -r "TODO" src/
 PreToolUse Hook (handlePreToolUse)
      |
   +--------------------------------------+
+  | Step 0: Scout explore advisory       |
+  |   Agent(Explore) + jcodemunch ready  |
+  |   -> advise scout subagent           |
+  +--------------------------------------+
+     |
+  +--------------------------------------+
   | Step 1: Resolution blocks            |
   |   file_modify, rtk_cat_code -> block |
+  +--------------------------------------+
+     |
+  +--------------------------------------+
+  | Steps 1.5 + 1.6: Bash preflight      |
+  |   1.5: test scope (tdd+/sdd+ phase)  |
+  |   1.6: branch discipline (git        |
+  |        commit/push, protected branch)|
+  |   collect-then-pick: any block wins  |
+  |   over any advisory                  |
   +--------------------------------------+
      |
   +--------------------------------------+
@@ -46,6 +61,8 @@ PreToolUse Hook (handlePreToolUse)
      |
   +--------------------------------------+
   | Step 4: No match -> pass through     |
+  |   4b: compound command -> skip       |
+  |       advisory (blocks already won)  |
   +--------------------------------------+
      |
   +--------------------------------------+
@@ -53,7 +70,9 @@ PreToolUse Hook (handlePreToolUse)
   |   jcodemunch ready? -> advise jm     |
   +--------------------------------------+
      |
-HookResult: { decision, reason } | { type: "rewrite", command }
+Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
+                           block    -> stderr + exit 2
+                           rewrite  -> updatedInput JSON (exit 0)
 ```
 
 **Files:** `src/router/intent.ts`, `src/router/rules.ts`, `src/router/resolver.ts`, `src/router/hook.ts`, `src/router/branch-discipline.ts`
@@ -70,6 +89,10 @@ HookResult: { decision, reason } | { type: "rewrite", command }
 | `file_discovery` | Bash `find`, `fd` | jcodemunch `get_file_tree` |
 | `file_read` | Bash `cat`, `head`, `tail` | rtk or jcodemunch `get_symbol` |
 | `file_modify` | Bash `sed -i`, `awk >` | Block, redirect to Edit tool |
+| `scout_explore` | `Agent` tool dispatching the `Explore` subagent | Advise scout subagent (jcodemunch + graphify) |
+
+Git `commit`/`push` interception is not an intent type — it is handled by the
+branch-discipline step (Step 1.6, see "Branch discipline (commit-time)" below).
 
 ### Python environment detection
 
@@ -504,23 +527,25 @@ npx rig init
 initCommand(options)
      |
 copyTemplate() for each:
-  - hooks/pre-tool-use.ts
-  - hooks/post-tool-use.ts
-  - hooks/session-start.ts
-  - skills/brain-plus/SKILL.md
-  - skills/plan-plus/SKILL.md
-  - skills/tdd-plus/SKILL.md
-  - skills/verify-plus/SKILL.md
-  - skills/review-plus/SKILL.md
-  - skills/verify-harness/SKILL.md
-  - skills/savings/SKILL.md
-  - agents/scout.md
+  - hooks: pre-tool-use.ts, post-tool-use.ts, session-start.ts
+  - skills (10): brain-plus, plan-plus, tdd-plus, sdd-plus,
+    verify-plus, review-plus, debug-plus, verify-harness,
+    savings, investigate
+  - agents (4): scout.md, code-reviewer.md, spec-reviewer.md,
+    implementer.md
+  - references: agent-loops.md installed into
+    skills/brain-plus/references/ and skills/plan-plus/references/
      |
 renderTemplate() replaces {{VAR}} placeholders
      |
 updateSettingsJson() registers hooks in .claude/settings.json
      |
 Writes .harness.yaml with default enforcement config
+  (only if absent — never reset, even with --force)
+     |
+Creates graphify-out/ (graph built on demand)
+     |
+Updates .gitignore with the rig-managed section
 ```
 
 ---
@@ -536,15 +561,13 @@ Key design decisions:
 | File-backed cache in /tmp | Cross-process state sharing; hooks are separate processes that need shared state. OS cleans /tmp automatically. |
 | `npx` over global install | Lower barrier, no global package management |
 | Separate `.harness.yaml` over CLAUDE.md injection | Cleaner separation of concerns, version-controllable |
-| Static SKILL.md templates over resolver pipeline | Simpler for 5 skills; resolver pipeline deferred |
+| Static SKILL.md templates over resolver pipeline | Simpler for 10 skills; resolver pipeline deferred |
 
 ---
 
 ## Known limitations
 
 - No auto-test generation for coverage gaps
-- No mode-aware enforcement (same thresholds regardless of workflow phase)
-- No multi-agent specialist review pattern (single review+ pass)
 - No REPO_MODE awareness (solo vs collaborative)
 - jcodemunch silently caps indexing at 2000 files per folder (`max_folder_files`
   in `~/.code-index/config.jsonc`). Session-start emits a `[WARNING]` when files
@@ -560,7 +583,8 @@ Key design decisions:
   reduce this friction. Without the flag, users will see more approval dialogs —
   this is intentional (opt-in rather than silently granting broad access).
 - **First-occurrence advisory suppression**: The tool router advises jcodemunch/scout
-  once per intent type per session via `hasAdvised()`. If the agent ignores the first
+  once per intent type per session via `hasAdvised()` (branch-discipline advisories
+  are also once-per-session). If the agent ignores the first
   advisory, it receives no further reminders for that session. Config-registration
   detection ensures the advisory fires in the first place; suppression behavior
   itself is tracked for future work (periodic re-advisory or escalating urgency).

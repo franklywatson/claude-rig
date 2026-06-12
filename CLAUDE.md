@@ -17,9 +17,9 @@ npm run lint       # Type-check (tsc --noEmit)
 
 Four-layer middleware:
 
-1. **Tool Router** (`src/router/`) -- PreToolUse hook, intent classification, priority resolution (rtk > jcodemunch > claudeTool > fallback > allow)
-2. **Enforcement** (`src/enforcement/`) -- PostToolUse hook, composable pipeline: stale tests -> test scope -> constitutional -> zero-defect
-3. **Skill Chain** (`src/skills/`) -- Phase tracker validates transitions (brain+ -> plan+ -> tdd+ -> verify+ -> review+)
+1. **Tool Router** (`src/router/`) -- PreToolUse hook: intent classification, priority resolution (rtk > jcodemunch > claudeTool > fallback > allow), test-scope and branch-discipline checks
+2. **Enforcement** (`src/enforcement/`) -- PostToolUse hook, composable pipeline: stale tests -> constitutional -> zero-defect
+3. **Skill Chain** (`src/skills/`) -- Phase tracker validates transitions (brain+ -> plan+ -> tdd+|sdd+ -> verify+ -> review+; debug+ standalone)
 4. **Scout** (`src/scout/`) -- Cross-repo indexing, CodebaseMap formatter, TTL cache
 
 Supporting: `src/config.ts` (YAML config), `src/session/` (environment detection, session cache), `src/cli/` (init command, template renderer)
@@ -28,10 +28,12 @@ Supporting: `src/config.ts` (YAML config), `src/session/` (environment detection
 
 All types in `src/types.ts`. Important ones:
 
-- `IntentType` -- file_read, text_search, file_discovery, file_modify, symbol_search, pass_through
+- `IntentType` -- file_read, text_search, file_discovery, file_modify, symbol_search, scout_explore, pass_through, native_read, native_grep, native_glob, rtk_cat_code
 - `EnforcementLevel` -- block, advise, silent
+- `EnforcementViolation` -- { level, message }; severity is structural, never sniffed from message text
 - `Resolution` -- allow, advise, block
 - `ToolRule` -- match pattern + resolutions per environment priority
+- `WorkflowRules` -- branch_discipline, protected_branches, isolation_strategy
 - `CodebaseMap` -- structure, entryPoints, keyExports, dependencies, languages, symbols
 - `HarnessConfig` -- nested rules with enforcement levels
 
@@ -42,7 +44,7 @@ All types in `src/types.ts`. Important ones:
 - Session cache: 4-hour env TTL, file-backed in /tmp keyed by (cwd, session id); scout cache has a separate 30-min TTL
 - All hooks read JSON from stdin, write JSON to stdout (Claude Code hook protocol)
 - Skill templates use `{{VAR}}` substitution via `renderTemplate()`
-- Enforcement levels: block (exit 2), advise (print + exit 0), silent (log + exit 0)
+- Enforcement levels: block (exit 2), advise (agent-visible additionalContext + exit 0), silent (log + exit 0)
 
 ## Testing
 
@@ -59,4 +61,5 @@ All types in `src/types.ts`. Important ones:
 - @docs/extending.md -- Custom enforcement checks, skills, and agents
 - @docs/skill-wrapping.md -- Wrapping superpowers skills with project-specific enforcement
 - @docs/agent-loops.md -- Loop-centric development: signal stack, opt-in trajectory, maintainer pattern
+- @docs/troubleshooting.md -- Diagnosing permission prompts, cache, and detection issues
 - @docs/design-process.md -- How rig was built (historical reference)

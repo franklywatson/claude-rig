@@ -232,8 +232,9 @@ just `git push` and hope.
 
 ## Scenario 6: Wrapping unwrapped superpowers skills
 
-Rig wraps 6 of 14 superpowers skills. The remaining 8 are available for
-wrapping with project-specific context:
+Rig wraps eight superpowers skills out of the box (the table above). The rest
+of the superpowers catalog is available for wrapping with project-specific
+context:
 
 ### debug+ (wraps `superpowers:systematic-debugging`)
 

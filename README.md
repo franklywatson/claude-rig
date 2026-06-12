@@ -217,7 +217,7 @@ rules:
     evidence_only: block
   zero_defect:
     tolerance: strict
-    unrelated_errors: silent     # silent|advise|block — how to handle pre-existing failures
+    unrelated_errors: block      # silent|advise|block — how to handle pre-existing failures
   tool_routing:
     native_read: advise        # advise jcodemunch for Read on code files
     native_grep: advise        # advise jcodemunch for Grep
@@ -229,10 +229,11 @@ rules:
     isolation_strategy: auto   # auto | branch | worktree — auto picks worktree when the tree is dirty
 ```
 
-Each enforcement rule can be `block` (hook exits nonzero), `advise` (prints warning),
-or `silent` (logs only). Active enforcement rules are emitted at session start and
-referenced dynamically by skill templates -- set `no_mocks: silent` to disable
-no-mock enforcement entirely.
+Each enforcement rule can be `block` (hook exits nonzero), `advise` (advisory
+emitted to the agent as `additionalContext`), or `silent` (logs only). Active
+enforcement rules are emitted at session start and referenced dynamically by
+skill templates -- set `no_mocks: silent` to disable no-mock enforcement
+entirely.
 
 ## Skill chain
 
@@ -240,16 +241,19 @@ no-mock enforcement entirely.
 | ----- | ------- | ----- |
 | `brain+` | Ideation and requirements | `superpowers:brainstorming` |
 | `plan+` | Implementation planning | `superpowers:writing-plans` |
-| `tdd+` | Test-driven development | `superpowers:tdd` |
+| `tdd+` | Test-driven development | `superpowers:test-driven-development` |
 | `sdd+` | Subagent-driven plan execution (typed implementer/reviewer agents) | `superpowers:subagent-driven-development` |
-| `verify+` | Installation verification | `superpowers:code-reviewer` |
-| `review+` | Code review | `superpowers:code-reviewer` |
+| `verify+` | Implementation verification | `superpowers:verification-before-completion` |
+| `review+` | Code review | `superpowers:requesting-code-review` |
 | `debug+` | Systematic debugging | `superpowers:systematic-debugging` |
 | `savings` | Session token savings report | -- |
 | `investigate` | Alias for `debug+` | -- |
 
-Skills enforce phase transitions: `tdd+` requires prior `plan+` visit, `verify+`
-requires prior `tdd+` or `sdd+` visit. `sdd+` is a peer of `tdd+` for plans with
+The chain is ordered by convention, with one tracked gate: `verify+` requires a
+prior `tdd+` or `sdd+` visit; every other transition is free (`review+` and
+`debug+` work from any phase). The ordering is carried by each skill's
+procedure text plus the phase tracker's transition rules — no hook blocks an
+out-of-order skill invocation. `sdd+` is a peer of `tdd+` for plans with
 independent tasks -- it executes each task via typed subagents (implementer ->
 spec-reviewer -> code-reviewer). `debug+`, `savings`, and `investigate` are
 standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
@@ -266,7 +270,11 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
       session-start.ts   # Auto-indexing
   skills/
     brain-plus/          # brain+ skill
+      references/
+        agent-loops.md   # Signal-stack / maintainer-loop design vocabulary
     plan-plus/           # plan+ skill
+      references/
+        agent-loops.md   # Same reference, installed for plan+
     tdd-plus/            # tdd+ skill
     sdd-plus/            # sdd+ skill (typed subagent execution)
     verify-plus/         # verify+ skill
@@ -280,6 +288,7 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
     code-reviewer.md     # Typed code-quality reviewer (read-only)
     spec-reviewer.md     # Typed spec-compliance reviewer (read-only)
     implementer.md       # Typed task implementer
+.harness.yaml            # Enforcement configuration (project root)
 ```
 
 ## Development
