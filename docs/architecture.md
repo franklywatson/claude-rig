@@ -306,8 +306,14 @@ below are what make that hierarchy reliable in practice:
   state is shared mutable state, and commits land wherever HEAD points at
   commit time. Dispatch implementers into a worktree; read-only agents
   (scout, reviewers) don't need isolation.
-- **One implementer at a time per workspace.** Reviewers are read-only and
-  can overlap; implementers cannot.
+- **One implementer per branch/worktree — not one globally.** Within a single
+  plan on a single branch, implementers run sequentially: tasks routinely
+  share files and a merge chain, and two writers on one branch race. Across
+  *orthogonal work items* — different branches, disjoint files, no
+  merge-order dependency — implementers may run concurrently, each in its
+  own worktree. The parallelization heuristic: read-only agents (scout,
+  reviewers) are always parallelizable; implementers are parallelizable
+  across branches; serialize only within a branch or across a merge chain.
 - **Enforcement reaches subagents the same way it reaches the orchestrator**:
   advisories via `additionalContext`, blocks via exit 2, and the typed
   agents' system prompts instruct reading `.harness.yaml` at runtime.

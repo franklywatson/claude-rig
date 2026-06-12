@@ -53,6 +53,12 @@ subagent using the superpowers prompt template for that role.
    with the reviewer's findings included in the payload.
 4. Do not pause between tasks. Stop only for BLOCKED you cannot resolve,
    genuine ambiguity, or plan completion.
+5. Parallelism: this plan's tasks run **sequentially** — they share a branch
+   and usually files, so one implementer at a time per branch/worktree (the
+   wrapped skill's no-parallel rule applies within the plan). Orthogonal work
+   *outside* this plan (a different branch, disjoint files, no merge-order
+   dependency) may proceed concurrently in its own worktree; reviewers are
+   read-only and always safe to run in parallel.
 
 ### Phase C: Wrap Up
 
