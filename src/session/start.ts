@@ -6,7 +6,7 @@ import type { Environment, GraphBuildInfo, HarnessConfig } from '../types.js';
 import { detectEnvironment, callJcodemunchMcpTool } from './environment.js';
 import type { ExecFn, McpQueryFn, RegistrationLookupFn } from './environment.js';
 import { detectPythonEnv } from './python-env.js';
-import { checkBranchDiscipline } from './worktree.js';
+import { checkBranchDiscipline, WORKFLOW_DEFAULTS } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
 import type { WaitForBuildOpts } from '../scout/graph-state.js';
@@ -334,6 +334,15 @@ function formatActiveRules(config: HarnessConfig): string | null {
         active.push(`${rule} (${level})`);
       }
     }
+  }
+
+  // Branch discipline belongs in the active-rules line too — skill templates
+  // anchor on "see session-start output", which must not be empty for
+  // sessions started on feature branches (where the protected-branch hint
+  // does not fire).
+  const branchLevel = config.rules.workflow?.branch_discipline ?? WORKFLOW_DEFAULTS.branch_discipline;
+  if (branchLevel !== 'silent') {
+    active.push(`branch_discipline (${branchLevel})`);
   }
 
   if (active.length === 0) return null;
