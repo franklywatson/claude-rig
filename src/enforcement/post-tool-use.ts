@@ -123,8 +123,10 @@ export function handlePostToolUse(
 const SCOPED_PHASES = ['tdd+', 'sdd+'];
 
 /** Skill-name → skill-chain phase. Keys cover the installed skill directory
- * names plus the bare phase aliases. `investigate` is an alias for debug+. */
-const SKILL_PHASE_MAP: Record<string, string> = {
+ * names plus the bare phase aliases. `investigate` is an alias for debug+.
+ * Must stay in sync with PHASE_ORDER in src/skills/phase-tracker.ts — every
+ * chain phase needs a reachable skill name here (enforced by a sync test). */
+export const SKILL_PHASE_MAP: Record<string, string> = {
   'brain-plus': 'brain+',
   'plan-plus': 'plan+',
   'tdd-plus': 'tdd+',

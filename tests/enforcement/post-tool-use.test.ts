@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { handlePostToolUse } from '../../src/enforcement/post-tool-use.js';
+import { handlePostToolUse, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
+import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
 import { SessionCache } from '../../src/session/cache.js';
 import type { HarnessConfig } from '../../src/types.js';
@@ -438,6 +439,22 @@ describe('handlePostToolUse', () => {
       handlePostToolUse('Edit', { file_path: 'src/feature.ts' }, tracker, cache, config);
       handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
       expect(cache.getEditedFiles('source')).toEqual(['src/feature.ts']);
+    });
+
+    it('covers every phase-tracker phase in SKILL_PHASE_MAP', () => {
+      // If a future chain skill adds a phase to PHASE_ORDER without a skill
+      // name mapping here, phase tracking silently misses it.
+      const reachablePhases = new Set(Object.values(SKILL_PHASE_MAP));
+      for (const phase of new SkillPhaseTracker().getAllPhases()) {
+        expect(reachablePhases).toContain(phase);
+      }
+    });
+
+    it('maps every SKILL_PHASE_MAP value to a valid tracker phase', () => {
+      const trackerPhases = new Set<string>(new SkillPhaseTracker().getAllPhases());
+      for (const phase of Object.values(SKILL_PHASE_MAP)) {
+        expect(trackerPhases).toContain(phase);
+      }
     });
   });
 });
