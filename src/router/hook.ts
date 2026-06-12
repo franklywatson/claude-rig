@@ -6,7 +6,6 @@ import { findMatchingRule, getDefaultRules } from './rules.js';
 import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
-import { FileTracker } from '../enforcement/file-tracker.js';
 import { checkTestScope } from '../enforcement/test-scope.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
@@ -205,10 +204,12 @@ export function handlePreToolUse(
   // no UNSCOPED_TEST_PATTERNS command is rtk- or python-rewritable; revisit
   // this ordering if RTK_PREFIXES ever gains test runners.
   if (tool === 'Bash' && typeof args.command === 'string') {
+    // Hooks are separate processes, so the source-edit history comes from the
+    // session cache (persisted by the PostToolUse hook), not a FileTracker.
     const scopeViolation = checkTestScope(
       args.command,
       cache.getCurrentPhase(),
-      buildTrackerFromCache(cache),
+      cache.getEditedFiles('source'),
       config,
     );
     if (scopeViolation) return scopeViolation;
@@ -274,18 +275,6 @@ export function handlePreToolUse(
   }
 
   return null;
-}
-
-/**
- * Hydrate a FileTracker from the session cache's persisted edit history.
- * Hooks are separate processes, so the PostToolUse FileTracker never survives
- * to the next PreToolUse invocation — the cache is the cross-process channel.
- */
-function buildTrackerFromCache(cache: SessionCache): FileTracker {
-  const tracker = new FileTracker();
-  for (const file of cache.getEditedFiles('source')) tracker.recordEdit(file);
-  for (const file of cache.getEditedFiles('test')) tracker.recordEdit(file);
-  return tracker;
 }
 
 const INTENT_CONFIG_KEYS: Record<string, string> = {

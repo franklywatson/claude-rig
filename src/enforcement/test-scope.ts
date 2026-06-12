@@ -1,4 +1,3 @@
-import { FileTracker } from './file-tracker.js';
 import type { HarnessConfig } from '../types.js';
 
 const UNSCOPED_TEST_PATTERNS = [
@@ -37,12 +36,13 @@ function deriveTestPath(sourcePath: string): string {
 
 /**
  * Check if a test command should be scoped based on the current phase and
- * recent source edits. Returns null if no redirect needed.
+ * recent source edits (file paths, e.g. from the session cache).
+ * Returns null if no redirect needed.
  */
 export function checkTestScope(
   command: string,
   currentPhase: string | null,
-  tracker: FileTracker,
+  sourceEdits: string[],
   config: HarnessConfig,
 ): string | null {
   // Only enforce during scoped-execution phases (tdd+ and sdd+ tasks both run scoped)
@@ -57,19 +57,18 @@ export function checkTestScope(
   const allowed = config.rules.test_scope?.allowed_unscoped ?? [];
   if (isAllowedUnscoped(command, allowed)) return null;
 
-  const sourceEdits = tracker.getSourceEdits();
   if (sourceEdits.length === 0) return null;
 
   const prefix = enforcement === 'block' ? '[BLOCK]' : '[ADVISE]';
 
-  const testPaths = sourceEdits.map(e => deriveTestPath(e.file));
+  const testPaths = sourceEdits.map(deriveTestPath);
   const scopedCommand = `${runner} ${testPaths.join(' ')}`;
 
   const lines = [
     `${prefix} TEST SCOPE REDIRECT`,
     '',
     `Running the full test suite, but recent changes affect:`,
-    ...sourceEdits.map(e => `  - ${e.file}`),
+    ...sourceEdits.map(f => `  - ${f}`),
     '',
     `During iterative fix cycles, run scoped tests only:`,
     `  ${scopedCommand}`,
