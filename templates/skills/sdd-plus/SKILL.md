@@ -39,6 +39,10 @@ subagent using the superpowers prompt template for that role.
 3. If the plan defines a signal stack, note each task's named gating signal:
    that signal is the task's completion gate, and the implementer dispatch
    prompt must say so.
+4. If branch discipline is active (see session-start output) and you are on a
+   protected branch, create an isolated workspace before implementing — a
+   worktree (`superpowers:using-git-worktrees`) when the plan is multi-task or
+   the working tree is dirty, a plain feature branch otherwise.
 
 ### Phase B: Execute (delegate to superpowers:subagent-driven-development)
 

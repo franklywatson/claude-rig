@@ -109,4 +109,16 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('Agent(subagent_type="code-reviewer")');
     expect(content).toContain('XX/35');
   });
+
+  it('tdd+ and sdd+ carry the branch-discipline preflight', () => {
+    for (const skill of ['tdd-plus', 'sdd-plus']) {
+      const content = read(`skills/${skill}/SKILL.md`);
+      expect(content).toContain('branch discipline');
+      expect(content).toContain('isolated workspace');
+    }
+  });
+
+  it('review+ prefers a PR when branch discipline is active', () => {
+    expect(read('skills/review-plus/SKILL.md')).toContain('gh pr create');
+  });
 });
