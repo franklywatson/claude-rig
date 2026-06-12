@@ -14,7 +14,7 @@ Rig installs guardrails into a Claude Code project:
   `grep`/`find`/`cat`/`git` to rtk when available (using Claude Code's `updatedInput` protocol);
   advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and `rtk cat` on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, test scope, constitutional rules (real dependencies in stack/E2E tests), and zero-defect status (with pre-existing failure classification)
-- **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`
+- **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`, and `sdd+` for subagent-driven plan execution via typed agents (`code-reviewer`, `spec-reviewer`, `implementer`) installed into `.claude/agents/`
 - **Scout Agent** -- cross-repo indexing agent that builds a typed `CodebaseMap`
   for context injection, enriched with graphify relationship data (god nodes,
   module communities, dependency paths) when available
@@ -138,7 +138,7 @@ The deny list is always applied regardless of the flag.
 | (router)   | (enforce)  | (auto-index)      |
 +------------+------------+-------------------+
 |              Skill Chain Pipeline            |
-|  brain+ -> plan+ -> tdd+ -> verify+ -> rev+ |
+|  brain+ -> plan+ -> tdd+|sdd+ -> verify+ -> rev+ |
 |              debug+ (any phase)               |
 +---------------------------------------------+
 |              Scout Agent                     |
@@ -187,6 +187,7 @@ no-mock enforcement entirely.
 | `brain+` | Ideation and requirements | `superpowers:brainstorming` |
 | `plan+` | Implementation planning | `superpowers:writing-plans` |
 | `tdd+` | Test-driven development | `superpowers:tdd` |
+| `sdd+` | Subagent-driven plan execution (typed implementer/reviewer agents) | `superpowers:subagent-driven-development` |
 | `verify+` | Installation verification | `superpowers:code-reviewer` |
 | `review+` | Code review | `superpowers:code-reviewer` |
 | `debug+` | Systematic debugging | `superpowers:systematic-debugging` |
@@ -194,7 +195,9 @@ no-mock enforcement entirely.
 | `investigate` | Alias for `debug+` | -- |
 
 Skills enforce phase transitions: `tdd+` requires prior `plan+` visit, `verify+`
-requires prior `tdd+` visit. `debug+`, `savings`, and `investigate` are
+requires prior `tdd+` or `sdd+` visit. `sdd+` is a peer of `tdd+` for plans with
+independent tasks -- it executes each task via typed subagents (implementer ->
+spec-reviewer -> code-reviewer). `debug+`, `savings`, and `investigate` are
 standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
 
 ## What gets installed
@@ -211,6 +214,7 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
     brain-plus/          # brain+ skill
     plan-plus/           # plan+ skill
     tdd-plus/            # tdd+ skill
+    sdd-plus/            # sdd+ skill (typed subagent execution)
     verify-plus/         # verify+ skill
     review-plus/         # review+ skill
     debug-plus/          # debug+ skill (systematic debugging)
@@ -219,6 +223,9 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
     investigate/         # Alias for debug+
   agents/
     scout.md             # Cross-repo scout agent
+    code-reviewer.md     # Typed code-quality reviewer (read-only)
+    spec-reviewer.md     # Typed spec-compliance reviewer (read-only)
+    implementer.md       # Typed task implementer
 ```
 
 ## Development
