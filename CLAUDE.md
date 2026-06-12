@@ -58,3 +58,5 @@ All types in `src/types.ts`. Important ones:
 - @docs/getting-started.md -- Installation and usage guide
 - @docs/extending.md -- Custom enforcement checks, skills, and agents
 - @docs/skill-wrapping.md -- Wrapping superpowers skills with project-specific enforcement
+- @docs/agent-loops.md -- Loop-centric development: signal stack, opt-in trajectory, maintainer pattern
+- @docs/design-process.md -- How rig was built (historical reference)
