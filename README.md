@@ -21,6 +21,23 @@ Rig installs guardrails into a Claude Code project:
 
 Built from the [agentic-patterns](https://github.com/franklywatson/agentic-patterns) L2-L4 patterns.
 
+## Rig vs plain superpowers
+
+[superpowers](https://github.com/obra/superpowers) provides the process
+discipline: brainstorming, planning, TDD, verification, review. Rig keeps all
+of it — every chain skill delegates to its superpowers counterpart — and
+upgrades the three places where process text alone can't reach:
+
+| | plain superpowers | superpowers through rig |
+| --- | --- | --- |
+| **Enforcement** | Persuasive skill text the agent can rationalize around | PreToolUse/PostToolUse hooks that programmatically block or advise (`.harness.yaml`) |
+| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers physically cannot edit files), enforcement rules in their system prompt, named in the UI, per-agent turn budgets |
+| **Trajectory** | The skill chain ends at merge | Opt-in agent-loop trajectory: `brain+`/`plan+` can design a layered signal stack so the system self-assembles gate-by-gate and hands off to an always-on maintainer agent |
+
+The result: the same superpowers workflows, but the review chain is
+structural instead of persuasive, and projects that fit can graduate from
+"built and merged" to "self-assembling and self-maintaining".
+
 ## Requirements
 
 - [Claude Code](https://claude.ai/code) CLI

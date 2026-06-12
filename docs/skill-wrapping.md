@@ -43,8 +43,9 @@ brain+                           superpowers:brainstorming
 | `writing-plans` | Task breakdown | Mock policy per task, test strategy, evidence criteria |
 | `test-driven-development` | RED-GREEN-REFACTOR | No-mock enforcement, stale test detection, scoped runs |
 | `verification-before-completion` | Completeness check | Full suite unlocked, spec drift detection, evidence standards |
-| `requesting-code-review` | Code quality review | Two-stage review (spec + quality), constitutional checklist |
+| `requesting-code-review` | Code quality review | Two-stage review (spec + quality), constitutional checklist, typed code-reviewer/spec-reviewer agent dispatch (tool-scoped, no file edits) |
 | `systematic-debugging` | Structured debugging | Scout-harvested context, no phase prerequisite |
+| `subagent-driven-development` | Per-task subagent execution | Typed implementer/spec-reviewer/code-reviewer dispatch via `sdd+`, enforcement rules in each agent's system prompt, signal-stack gating |
 
 Without wrapping, superpowers gives you generic process discipline. With
 wrapping, every phase automatically carries your project's non-negotiables --
