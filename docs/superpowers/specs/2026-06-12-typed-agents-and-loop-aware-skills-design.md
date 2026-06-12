@@ -154,6 +154,13 @@ accordingly.
   "What gets installed" tables gain the three agents and `sdd-plus`;
   `docs/architecture.md` skill-chain diagram and Layer 3 section gain `sdd+`;
   skill table in README gains `sdd+` row.
+- **High-level framing**: the README gains a "Rig vs plain superpowers"
+  section positioning this release's headline distinction — same superpowers
+  workflows, but enforcement is programmatic (hooks), subagents are typed and
+  tool-scoped, and the chain can graduate to a self-assembling /
+  self-maintaining trajectory. `docs/skill-wrapping.md`'s
+  superpowers-vs-rig table gains the typed-dispatch and
+  subagent-driven-development rows.
 
 ## 7. Part 1 error handling and maintenance
 

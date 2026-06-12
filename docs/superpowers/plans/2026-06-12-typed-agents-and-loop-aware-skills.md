@@ -1294,11 +1294,37 @@ git commit -m "feat: verify-harness checks typed agents and sdd+ (35-point check
 ### Task 13: Documentation
 
 **Files:**
-- Modify: `README.md` (skill table, "What gets installed")
+- Modify: `README.md` (high-level framing section, skill table, "What gets installed")
 - Modify: `docs/getting-started.md` (generated-files table, skill list)
 - Modify: `docs/architecture.md` (skill chain diagram, Layer 3, phase rules)
+- Modify: `docs/skill-wrapping.md` (superpowers-vs-rig table rows)
 
-- [ ] **Step 1: README.md**
+- [ ] **Step 0: README.md — high-level "Rig vs plain superpowers" framing**
+
+This is the headline distinction of the release: what running superpowers
+*through rig* gets you over running superpowers alone. Insert a new section
+immediately after the "What it does" section:
+
+```markdown
+## Rig vs plain superpowers
+
+[superpowers](https://github.com/obra/superpowers) provides the process
+discipline: brainstorming, planning, TDD, verification, review. Rig keeps all
+of it — every chain skill delegates to its superpowers counterpart — and
+upgrades the three places where process text alone can't reach:
+
+| | plain superpowers | superpowers through rig |
+| --- | --- | --- |
+| **Enforcement** | Persuasive skill text the agent can rationalize around | PreToolUse/PostToolUse hooks that programmatically block or advise (`.harness.yaml`) |
+| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers physically cannot edit files), enforcement rules in their system prompt, named in the UI, per-agent turn budgets |
+| **Trajectory** | The skill chain ends at merge | Opt-in agent-loop trajectory: `brain+`/`plan+` can design a layered signal stack so the system self-assembles gate-by-gate and hands off to an always-on maintainer agent |
+
+The result: the same superpowers workflows, but the review chain is
+structural instead of persuasive, and projects that fit can graduate from
+"built and merged" to "self-assembling and self-maintaining".
+```
+
+- [ ] **Step 1: README.md — tables and bullets**
 
 (a) Skill table — add after the `tdd+` row:
 
@@ -1355,6 +1381,17 @@ reviewers cannot edit files. Where the wrapped superpowers skill says
 prompts, falling back to general-purpose if the definition is missing.
 `brain+` and `plan+` load `references/agent-loops.md` for the opt-in
 signal-stack / maintainer-loop trajectory.
+```
+
+- [ ] **Step 3b: docs/skill-wrapping.md**
+
+In the "What superpowers provides vs what rig adds" table, update the
+`requesting-code-review` row's "Rig overlay adds" cell to end with
+`, typed code-reviewer/spec-reviewer agent dispatch (tool-scoped, no file edits)`,
+and add after the `systematic-debugging` row:
+
+```markdown
+| `subagent-driven-development` | Per-task subagent execution | Typed implementer/spec-reviewer/code-reviewer dispatch via `sdd+`, enforcement rules in each agent's system prompt, signal-stack gating |
 ```
 
 - [ ] **Step 4: Verify docs lint passes**
