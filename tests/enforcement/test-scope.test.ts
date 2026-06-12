@@ -86,4 +86,38 @@ describe('checkTestScope', () => {
     const result = checkTestScope('npx vitest run', 'tdd+', tracker, config);
     expect(result).toContain('npx vitest run tests/router/resolver.test.ts tests/router/rules.test.ts');
   });
+
+  it('redirects unscoped test during sdd+ phase', () => {
+    tracker.recordEdit('src/router/resolver.ts');
+
+    const result = checkTestScope('npx vitest run', 'sdd+', tracker, config);
+    expect(result).not.toBeNull();
+    expect(result).toContain('TEST SCOPE');
+    expect(result).toContain('tests/router/resolver.test.ts');
+  });
+
+  it('returns null when enforcement is silent', () => {
+    tracker.recordEdit('src/router/resolver.ts');
+    config.rules.test_scope = { enforcement: 'silent', allowed_unscoped: [] };
+
+    const result = checkTestScope('npx vitest run', 'tdd+', tracker, config);
+    expect(result).toBeNull();
+  });
+
+  it('detects npm test as an unscoped full-suite run', () => {
+    tracker.recordEdit('src/router/resolver.ts');
+
+    const result = checkTestScope('npm test', 'tdd+', tracker, config);
+    expect(result).not.toBeNull();
+    expect(result).toContain('TEST SCOPE');
+    expect(result).toContain('npm test -- tests/router/resolver.test.ts');
+  });
+
+  it('detects npm run test as an unscoped full-suite run', () => {
+    tracker.recordEdit('src/router/resolver.ts');
+
+    const result = checkTestScope('npm run test', 'sdd+', tracker, config);
+    expect(result).not.toBeNull();
+    expect(result).toContain('npm test -- tests/router/resolver.test.ts');
+  });
 });
