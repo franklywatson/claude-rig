@@ -31,17 +31,27 @@ Wraps `superpowers:requesting-code-review`. Requires superpowers to be installed
 
 ### Phase B: Spec Compliance Review
 
-1. For each task in the plan:
+1. Dispatch the typed spec reviewer with the per-task payload (role content
+   lives in the agent definition):
+
+   ```
+   Agent(subagent_type="spec-reviewer", prompt="Task requirements: [full task text from the plan]. Implementer's report: [what was claimed/committed for this task]. Verify the implementation matches the spec — nothing more, nothing less.")
+   ```
+
+   If the typed agent is unavailable, fall back to a general-purpose subagent
+   using the superpowers spec-reviewer prompt template.
+
+2. The spec reviewer verifies, for each task in the plan:
    - Check: was the task implemented? (file exists, code present)
    - Check: does the implementation match the plan's specification?
    - Check: are the specified tests present and passing?
    - Check: were any plan tasks skipped or significantly changed?
 
-2. Check stale test status:
+3. Check stale test status:
    - For each changed source file, verify a corresponding test file was also changed
    - Flag any source edits without test updates as stale test violations
 
-3. Check enforcement compliance (see active enforcement rules from session-start output):
+4. Check enforcement compliance (see active enforcement rules from session-start output):
    - [ ] Active enforcement rules followed in all test and source files (real dependencies in stack/E2E tests; mocks appropriate in unit tests)
    - [ ] All claims of success are backed by command output
    - [ ] Full-loop assertions present where applicable
@@ -51,7 +61,16 @@ Wraps `superpowers:requesting-code-review`. Requires superpowers to be installed
 
 ### Phase C: Code Quality Review (delegate to superpowers:requesting-code-review)
 
-1. Invoke `superpowers:requesting-code-review` with the gathered context.
+1. Invoke `superpowers:requesting-code-review` for process. Where it instructs
+   `Task tool with general-purpose type`, instead dispatch the typed reviewer
+   with only the per-task payload:
+
+   ```
+   Agent(subagent_type="code-reviewer", prompt="DESCRIPTION: [what was built]. PLAN_OR_REQUIREMENTS: [plan file path or task text]. BASE_SHA: [starting commit]. HEAD_SHA: [ending commit].")
+   ```
+
+   If the typed agent is unavailable, fall back to a general-purpose subagent
+   using the superpowers code-reviewer prompt template.
 
 2. Check code quality:
    - Files are focused (one clear responsibility per file)

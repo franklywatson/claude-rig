@@ -11,10 +11,13 @@ coverage/
 .claude/settings.json
 .claude/hooks/
 .claude/skills/
-.claude/agents/scout.md
+.claude/agents/
 
 # --- rig-managed (do not edit below) ---
 .harness.yaml.local
 *.session-cache.json
 graphify-out/
 # --- end rig-managed ---
+
+# OS noise
+.DS_Store

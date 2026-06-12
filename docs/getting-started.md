@@ -64,6 +64,7 @@ This generates:
 | `.claude/skills/brain-plus/` | Ideation skill |
 | `.claude/skills/plan-plus/` | Planning skill |
 | `.claude/skills/tdd-plus/` | Test-driven development skill |
+| `.claude/skills/sdd-plus/` | Subagent-driven plan execution with typed agents |
 | `.claude/skills/verify-plus/` | Verification skill |
 | `.claude/skills/review-plus/` | Code review skill |
 | `.claude/skills/debug-plus/` | Systematic debugging with scout context |
@@ -71,6 +72,9 @@ This generates:
 | `.claude/skills/savings/` | Session token savings report |
 | `.claude/skills/investigate/` | Alias for debug+ |
 | `.claude/agents/scout.md` | Cross-repo scout agent |
+| `.claude/agents/code-reviewer.md` | Typed code-quality reviewer (read-only tools) |
+| `.claude/agents/spec-reviewer.md` | Typed spec-compliance reviewer (read-only tools) |
+| `.claude/agents/implementer.md` | Typed task implementer |
 | `.claude/settings.json` | Hook registrations (merged, not overwritten) |
 | `.harness.yaml` | Enforcement configuration |
 
@@ -120,7 +124,7 @@ Start a Claude Code session in your project and run:
 /verify-harness
 ```
 
-This runs a 28-point checklist confirming hooks, skills, agents, and config are correctly wired.
+This runs a 35-point checklist confirming hooks, skills, agents, and config are correctly wired.
 
 ## Use the skill chain
 
@@ -130,6 +134,7 @@ Skills are invoked as slash commands in Claude Code:
 /brain+    -> Ideate and gather requirements
 /plan+     -> Create an implementation plan
 /tdd+      -> Write tests, then implement
+/sdd+      -> Execute a plan via typed subagents (implementer -> spec-reviewer -> code-reviewer)
 /verify+   -> Verify the implementation works
 /review+   -> Review code quality
 /debug+    -> Systematic debugging with scout context
@@ -138,9 +143,14 @@ Skills are invoked as slash commands in Claude Code:
 ```
 
 Skills enforce ordering. You can't run `/tdd+` until you've visited `/plan+`. You can't run
-`/verify+` until you've visited `/tdd+`. `/debug+`, `/savings`, and `/investigate` have no
+`/verify+` until you've visited `/tdd+` or `/sdd+`. `/debug+`, `/savings`, and `/investigate` have no
 prerequisites and work from any phase. `/debug+` mandates scout agent context harvesting
 before debugging.
+
+`/sdd+` is an alternative to `/tdd+` for plans with independent tasks; `/verify+` accepts
+either path. During `/brain+`, projects that fit the agent-loop pattern are offered an
+opt-in signal-stack trajectory (see the agent-loops reference installed into
+`brain-plus/references/`).
 
 ## Configure enforcement
 
@@ -215,7 +225,7 @@ This overwrites existing hook and skill templates but preserves your `.harness.y
 Remove the generated files:
 
 ```bash
-rm -rf .claude/hooks/ .claude/skills/ .claude/agents/scout.md .harness.yaml
+rm -rf .claude/hooks/ .claude/skills/ .claude/agents/ .harness.yaml
 rm -f /tmp/rig-session-*.json /tmp/rig-rtk-rewrite-failures.log
 ```
 

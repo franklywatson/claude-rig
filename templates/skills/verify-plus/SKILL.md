@@ -1,6 +1,6 @@
 ---
 name: verify+
-description: "Invoke AFTER tdd+ implementation is complete. Wraps superpowers:verification-before-completion with evidence standards, spec drift check, and full-suite test run. This is the ONLY phase where full test suite runs are appropriate."
+description: "Invoke AFTER tdd+ or sdd+ implementation is complete. Wraps superpowers:verification-before-completion with evidence standards, spec drift check, and full-suite test run. This is the ONLY phase where full test suite runs are appropriate."
 argument-hint: "[plan file path]"
 user-invocable: true
 ---
@@ -76,12 +76,13 @@ Wraps `superpowers:verification-before-completion`. Requires superpowers to be i
 
    ### Enforcement Compliance
    - [ ] Active enforcement rules followed (see session-start output; real dependencies in stack/E2E tests by default)
+   - [ ] If the design defines a signal stack: every applicable layer's signal was run, with each layer's result reported (pass / diff / drift / trace)
    - [ ] Evidence shown for all claims
    - [ ] All source changes have test coverage
    ```
 
 2. If ALL checks pass, verification is complete.
-   If ANY check fails, return to tdd+ phase to fix.
+   If ANY check fails, return to the implementation phase (tdd+ or sdd+) to fix.
 
 ## Skill Chain
 

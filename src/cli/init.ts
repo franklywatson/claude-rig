@@ -74,7 +74,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
   }
 
   // Copy skill templates
-  const skillDirs = ['brain-plus', 'plan-plus', 'tdd-plus', 'verify-plus', 'review-plus', 'debug-plus', 'verify-harness', 'savings', 'investigate'];
+  const skillDirs = ['brain-plus', 'plan-plus', 'tdd-plus', 'sdd-plus', 'verify-plus', 'review-plus', 'debug-plus', 'verify-harness', 'savings', 'investigate'];
   for (const skillDir of skillDirs) {
     const srcDir = join(TEMPLATES_DIR, 'skills', skillDir);
     if (!existsSync(srcDir)) continue;
@@ -89,11 +89,25 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
   }
 
   // Copy agent templates
-  const agentFiles = ['scout.md'];
+  const agentFiles = ['scout.md', 'code-reviewer.md', 'spec-reviewer.md', 'implementer.md'];
   for (const agentFile of agentFiles) {
     const src = join(TEMPLATES_DIR, 'agents', agentFile);
     if (!existsSync(src)) continue;
     copyUserTemplate(src, join(claudeDir, 'agents', agentFile), renderContext, options.force);
+  }
+
+  // Copy shared skill references (one source template, installed into each
+  // consuming skill's references/ directory)
+  const referenceInstalls: Array<{ file: string; skill: string }> = [
+    { file: 'agent-loops.md', skill: 'brain-plus' },
+    { file: 'agent-loops.md', skill: 'plan-plus' },
+  ];
+  for (const ref of referenceInstalls) {
+    const src = join(TEMPLATES_DIR, 'references', ref.file);
+    if (!existsSync(src)) continue;
+    const destDir = join(claudeDir, 'skills', ref.skill, 'references');
+    mkdirSync(destDir, { recursive: true });
+    copyUserTemplate(src, join(destDir, ref.file), renderContext, options.force);
   }
 
   // Write default config

@@ -68,17 +68,37 @@ describe('SkillPhaseTracker', () => {
 
   it('returns all valid phases', () => {
     const phases = tracker.getAllPhases();
-    expect(phases).toEqual(['brain+', 'plan+', 'tdd+', 'verify+', 'review+', 'debug+']);
+    expect(phases).toEqual(['brain+', 'plan+', 'tdd+', 'sdd+', 'verify+', 'review+', 'debug+']);
   });
 
   it('returns phase index for ordering', () => {
     expect(tracker.getPhaseIndex('brain+')).toBe(0);
     expect(tracker.getPhaseIndex('plan+')).toBe(1);
     expect(tracker.getPhaseIndex('tdd+')).toBe(2);
-    expect(tracker.getPhaseIndex('verify+')).toBe(3);
-    expect(tracker.getPhaseIndex('review+')).toBe(4);
-    expect(tracker.getPhaseIndex('debug+')).toBe(5);
+    expect(tracker.getPhaseIndex('sdd+')).toBe(3);
+    expect(tracker.getPhaseIndex('verify+')).toBe(4);
+    expect(tracker.getPhaseIndex('review+')).toBe(5);
+    expect(tracker.getPhaseIndex('debug+')).toBe(6);
     expect(tracker.getPhaseIndex('unknown')).toBe(-1);
+  });
+
+  it('allows sdd+ as a free transition like tdd+', () => {
+    tracker.setPhase('plan+');
+    expect(tracker.canTransitionTo('sdd+')).toBe(true);
+  });
+
+  it('verify+ accepts a prior sdd+ visit', () => {
+    tracker.setPhase('sdd+');
+    expect(tracker.canTransitionTo('verify+')).toBe(true);
+  });
+
+  it('verify+ rejected without tdd+ or sdd+ visit', () => {
+    tracker.setPhase('plan+');
+    expect(tracker.canTransitionTo('verify+')).toBe(false);
+  });
+
+  it('includes sdd+ in phase order', () => {
+    expect(tracker.getAllPhases()).toContain('sdd+');
   });
 
   it('detects tdd+ phase', () => {

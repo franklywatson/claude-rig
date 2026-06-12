@@ -4,22 +4,69 @@
 ![Coverage Gate](https://github.com/franklywatson/claude-rig/actions/workflows/coverage.yml/badge.svg)
 ![Docs Quality](https://github.com/franklywatson/claude-rig/actions/workflows/docs.yml/badge.svg)
 
-Agent harness that enforces tool routing, skill chains, and multi-agent discipline for [Claude Code](https://claude.ai/code).
+A cockpit for your [Claude Code](https://claude.ai/code) tooling stack.
+[rtk](https://github.com/franklywatson/rtk),
+[jcodemunch](https://github.com/franklywatson/jcodemunch),
+[graphify](https://github.com/safishamsi/graphify),
+[Headroom](https://github.com/chopratejas/headroom), and
+[superpowers](https://github.com/obra/superpowers) are each excellent
+instruments on their own — rig is the panel that wires whichever of them you
+have installed into one place, with plug-and-play detection, programmatic
+routing, and a single pane of visibility.
+
+## The cockpit
+
+Each tool in the stack answers one question well: rtk (cheap shell output),
+jcodemunch (what exists in the code), graphify (how it connects), Headroom
+(context compression), superpowers (process discipline). Run them separately
+and you carry the integration burden — remembering which is installed, which
+to reach for, and what each is saving you. Rig carries it instead:
+
+- **Plug-and-play detection** — session start probes the whole panel (PATH,
+  MCP registrations, proxy markers), auto-indexes the project, auto-builds the
+  knowledge graph, and reports what's online. Install a tool and it joins the
+  panel; remove one and rig degrades gracefully (jcodemunch-only analysis when
+  graphify fails, pass-through when rtk is absent, general-purpose subagents
+  when typed agents are deleted).
+- **Routing, not memory** — PreToolUse hooks steer every operation to the best
+  instrument available right now. You never have to remember the stack exists.
+- **One pane of glass** — `/savings` reports every layer side by side (tool
+  layer, context layer, graph stats) without double-counting;
+  `/verify-harness` is a 35-point preflight check; session start prints the
+  panel status every time you sit down.
 
 ## What it does
 
-Rig installs guardrails into a Claude Code project:
+Rig installs the cockpit into a Claude Code project:
 
 - **Tool Router** -- intercepts shell commands via PreToolUse hooks, transparently rewrites
   `grep`/`find`/`cat`/`git` to rtk when available (using Claude Code's `updatedInput` protocol);
   advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and `rtk cat` on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, test scope, constitutional rules (real dependencies in stack/E2E tests), and zero-defect status (with pre-existing failure classification)
-- **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`
+- **Skill Chain** -- ordered workflow skills: `brain+` -> `plan+` -> `tdd+` -> `verify+` -> `review+`, plus standalone `investigate` and `savings`,
+  and `sdd+` for subagent-driven plan execution via typed agents (`code-reviewer`, `spec-reviewer`, `implementer`) installed into `.claude/agents/`
 - **Scout Agent** -- cross-repo indexing agent that builds a typed `CodebaseMap`
   for context injection, enriched with graphify relationship data (god nodes,
   module communities, dependency paths) when available
 
 Built from the [agentic-patterns](https://github.com/franklywatson/agentic-patterns) L2-L4 patterns.
+
+## Rig vs plain superpowers
+
+[superpowers](https://github.com/obra/superpowers) provides the process
+discipline: brainstorming, planning, TDD, verification, review. Rig keeps all
+of it — every chain skill delegates to its superpowers counterpart — and
+upgrades the three places where process text alone can't reach:
+
+| | plain superpowers | superpowers through rig |
+| --- | --- | --- |
+| **Enforcement** | Persuasive skill text the agent can rationalize around | PreToolUse/PostToolUse hooks that programmatically block or advise (`.harness.yaml`) |
+| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, per-agent turn budgets |
+| **Trajectory** | The skill chain ends at merge | Opt-in agent-loop trajectory: `brain+`/`plan+` can design a layered signal stack so the system self-assembles gate-by-gate and hands off to an always-on maintainer agent |
+
+The result: the same superpowers workflows, but the review chain is
+structural instead of persuasive, and projects that fit can graduate from
+"built and merged" to "self-assembling and self-maintaining".
 
 ## Requirements
 
@@ -130,22 +177,22 @@ The deny list is always applied regardless of the flag.
 ## Architecture
 
 ```
-+---------------------------------------------+
-|                Claude Code                   |
-+------------+------------+-------------------+
-| PreToolUse | PostToolUse| Session Start     |
-| Hook       | Hook       | Hook              |
-| (router)   | (enforce)  | (auto-index)      |
-+------------+------------+-------------------+
-|              Skill Chain Pipeline            |
-|  brain+ -> plan+ -> tdd+ -> verify+ -> rev+ |
-|              debug+ (any phase)               |
-+---------------------------------------------+
-|              Scout Agent                     |
-|    (CodebaseMap + GraphContext + cross-repo) |
-+---------------------------------------------+
-|           .harness.yaml config               |
-+---------------------------------------------+
++---------------------------------------------------+
+|                    Claude Code                    |
++------------+------------+-------------------------+
+| PreToolUse | PostToolUse| Session Start           |
+| Hook       | Hook       | Hook                    |
+| (router)   | (enforce)  | (auto-index)            |
++------------+------------+-------------------------+
+|               Skill Chain Pipeline                |
+|  brain+ -> plan+ -> tdd+|sdd+ -> verify+ -> rev+  |
+|                debug+ (any phase)                 |
++---------------------------------------------------+
+|                    Scout Agent                    |
+|     (CodebaseMap + GraphContext + cross-repo)     |
++---------------------------------------------------+
+|               .harness.yaml config                |
++---------------------------------------------------+
 ```
 
 Four layers, one config file. See [docs/architecture.md](docs/architecture.md) for the full design.
@@ -187,6 +234,7 @@ no-mock enforcement entirely.
 | `brain+` | Ideation and requirements | `superpowers:brainstorming` |
 | `plan+` | Implementation planning | `superpowers:writing-plans` |
 | `tdd+` | Test-driven development | `superpowers:tdd` |
+| `sdd+` | Subagent-driven plan execution (typed implementer/reviewer agents) | `superpowers:subagent-driven-development` |
 | `verify+` | Installation verification | `superpowers:code-reviewer` |
 | `review+` | Code review | `superpowers:code-reviewer` |
 | `debug+` | Systematic debugging | `superpowers:systematic-debugging` |
@@ -194,7 +242,9 @@ no-mock enforcement entirely.
 | `investigate` | Alias for `debug+` | -- |
 
 Skills enforce phase transitions: `tdd+` requires prior `plan+` visit, `verify+`
-requires prior `tdd+` visit. `debug+`, `savings`, and `investigate` are
+requires prior `tdd+` or `sdd+` visit. `sdd+` is a peer of `tdd+` for plans with
+independent tasks -- it executes each task via typed subagents (implementer ->
+spec-reviewer -> code-reviewer). `debug+`, `savings`, and `investigate` are
 standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
 
 ## What gets installed
@@ -211,6 +261,7 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
     brain-plus/          # brain+ skill
     plan-plus/           # plan+ skill
     tdd-plus/            # tdd+ skill
+    sdd-plus/            # sdd+ skill (typed subagent execution)
     verify-plus/         # verify+ skill
     review-plus/         # review+ skill
     debug-plus/          # debug+ skill (systematic debugging)
@@ -219,6 +270,9 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
     investigate/         # Alias for debug+
   agents/
     scout.md             # Cross-repo scout agent
+    code-reviewer.md     # Typed code-quality reviewer (read-only)
+    spec-reviewer.md     # Typed spec-compliance reviewer (read-only)
+    implementer.md       # Typed task implementer
 ```
 
 ## Development

@@ -40,11 +40,42 @@ describe('initCommand', () => {
     expect(existsSync(join(tempDir, '.claude', 'skills', 'review-plus', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(tempDir, '.claude', 'skills', 'verify-harness', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(tempDir, '.claude', 'skills', 'savings', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'sdd-plus', 'SKILL.md'))).toBe(true);
   });
 
   it('creates scout agent definition', async () => {
     await initCommand(tempDir, { force: false });
     expect(existsSync(join(tempDir, '.claude', 'agents', 'scout.md'))).toBe(true);
+  });
+
+  it('creates typed agent definitions', async () => {
+    await initCommand(tempDir, { force: false });
+    expect(existsSync(join(tempDir, '.claude', 'agents', 'code-reviewer.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'agents', 'spec-reviewer.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'agents', 'implementer.md'))).toBe(true);
+  });
+
+  it('updates unmodified rig-installed agents without --force', async () => {
+    await initCommand(tempDir, { force: false });
+    const agentPath = join(tempDir, '.claude', 'agents', 'code-reviewer.md');
+    writeFileSync(agentPath, '<!-- rig-generated -->\n# old agent content\n');
+    await initCommand(tempDir, { force: false });
+    const content = readFileSync(agentPath, 'utf-8');
+    expect(content).toContain('Senior Code Reviewer');
+  });
+
+  it('preserves user-modified agent files without --force', async () => {
+    await initCommand(tempDir, { force: false });
+    const agentPath = join(tempDir, '.claude', 'agents', 'implementer.md');
+    writeFileSync(agentPath, '# My custom implementer\n');
+    await initCommand(tempDir, { force: false });
+    expect(readFileSync(agentPath, 'utf-8')).toBe('# My custom implementer\n');
+  });
+
+  it('installs agent-loops reference into brain-plus and plan-plus', async () => {
+    await initCommand(tempDir, { force: false });
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'brain-plus', 'references', 'agent-loops.md'))).toBe(true);
+    expect(existsSync(join(tempDir, '.claude', 'skills', 'plan-plus', 'references', 'agent-loops.md'))).toBe(true);
   });
 
   it('creates .harness.yaml with defaults', async () => {

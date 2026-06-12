@@ -187,11 +187,11 @@ files are reported separately from regressions based on `zero_defect.unrelated_e
 Skills are ordered workflow stages. The `SkillPhaseTracker` enforces valid transitions.
 
 ```
-brain+ -> plan+ -> tdd+ -> verify+ -> review+
-   |        |       |        |          |
-   |        |       |        |          +-- accessible from any phase
-   |        |       |        +-- requires tdd+ visit
-   |        |       +-- free transition
+brain+ -> plan+ -> tdd+|sdd+ -> verify+ -> review+
+   |        |        |             |          |
+   |        |        |             |          +-- accessible from any phase
+   |        |        |             +-- requires tdd+ or sdd+ visit
+   |        |        +-- free transition
    |        +-- free transition
    +-- free transition
 
@@ -201,8 +201,11 @@ debug+ -- standalone, accessible from any phase
 **Phase transition rules:**
 
 - `review+` and `debug+` are accessible from any phase (no prerequisite)
-- `verify+` requires a prior `tdd+` visit
-- All other phases (`brain+`, `plan+`, `tdd+`) allow free transitions
+- `verify+` requires a prior `tdd+` or `sdd+` visit
+- `sdd+` is a peer of `tdd+` (free transition; executes plans via typed
+  subagents: `implementer`, `spec-reviewer`, `code-reviewer` from
+  `.claude/agents/`)
+- All other phases (`brain+`, `plan+`, `tdd+`, `sdd+`) allow free transitions
 
 Each skill wraps a `superpowers:*` skill with enforcement overlays. Skills are
 SKILL.md files with YAML frontmatter. Templates reference active enforcement rules
@@ -211,7 +214,17 @@ keeps template prose in sync with `.harness.yaml` configuration.
 
 **Files:** `src/skills/phase-tracker.ts`, `templates/skills/`
 
-### Standalone skills
+### Chain alternatives and standalone skills
+
+`sdd+` wraps `superpowers:subagent-driven-development` with typed agent
+dispatch: a fresh `implementer` subagent per plan task, followed by
+`spec-reviewer` and `code-reviewer` subagents. Typed definitions live in
+`.claude/agents/` (installed by `rig init`) and carry tool restrictions --
+reviewers have no Edit/Write tools. Where the wrapped superpowers skill says
+"general-purpose", the rig skill dispatches the typed agent with payload-only
+prompts, falling back to general-purpose if the definition is missing.
+`brain+` and `plan+` load `references/agent-loops.md` for the opt-in
+signal-stack / maintainer-loop trajectory.
 
 `debug+` wraps `superpowers:systematic-debugging` with mandatory scout agent
 context harvesting. It maps the affected code area before debugging, ensuring

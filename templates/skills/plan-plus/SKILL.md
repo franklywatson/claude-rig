@@ -69,6 +69,17 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - [ ] Step 5: Commit
    ```
 
+4. **If the design includes a loop/signal-stack section** (see
+   `references/agent-loops.md`): order the plan signal-stack-first — harness
+   tasks (golden tests, contract probes, calibration harness, dry-run rig,
+   telemetry store) come before or alongside the features they gate, because
+   the assembly process uses the stack to verify itself as it builds. Then:
+   - Each task names its **gating signal** (which layer's signal proves it done)
+   - The maintainer deployment is a late task, after the primary system's
+     acceptance criteria pass
+   - Rollout gates (credentials, schedule enablement, live writes) are
+     explicitly reserved to the user — never automated in any task
+
 ### Phase C: Validate Plan
 
 1. Confirm the plan:
@@ -87,6 +98,7 @@ Save the plan to `docs/plans/` and feed into `tdd+` for implementation.
 After completing plan+, the next step is:
 
 - Invoke `/tdd+` to implement the plan task-by-task with RED-GREEN-REFACTOR
+- Or invoke `/sdd+` to execute the plan via typed subagents (implementer → spec-reviewer → code-reviewer) — best for plans with independent tasks
 
 ## Completion
 
