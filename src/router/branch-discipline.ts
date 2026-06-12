@@ -1,8 +1,7 @@
 import { splitCompoundSegments } from './intent.js';
 import type { HarnessConfig } from '../types.js';
 import type { SessionCache } from '../session/cache.js';
-
-export type ExecFn = (cmd: string) => string;
+import { resolveIsolationStrategy, WORKFLOW_DEFAULTS, type ExecFn } from '../session/worktree.js';
 
 // Tolerates git global options before the subcommand (`git -c user.email=x
 // commit`, `git -C /path push`, `git --no-pager commit`): each option is a
@@ -28,7 +27,7 @@ export function checkBranchDisciplineCommand(
   exec: ExecFn,
 ): BranchDisciplineResult | null {
   const wf = config.rules.workflow;
-  const level = wf?.branch_discipline ?? 'advise';
+  const level = wf?.branch_discipline ?? WORKFLOW_DEFAULTS.branch_discipline;
   if (level === 'silent') return null;
   if (!splitCompoundSegments(command).some(s => GIT_WRITE_PATTERN.test(s.trim()))) return null;
 
@@ -38,13 +37,13 @@ export function checkBranchDisciplineCommand(
   } catch {
     return null; // Not a git repo or git not available
   }
-  const protectedBranches = wf?.protected_branches ?? ['master', 'main'];
+  const protectedBranches = wf?.protected_branches ?? WORKFLOW_DEFAULTS.protected_branches;
   if (!protectedBranches.includes(branch)) return null;
 
   if (level === 'advise') {
     if (cache.hasAdvised('branch_discipline')) return null;
     cache.markAdvised('branch_discipline');
-    const strategy = resolveStrategy(wf?.isolation_strategy ?? 'auto', exec);
+    const strategy = resolveIsolationStrategy(wf?.isolation_strategy ?? WORKFLOW_DEFAULTS.isolation_strategy, exec);
     const isolation = strategy === 'worktree'
       ? 'a worktree (/using-git-worktrees)'
       : 'a feature branch';
@@ -64,13 +63,4 @@ export function checkBranchDisciplineCommand(
       `Create a feature branch (or worktree via /using-git-worktrees) and open a PR. ` +
       `(rules.workflow.branch_discipline: block — set to advise/silent to relax)`,
   };
-}
-
-function resolveStrategy(strategy: 'auto' | 'branch' | 'worktree', exec: ExecFn): 'branch' | 'worktree' {
-  if (strategy !== 'auto') return strategy;
-  try {
-    return exec('git status --porcelain').trim() ? 'worktree' : 'branch';
-  } catch {
-    return 'branch';
-  }
 }

@@ -203,7 +203,7 @@ export async function handleSessionStart(
     lines.push(activeRules);
   }
 
-  const suggestion = checkBranchDiscipline(cwd, (cmd) => execSync(cmd, { encoding: 'utf-8' }), config);
+  const suggestion = checkBranchDiscipline((cmd) => execSync(cmd, { encoding: 'utf-8' }), config);
   if (suggestion) {
     lines.push(suggestion);
   }

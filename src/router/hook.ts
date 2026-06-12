@@ -7,7 +7,8 @@ import { resolve } from './resolver.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
 import { checkTestScope } from '../enforcement/test-scope.js';
-import { checkBranchDisciplineCommand, type ExecFn } from './branch-discipline.js';
+import { checkBranchDisciplineCommand } from './branch-discipline.js';
+import type { ExecFn } from '../session/worktree.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
 export type ExistsCheckFn = (path: string) => boolean;

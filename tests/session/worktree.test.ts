@@ -47,12 +47,12 @@ describe('checkWorktreeSuggestion', () => {
 describe('checkBranchDiscipline', () => {
   it('silent level suppresses the hint entirely', () => {
     const exec = makeExec({ 'git branch --show-current': 'master', 'git status --porcelain': '' });
-    expect(checkBranchDiscipline('/p', exec, cfg('silent'))).toBe('');
+    expect(checkBranchDiscipline(exec, cfg('silent'))).toBe('');
   });
 
   it('advise on protected branch with clean tree recommends a feature branch', () => {
     const exec = makeExec({ 'git branch --show-current': 'master', 'git status --porcelain': '' });
-    const out = checkBranchDiscipline('/p', exec, cfg('advise'));
+    const out = checkBranchDiscipline(exec, cfg('advise'));
     expect(out).toContain('master');
     expect(out).toContain('branch discipline');
     expect(out).toContain('feature branch');
@@ -61,24 +61,24 @@ describe('checkBranchDiscipline', () => {
 
   it('auto strategy recommends worktree when tree is dirty', () => {
     const exec = makeExec({ 'git branch --show-current': 'main', 'git status --porcelain': ' M src/a.ts\n' });
-    const out = checkBranchDiscipline('/p', exec, cfg('advise'));
+    const out = checkBranchDiscipline(exec, cfg('advise'));
     expect(out).toContain('using-git-worktrees');
   });
 
   it('worktree strategy always recommends worktree', () => {
     const exec = makeExec({ 'git branch --show-current': 'master', 'git status --porcelain': '' });
-    expect(checkBranchDiscipline('/p', exec, cfg('advise', 'worktree'))).toContain('using-git-worktrees');
+    expect(checkBranchDiscipline(exec, cfg('advise', 'worktree'))).toContain('using-git-worktrees');
   });
 
   it('respects custom protected_branches', () => {
     const exec = makeExec({ 'git branch --show-current': 'develop', 'git status --porcelain': '' });
-    expect(checkBranchDiscipline('/p', exec, cfg('advise', 'auto', ['develop']))).toContain('develop');
+    expect(checkBranchDiscipline(exec, cfg('advise', 'auto', ['develop']))).toContain('develop');
   });
 
   it('returns empty on feature branch and outside git repos', () => {
     const exec = makeExec({ 'git branch --show-current': 'feat/x', 'git status --porcelain': '' });
-    expect(checkBranchDiscipline('/p', exec, cfg('advise'))).toBe('');
+    expect(checkBranchDiscipline(exec, cfg('advise'))).toBe('');
     const noGit = makeExec({ 'git branch --show-current': new Error('not a repo') });
-    expect(checkBranchDiscipline('/p', noGit, cfg('advise'))).toBe('');
+    expect(checkBranchDiscipline(noGit, cfg('advise'))).toBe('');
   });
 });
