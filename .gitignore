@@ -9,6 +9,7 @@ coverage/
 # rig-generated files (installed, not source)
 .harness.yaml
 .claude/settings.json
+.claude/settings.local.json
 .claude/hooks/
 .claude/skills/
 .claude/agents/
