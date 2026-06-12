@@ -602,10 +602,15 @@ Key design decisions:
 - **Cache fragmentation across cwd/session-id**: session cache files are keyed
   by (cwd, session id), so hooks running from a subdirectory or a subagent
   context write advisory state and savings counters to separate files.
-  `/savings` now compensates for the counter side: it aggregates every
-  `/tmp/rig-session-*.json` whose `cwd` matches the project (ignoring files
-  older than 24 hours), summing `metricCounters` across them and taking the
-  baseline/environment from the most recent file. Advisory-state fragmentation
-  remains: a fragmented cache can repeat an advisory sooner than the
-  periodic re-advisory cycle intends (see "Advisory suppression with periodic
-  re-advisory" above).
+  `/savings` recovers the same-cwd counter fragments (subagent contexts,
+  different session ids): it aggregates every `/tmp/rig-session-*.json` whose
+  `cwd` matches the project, summing `metricCounters` across them and taking
+  the baseline/environment from the most recent file. Staleness is anchored
+  to the most recent file's `metricsBaseline.capturedAt` (session-start
+  recaptures the baseline every session), with 24 hours as an outer bound.
+  Subdirectory-context fragments are **not** recovered — a hook running from
+  a subdirectory writes a cache keyed by that different `cwd`, which never
+  matches the project directory, so its counters stay invisible to
+  `/savings`. Advisory-state fragmentation also remains: a fragmented cache
+  can repeat an advisory sooner than the periodic re-advisory cycle intends
+  (see "Advisory suppression with periodic re-advisory" above).

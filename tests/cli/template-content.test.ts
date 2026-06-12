@@ -132,7 +132,11 @@ describe('skill templates — savings aggregation', () => {
     expect(content).toContain('Sum `metricCounters`');
     // Baseline and environment come from the most recent file only
     expect(content).toMatch(/`metricsBaseline` and `environment`[\s\S]{0,120}?most recent matching file/);
-    // Stale-session guard
+    // Staleness is anchored to session start: the most recent file's baseline
+    // capture timestamp, with 24 hours as the outer bound only
+    expect(content).toContain('`metricsBaseline.capturedAt`');
+    expect(content).toContain('session-start anchor');
+    expect(content).toMatch(/`updatedAt` predates the anchor/);
     expect(content).toContain('older than 24 hours');
   });
 });

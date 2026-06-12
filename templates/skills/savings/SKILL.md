@@ -24,9 +24,13 @@ Report token savings from rtk and jcodemunch usage during this session.
      running from subagent contexts or under different session ids write
      separate cache files keyed by (cwd, session id), and each holds part of
      this session's tool-call counters.
-   - Discard matching files older than 24 hours (compare each file's
-     `updatedAt` timestamp to now) — those are stale caches from previous
-     sessions, not this session's work.
+   - Anchor staleness to session start: session-start recaptures the metrics
+     baseline every session, so the most recent matching file's (highest
+     `updatedAt`) `metricsBaseline.capturedAt` is the session-start anchor.
+     Discard matching files whose `updatedAt` predates the anchor, and as an
+     outer bound discard any file older than 24 hours — files from earlier
+     sessions today (same cwd, different session ids) hold a previous
+     session's work and would inflate "this session" counts.
    - Sum `metricCounters` (rtkCalls, jmCalls, efficientCalls, graphifyCalls)
      across the remaining matching files. These summed values are the session
      call counts used in the report.
