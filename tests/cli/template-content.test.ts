@@ -71,4 +71,11 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('signal stack');
     expect(content).not.toContain('Stack-first design');
   });
+
+  it('plan-plus orders signal-stack-first when design opted in', () => {
+    const content = read('skills/plan-plus/SKILL.md');
+    expect(content).toContain('references/agent-loops.md');
+    expect(content).toContain('signal-stack-first');
+    expect(content).toContain('gating signal');
+  });
 });
