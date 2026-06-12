@@ -21,4 +21,14 @@ describe('agent templates', () => {
     expect(content).toContain('.harness.yaml');
     expect(content).toContain('### Assessment');
   });
+
+  it('spec-reviewer is read-only, adversarial, and explicit-dispatch', () => {
+    const content = read('agents/spec-reviewer.md');
+    expect(content).toContain('<!-- rig-generated -->');
+    expect(content).toContain('name: spec-reviewer');
+    expect(content).toContain('Do not invoke proactively');
+    expect(content).not.toMatch(/tools: "[^"]*Edit/);
+    expect(content).not.toMatch(/tools: "[^"]*Write/);
+    expect(content).toContain('Do Not Trust the Report');
+  });
 });
