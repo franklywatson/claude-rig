@@ -63,7 +63,7 @@ upgrades the three places where process text alone can't reach:
 | | plain superpowers | superpowers through rig |
 | --- | --- | --- |
 | **Enforcement** | Persuasive skill text the agent can rationalize around | PreToolUse/PostToolUse hooks that programmatically block or advise (`.harness.yaml`) |
-| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, per-agent turn budgets |
+| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, backstop-calibrated turn budgets with partial-status resumption, worktree-isolated implementers (see architecture.md "Subagent operations") |
 | **Trajectory** | The skill chain ends at merge | Opt-in agent-loop trajectory: `brain+`/`plan+` can design a layered signal stack so the system self-assembles gate-by-gate and hands off to an always-on maintainer agent |
 
 The result: the same superpowers workflows, but the review chain is

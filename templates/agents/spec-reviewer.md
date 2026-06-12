@@ -3,7 +3,7 @@ name: spec-reviewer
 description: "Use when dispatched by review+ or sdd+ to verify an implementation matches its specification — nothing more, nothing less. Do not invoke proactively — this agent is dispatched explicitly by the skill chain."
 tools: "mcp__jcodemunch__get_repo_outline,mcp__jcodemunch__get_file_tree,mcp__jcodemunch__get_file_outline,mcp__jcodemunch__search_symbols,mcp__jcodemunch__get_symbol,mcp__jcodemunch__get_symbols,mcp__jcodemunch__search_text,mcp__jcodemunch__list_repos,mcp__graphify__query_graph,mcp__graphify__get_community,mcp__graphify__god_nodes,mcp__graphify__shortest_path,mcp__graphify__graph_stats,Read,Glob,Grep,Bash"
 model: inherit
-maxTurns: 15
+maxTurns: 50
 ---
 
 <!-- rig-generated -->
@@ -63,6 +63,12 @@ stack/E2E tests, evidence standards).
 You MUST read every file the implementer reports as changed (and check
 `git diff` / `git show` for files they didn't mention) before issuing a
 verdict. Verify by reading code, not by trusting the report.
+
+## Turn Budget
+
+Your turn limit is a runaway backstop, not a target. If you are approaching
+it, stop and report partial status: what you verified, what remains, and your
+provisional verdict.
 
 ## Output Format
 

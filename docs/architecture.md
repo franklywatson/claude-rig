@@ -248,6 +248,37 @@ prompts, falling back to general-purpose if the definition is missing.
 `brain+` and `plan+` load `references/agent-loops.md` for the opt-in
 signal-stack / maintainer-loop trajectory.
 
+### Subagent operations
+
+Rig tunes the superpowers workflows for Claude Code's subagent hierarchy —
+the orchestrator session dispatches typed agents, and the operational rules
+below are what make that hierarchy reliable in practice:
+
+- **Turn budgets are runaway backstops, not task estimates.** Each typed
+  agent's `maxTurns` is set 5–10× expected usage (implementer 150, reviewers
+  75/50, scout 30). A cap near expected usage truncates legitimate work
+  silently — the agent's last narration line becomes its "result", which an
+  orchestrator can mistake for completion. Every agent's prompt instructs it
+  to stop at a safe point and report partial status when the budget nears,
+  and truncated agents can be resumed with their context intact.
+- **Code-writing subagents get isolated worktrees.** A long-running
+  implementer shares the checkout's HEAD with the orchestrator — branch
+  state is shared mutable state, and commits land wherever HEAD points at
+  commit time. Dispatch implementers into a worktree; read-only agents
+  (scout, reviewers) don't need isolation.
+- **One implementer at a time per workspace.** Reviewers are read-only and
+  can overlap; implementers cannot.
+- **Enforcement reaches subagents the same way it reaches the orchestrator**:
+  advisories via `additionalContext`, blocks via exit 2, and the typed
+  agents' system prompts instruct reading `.harness.yaml` at runtime.
+
+**Agent teams (forward-looking).** Claude Code's experimental agent-teams
+feature maps naturally onto `sdd+`: genuinely independent plan tasks could
+execute as a team of worktree-isolated implementer teammates sharing a task
+list, with reviewers as teammates and the session as lead. Per the cockpit
+pattern, rig would detect the capability, offer it, and degrade to today's
+sequential dispatch when absent. Tracked as future work; not yet designed.
+
 `debug+` wraps `superpowers:systematic-debugging` with mandatory scout agent
 context harvesting. It maps the affected code area before debugging, ensuring
 the agent has full structural context. Accessible from any phase via `/debug+`.
