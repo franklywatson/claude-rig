@@ -4,7 +4,10 @@ import type { SessionCache } from '../session/cache.js';
 
 export type ExecFn = (cmd: string) => string;
 
-const GIT_WRITE_PATTERN = /^\s*git\s+(commit|push)\b/;
+// Tolerates git global options before the subcommand (`git -c user.email=x
+// commit`, `git -C /path push`, `git --no-pager commit`): each option is a
+// flag token optionally followed by an `=value` or a separate value argument.
+const GIT_WRITE_PATTERN = /^\s*git\s+(?:-[-\w]+(?:[= ]\S+)?\s+)*(commit|push)\b/;
 
 export interface BranchDisciplineResult {
   level: 'advise' | 'block';

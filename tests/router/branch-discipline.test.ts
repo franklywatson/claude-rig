@@ -105,6 +105,56 @@ describe('checkBranchDisciplineCommand', () => {
     expect(calls).toEqual([]); // never resolves the branch for a quoted mention
   });
 
+  it('catches git commit behind a -c key=value global option', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    const result = checkBranchDisciplineCommand('git -c user.email=x commit -m "x"', cfg('advise'), cache, exec);
+    expect(result).not.toBeNull();
+    expect(result?.level).toBe('advise');
+    expect(result?.message).toContain('master');
+  });
+
+  it('catches git push behind a -C <path> global option', () => {
+    const exec = makeExec({ 'git branch --show-current': 'main' });
+    const result = checkBranchDisciplineCommand('git -C /path push', cfg('block'), cache, exec);
+    expect(result).not.toBeNull();
+    expect(result?.level).toBe('block');
+  });
+
+  it('catches git commit behind a --no-pager global option', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    const result = checkBranchDisciplineCommand('git --no-pager commit -m "x"', cfg('advise'), cache, exec);
+    expect(result).not.toBeNull();
+    expect(result?.level).toBe('advise');
+  });
+
+  it('catches git commit behind multiple global options', () => {
+    const exec = makeExec({
+      'git branch --show-current': 'master',
+      'git status --porcelain': '',
+    });
+    const result = checkBranchDisciplineCommand(
+      'git -c user.email=x -c user.name=y commit -m "x"',
+      cfg('advise'),
+      cache,
+      exec,
+    );
+    expect(result).not.toBeNull();
+  });
+
+  it('does not match git commitfoo (word boundary)', () => {
+    const calls: string[] = [];
+    const exec = makeExec({ 'git branch --show-current': 'master' }, calls);
+    const result = checkBranchDisciplineCommand('git commitfoo', cfg('advise'), cache, exec);
+    expect(result).toBeNull();
+    expect(calls).toEqual([]); // pattern gate rejects before branch resolution
+  });
+
   it('returns null for read-only git commands (status, diff)', () => {
     const calls: string[] = [];
     const exec = makeExec({ 'git branch --show-current': 'master' }, calls);
