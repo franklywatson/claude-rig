@@ -76,6 +76,16 @@ export class SessionCache {
     return Array.from(this.editedFiles.get(category) ?? []);
   }
 
+  /**
+   * Clear all recorded source and test edits. Called when a scoped-execution
+   * phase (tdd+/sdd+) is entered from a different phase, so test-scope
+   * suggestions reflect the current feature's edits, not the whole session's.
+   */
+  clearEditedFiles(): void {
+    this.editedFiles.clear();
+    this.save();
+  }
+
   setPhase(phase: string): void {
     this.currentPhase = phase;
     this.save();

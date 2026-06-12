@@ -37,7 +37,16 @@ export function handlePostToolUse(
   // test-scope check) can read the current phase from the session cache.
   if (tool === 'Skill') {
     const phase = skillToPhase(args.skill);
-    if (phase) cache.setPhase(phase);
+    if (phase) {
+      // Entering a scoped-execution phase from a different phase (or none)
+      // starts a new feature: clear the edit history so test-scope
+      // suggestions don't accumulate every file edited all session.
+      // Re-entering the same phase keeps the in-progress feature's edits.
+      if (SCOPED_PHASES.includes(phase) && cache.getCurrentPhase() !== phase) {
+        cache.clearEditedFiles();
+      }
+      cache.setPhase(phase);
+    }
   }
 
   // Track file edits
@@ -107,6 +116,11 @@ export function handlePostToolUse(
     message: violations.map(v => v.message).join('\n\n---\n\n'),
   };
 }
+
+/** Phases whose entry resets the edited-file history (scoped test execution).
+ * Mirrors SCOPED_PHASES in test-scope.ts — both must list the phases where
+ * test runs are scoped to the current feature's edits. */
+const SCOPED_PHASES = ['tdd+', 'sdd+'];
 
 /** Skill-name → skill-chain phase. Keys cover the installed skill directory
  * names plus the bare phase aliases. `investigate` is an alias for debug+. */

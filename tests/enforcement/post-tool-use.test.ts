@@ -410,5 +410,34 @@ describe('handlePostToolUse', () => {
       handlePostToolUse('Skill', { skill: 'savings' }, tracker, cache, config);
       expect(cache.getCurrentPhase()).toBe('tdd+');
     });
+
+    it('clears edited-file history when entering tdd+ from no phase', () => {
+      cache.addEditedFile('src/old-feature.ts', 'source');
+      cache.addEditedFile('tests/old-feature.test.ts', 'test');
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+      expect(cache.getEditedFiles('test')).toEqual([]);
+    });
+
+    it('clears edited-file history when entering a scoped phase from a different phase', () => {
+      handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
+      cache.addEditedFile('src/feature-one.ts', 'source');
+      handlePostToolUse('Skill', { skill: 'sdd-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual([]);
+    });
+
+    it('does not clear edited-file history when re-entering the same scoped phase', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Edit', { file_path: 'src/feature.ts' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual(['src/feature.ts']);
+    });
+
+    it('does not clear edited-file history when entering a non-scoped phase', () => {
+      handlePostToolUse('Skill', { skill: 'tdd-plus' }, tracker, cache, config);
+      handlePostToolUse('Edit', { file_path: 'src/feature.ts' }, tracker, cache, config);
+      handlePostToolUse('Skill', { skill: 'verify-plus' }, tracker, cache, config);
+      expect(cache.getEditedFiles('source')).toEqual(['src/feature.ts']);
+    });
   });
 });
