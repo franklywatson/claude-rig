@@ -78,4 +78,20 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('signal-stack-first');
     expect(content).toContain('gating signal');
   });
+
+  it('tdd-plus and verify-plus use signal-stack vocabulary', () => {
+    const tdd = read('skills/tdd-plus/SKILL.md');
+    expect(tdd).toContain('gating signal');
+    expect(tdd).toContain('integration-layer');
+    const verify = read('skills/verify-plus/SKILL.md');
+    expect(verify).toContain('signal stack');
+  });
+
+  it('verify-harness covers the typed agents and sdd+', () => {
+    const content = read('skills/verify-harness/SKILL.md');
+    expect(content).toContain('**SK6**');
+    expect(content).toContain('**AG8**');
+    expect(content).toContain('Agent(subagent_type="code-reviewer")');
+    expect(content).toContain('XX/35');
+  });
 });

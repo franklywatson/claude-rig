@@ -76,6 +76,7 @@ Wraps `superpowers:verification-before-completion`. Requires superpowers to be i
 
    ### Enforcement Compliance
    - [ ] Active enforcement rules followed (see session-start output; real dependencies in stack/E2E tests by default)
+   - [ ] If the design defines a signal stack: every applicable layer's signal was run, with each layer's result reported (pass / diff / drift / trace)
    - [ ] Evidence shown for all claims
    - [ ] All source changes have test coverage
    ```

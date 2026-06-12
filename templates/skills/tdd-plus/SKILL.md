@@ -1,6 +1,6 @@
 ---
 name: tdd+
-description: "Invoke AFTER plan+ is approved. Wraps superpowers:test-driven-development with full-loop assertions, real-dependency enforcement for stack tests, zero-defect, stale test detection, and scoped test runs. Implements plan tasks with RED-GREEN-REFACTOR discipline."
+description: "Invoke AFTER plan+ is approved. Wraps superpowers:test-driven-development with full-loop assertions, real-dependency enforcement for stack/integration-layer tests, zero-defect, stale test detection, and scoped test runs. Implements plan tasks with RED-GREEN-REFACTOR discipline."
 argument-hint: "[plan file path or task range]"
 user-invocable: true
 ---
@@ -15,7 +15,7 @@ Wraps `superpowers:test-driven-development`. Requires superpowers to be installe
 
 - Full test suite runs are redirected (use scoped tests only)
 - Stale test warnings fire when source edits lack test updates
-- Active enforcement rules from session context are enforced (see session-start output; real dependencies in stack/E2E tests by default)
+- Active enforcement rules from session context are enforced (see session-start output; real dependencies in stack/E2E (integration-layer) tests by default)
 
 ## Procedure
 
@@ -44,6 +44,9 @@ Wraps `superpowers:test-driven-development`. Requires superpowers to be installe
      - Primary: does the function return the expected value?
      - Second-order: did the side effect occur? (state change, log entry, event)
      - Third-order: is the system still consistent? (no orphan records, no leaked connections)
+   - If the plan defines a signal stack, each task's completion gate is its
+     named gating signal — run that signal and show its output before marking
+     the task done
    - Run the test: it MUST fail (if it passes immediately, the test is wrong)
    - Show the failure output
 
