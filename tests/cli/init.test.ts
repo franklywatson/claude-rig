@@ -329,8 +329,10 @@ describe('initCommand', () => {
     const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'post-tool-use.ts'), 'utf-8');
     expect(content).toContain('additionalContext');
     expect(content).toContain("hookEventName: 'PostToolUse'");
-    // Exit 2 must be gated on a [BLOCK]-level result
-    expect(content).toContain("includes('[BLOCK]')");
+    // Exit 2 must be gated on the structured result level, never on message
+    // text (which can embed the literal '[BLOCK]' from tool output)
+    expect(content).toContain("result.level === 'block'");
+    expect(content).not.toContain("includes('[BLOCK]')");
     expect(content).toContain('process.exit(2)');
     // Final fallback must be exit 0
     expect(content).toContain('process.exit(0)');
