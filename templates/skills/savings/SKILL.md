@@ -25,8 +25,11 @@ Report token savings from rtk and jcodemunch usage during this session.
      separate cache files keyed by (cwd, session id), and each holds part of
      this session's tool-call counters.
    - Anchor staleness to session start: session-start recaptures the metrics
-     baseline every session, so the most recent matching file's (highest
-     `updatedAt`) `metricsBaseline.capturedAt` is the session-start anchor.
+     baseline every session, so the most recent matching file **with a
+     non-null `metricsBaseline`** (highest `updatedAt` among those) provides
+     the session-start anchor via its `metricsBaseline.capturedAt` —
+     subagent-context fragments never run session-start and carry a null
+     baseline, so they cannot anchor.
      Discard matching files whose `updatedAt` predates the anchor, and as an
      outer bound discard any file older than 24 hours — files from earlier
      sessions today (same cwd, different session ids) hold a previous
