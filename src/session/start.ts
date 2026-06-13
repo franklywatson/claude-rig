@@ -51,6 +51,7 @@ export interface SessionStartDeps {
   readFile?: (path: string) => string;
   homeDir?: string;
   graphWait?: WaitForBuildOpts;
+  envVars?: Record<string, string | undefined>;
 }
 
 // graphify update can return before graph.json is fully written; poll across
@@ -68,6 +69,7 @@ export async function handleSessionStart(
 ): Promise<string> {
   const { env, fileCapHit, autoIndex } = await detectAndIndex(
     cwd, deps.exec, deps.existsCheck, deps.statCheck, deps.mcpQuery, deps.registrationLookup,
+    deps.envVars,
   );
 
   // Headroom (context-compression proxy) is complementary to rig — record
@@ -155,6 +157,10 @@ export async function handleSessionStart(
 
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
+  }
+
+  if (env.agentTeamsAvailable) {
+    lines.push('  agent-teams: available (experimental)');
   }
 
   if (env.jcodemunchAvailable) {
@@ -356,8 +362,9 @@ export async function detectAndIndex(
   statCheck?: (path: string) => { size: number } | undefined,
   mcpQuery?: McpQueryFn,
   registrationLookup?: RegistrationLookupFn,
+  envVars?: Record<string, string | undefined>,
 ): Promise<{ env: Environment; fileCapHit?: FileCapWarning; autoIndex: AutoIndexOutcome }> {
-  const env = await detectEnvironment(cwd, exec, existsCheck, statCheck, mcpQuery, registrationLookup);
+  const env = await detectEnvironment(cwd, exec, existsCheck, statCheck, mcpQuery, registrationLookup, envVars);
   let fileCapHit: FileCapWarning | undefined;
   let autoIndex: AutoIndexOutcome = 'not_needed';
 

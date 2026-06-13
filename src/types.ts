@@ -140,6 +140,8 @@ export interface Environment {
   graphifyVersion?: string | null;
   headroomAvailable?: boolean;
   headroomInitialized?: boolean;
+  /** Claude Code's experimental agent-teams feature is enabled for this session. */
+  agentTeamsAvailable?: boolean;
   detectedAt: number;
 }
 
@@ -231,6 +233,8 @@ export interface WorkflowRules {
   branch_discipline?: EnforcementLevel;
   protected_branches?: string[];
   isolation_strategy?: 'auto' | 'branch' | 'worktree';
+  /** How sdd+ uses agent-teams when detected: offer (ask once), auto, or never. */
+  team_execution?: 'offer' | 'auto' | 'never';
 }
 
 export interface HarnessConfig {

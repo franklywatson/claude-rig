@@ -45,7 +45,7 @@ brain+                           superpowers:brainstorming
 | `verification-before-completion` | Completeness check | Full suite unlocked, spec drift detection, evidence standards |
 | `requesting-code-review` | Code quality review | Two-stage review (spec + quality), constitutional checklist, typed code-reviewer/spec-reviewer agent dispatch (tool-scoped, no file edits) |
 | `systematic-debugging` | Structured debugging | Scout-harvested context, no phase prerequisite |
-| `subagent-driven-development` | Per-task subagent execution | Typed implementer/spec-reviewer/code-reviewer dispatch via `sdd+`, enforcement rules in each agent's system prompt, signal-stack gating |
+| `subagent-driven-development` | Per-task subagent execution | Typed implementer/spec-reviewer/code-reviewer dispatch via `sdd+`, enforcement rules in each agent's system prompt, signal-stack gating, team-mode parallel execution of independent tasks (experimental agent-teams) |
 | `using-git-worktrees` | Workspace isolation | Config-gated, strategy-aware advisory (`rules.workflow`): rig recommends worktree vs branch from tree state and plan context |
 
 Without wrapping, superpowers gives you generic process discipline. With

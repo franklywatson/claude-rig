@@ -156,6 +156,37 @@ either path. During `/brain+`, projects that fit the agent-loop pattern are offe
 opt-in signal-stack trajectory (see the agent-loops reference installed into
 `brain-plus/references/`).
 
+## Team mode (experimental)
+
+When Claude Code's experimental agent-teams feature is enabled
+(`CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1`), session start reports
+`agent-teams: available (experimental)` and `/sdd+` can execute a plan's
+**independent** tasks as parallel teammates instead of dispatching them one at
+a time.
+
+During `/sdd+` preflight, rig computes task independence from the plan's
+contract — tasks are independent when their `**Files:**` lists are disjoint and
+neither carries a `Depends on:` marker. When two or more tasks are pairwise
+independent and `rules.workflow.team_execution` is not `never`:
+
+- at `offer` (the default), rig asks once whether to run them as parallel
+  teammates;
+- at `auto`, rig uses team mode without asking.
+
+The topology is **teammates implement, the lead reviews and merges**: rig spawns
+at most three worktree-isolated `implementer` teammates, each claiming one
+unblocked task and pushing its own `<plan-branch>-task-N` branch. The session
+(lead) runs the two-stage spec/code review on each completed branch and merges
+approved branches into the plan branch in dependency order, re-running the suite
+after each merge.
+
+Team mode is strictly additive. When the flag is absent, `team_execution` is
+`never`, the offer is declined, or no two tasks are independent, `/sdd+` falls
+back to the same sequential implementer → spec-reviewer → code-reviewer dispatch
+it has always used — byte-for-byte unchanged. See
+[architecture.md](architecture.md) "Subagent operations" for the full
+parallelism model and the worktree hook-coverage note.
+
 ## Configure enforcement
 
 Edit `.harness.yaml` to adjust enforcement levels:
@@ -179,6 +210,7 @@ rules:
     branch_discipline: advise    # block | advise | silent — git commit/push on a protected branch
     protected_branches: [master, main]
     isolation_strategy: auto     # auto | branch | worktree
+    team_execution: offer        # offer | auto | never — parallel teammates for independent tasks (needs the experimental agent-teams flag)
 ```
 
 **Branch discipline (`rules.workflow`):** when you commit or push on a branch

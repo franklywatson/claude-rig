@@ -75,6 +75,21 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('Agent(subagent_type="code-reviewer"');
     expect(content).toContain('fall back to a general-purpose');
   });
+
+  it('plan-plus carries the parallelism/independence contract', () => {
+    const content = read('skills/plan-plus/SKILL.md');
+    expect(content).toContain('Depends on: Task');
+    expect(content).toContain('exhaustive');
+  });
+
+  it('sdd-plus offers team mode behind detection and config', () => {
+    const content = read('skills/sdd-plus/SKILL.md');
+    expect(content).toContain('agent-teams');
+    expect(content).toContain('team_execution');
+    expect(content).toContain('Team mode available');
+    expect(content).toContain('at most 3');
+    expect(content).toContain('sequential dispatch');
+  });
 });
 
 describe('skill templates — loop-aware vocabulary', () => {

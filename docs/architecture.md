@@ -301,6 +301,24 @@ prompts, falling back to general-purpose if the definition is missing.
 `brain+` and `plan+` load `references/agent-loops.md` for the opt-in
 signal-stack / maintainer-loop trajectory.
 
+When Claude Code's experimental agent-teams feature is detected
+(`Environment.agentTeamsAvailable`, from the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS`
+flag) and `rules.workflow.team_execution` is not `never`, `sdd+`'s Phase A
+preflight computes task independence from the plan's contract — disjoint
+`**Files:**` lists and no `Depends on:` marker either way. If two or more tasks
+are pairwise independent it offers team mode (at `offer`, asks once; at `auto`,
+proceeds without asking), entering a parallel `Phase B-team`: at most three
+worktree-isolated `implementer` teammates implement unblocked tasks on
+`<plan-branch>-task-N` branches while the session acts as lead — running the
+two-stage spec/code review on each completed branch and merging approved
+branches into the plan branch in dependency order, re-running the suite after
+each merge. The independence contract that gates this is authored in `plan+`
+(every task's `**Files:**` list exhaustive; `Depends on:` markers for
+order-only coupling). Absent the flag, at `never`, when declined, or with no
+independent pair, `sdd+` uses the sequential dispatch unchanged — the team path
+is strictly additive (the full parallelism model and worktree hook-coverage
+behavior are in "Subagent operations" below).
+
 ### Subagent operations
 
 Rig tunes the superpowers workflows for Claude Code's subagent hierarchy —
@@ -331,12 +349,61 @@ below are what make that hierarchy reliable in practice:
   advisories via `additionalContext`, blocks via exit 2, and the typed
   agents' system prompts instruct reading `.harness.yaml` at runtime.
 
-**Agent teams (forward-looking).** Claude Code's experimental agent-teams
-feature maps naturally onto `sdd+`: genuinely independent plan tasks could
-execute as a team of worktree-isolated implementer teammates sharing a task
-list, with reviewers as teammates and the session as lead. Per the cockpit
-pattern, rig would detect the capability, offer it, and degrade to today's
-sequential dispatch when absent. Tracked as future work; not yet designed.
+**Hook coverage in worktrees (empirically probed).** Hooks fire for
+subagent/teammate tool calls regardless of the command's working directory:
+they run in the session process via `${CLAUDE_PROJECT_DIR}`, so a
+`cd <worktree> && sed -i ...` issued from a worktree-isolated agent is
+blocked by the router exactly as in the main checkout (observed: `[BLOCK]
+Tool Router: file_modify operation blocked`, command never executed).
+Config resolution inside a worktree cwd falls back to built-in defaults:
+`.harness.yaml` is gitignored, so worktrees lack it, and `loadConfig`
+resolves (rather than rejecting) with a config equal to `DEFAULT_CONFIG` —
+enforcement still runs, at default levels, unless a `.harness.yaml` is
+copied into the worktree. Session-cache writes from a worktree cwd land in a
+per-worktree fragment (observed: a fresh `/tmp/rig-session-*.json` with
+`"cwd"` set to the worktree path), invisible to `/savings` same-cwd matching
+— the same fragmentation already documented for subdirectory contexts.
+Teammates additionally carry enforcement in their typed system prompts, so
+the hook layer and the prompt layer overlap rather than depend on each other.
+
+**Agent teams.** Claude Code's experimental agent-teams feature maps onto
+`sdd+`, and rig wires it per the cockpit pattern — detect, offer, degrade:
+
+- **Detect.** Session start reads `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` (via
+  the injectable env record in `detectEnvironment`) into
+  `Environment.agentTeamsAvailable`, and the panel emits `agent-teams:
+  available (experimental)` when set. `rules.workflow.team_execution`
+  (`offer` | `auto` | `never`, default `offer`) gates use independently of
+  detection.
+- **Offer.** `sdd+`'s Phase A preflight derives task independence from the
+  plan's contract — a task pair is independent when their `**Files:**` lists
+  are disjoint and neither carries a `Depends on:` marker (the contract is
+  authored in `plan+`, which requires exhaustive `**Files:**` lists). With two
+  or more pairwise-independent tasks and `team_execution` not `never`: at
+  `offer` rig asks once, at `auto` it proceeds silently.
+- **Execute (Phase B-team).** A team named for the plan carries a shared task
+  list mirroring the plan, `Depends on:` encoded as blocked-by edges so only
+  unblocked tasks are claimable. At most three `implementer` teammates — never
+  more than the count of currently-unblocked independent tasks — run
+  worktree-isolated, each claiming one task and pushing a
+  `<plan-branch>-task-N` branch. The session is **lead**: it runs the
+  two-stage spec/code review on each completed branch, routes findings back as
+  blocked tasks for a fresh implementer dispatch, and merges approved branches
+  into the plan branch in dependency order, re-running the suite after each
+  merge. On completion it shuts down teammates, deletes the team, and
+  continues to Phase C as in sequential mode.
+- **Degrade.** Absent the flag, at `never`, when the offer is declined, or
+  with no independent pair, `sdd+` falls back to sequential
+  implementer → spec-reviewer → code-reviewer dispatch, byte-for-byte
+  unchanged. Team mode is strictly additive.
+
+Turn budgets, worktree isolation, and enforcement apply to teammates exactly
+as to any typed implementer dispatch — including the hook-coverage behavior in
+worktrees recorded above (hooks fire session-level regardless of command cwd;
+config falls back to defaults inside a worktree lacking `.harness.yaml`;
+session-cache writes fragment per worktree cwd), so the parallelization
+heuristic is unchanged: read-only agents always parallelizable, implementers
+parallelizable across branches, serialized within a branch or a merge chain.
 
 `debug+` wraps `superpowers:systematic-debugging` with mandatory scout agent
 context harvesting. It maps the affected code area before debugging, ensuring

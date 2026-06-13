@@ -71,6 +71,11 @@ describe('config', () => {
       expect(config.rules.workflow?.protected_branches).toEqual(['master', 'main']);
       expect(config.rules.workflow?.isolation_strategy).toBe('auto');
     });
+
+    it('defaults team_execution to offer', async () => {
+      const config = await loadConfig('/nonexistent/.harness.yaml');
+      expect(config.rules.workflow?.team_execution).toBe('offer');
+    });
   });
 
   describe('mergeConfigs', () => {
@@ -115,6 +120,14 @@ describe('config', () => {
       } as HarnessConfig);
       expect(merged.rules.workflow?.branch_discipline).toBe('block');
       expect(merged.rules.workflow?.protected_branches).toEqual(['master', 'main']);
+    });
+
+    it('merges team_execution override while keeping other workflow defaults', () => {
+      const merged = mergeConfigs(structuredClone(DEFAULT_CONFIG), {
+        rules: { workflow: { team_execution: 'never' } },
+      } as HarnessConfig);
+      expect(merged.rules.workflow?.team_execution).toBe('never');
+      expect(merged.rules.workflow?.branch_discipline).toBe('advise');
     });
   });
 });
