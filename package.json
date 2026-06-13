@@ -12,6 +12,7 @@
   },
   "scripts": {
     "build": "tsc && chmod +x dist/cli/index.js",
+    "eval": "npx tsx evals/runner.ts",
     "postinstall": "node -e \"const{symlinkSync,existsSync,mkdirSync}=require('fs');const{resolve}=require('path');const bin=resolve(process.env.HOME,'.local/bin');if(!existsSync(bin))mkdirSync(bin,{recursive:true});const target=resolve(__dirname,'dist/cli/index.js');const link=resolve(bin,'rig');try{symlinkSync(target,link)}catch(e){if(e.code!=='EEXIST')throw e}\"",
     "test": "vitest run",
     "test:watch": "vitest",

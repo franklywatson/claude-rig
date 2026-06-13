@@ -271,3 +271,6 @@ and the `graphify-out/` directory that `rig init` created.
   with domain-specific enforcement (security, compliance, performance)
 - Read [docs/troubleshooting.md](troubleshooting.md) when permission prompts,
   cache state, or tool detection misbehave
+- Run `npm run eval` (see [evals/README.md](../evals/README.md)) for behavioral
+  evals — live `claude -p` runs that check skill-chain behavior the
+  deterministic suite can't, with model-robust invariants for drift detection

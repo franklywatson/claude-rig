@@ -295,10 +295,23 @@ standalone (no phase prerequisite). `debug+` mandates scout context harvesting.
 
 ```bash
 npm install
-npm test         # vitest, 1100+ tests
+npm test         # vitest, 1100+ tests (deterministic, model-independent)
 npm run build    # TypeScript compile
 npm run lint     # type-check only
+npm run eval     # behavioral evals — live claude -p runs (see below)
 ```
+
+### Behavioral evals
+
+`npm test` is deterministic and never runs through a model, so it can't see
+model-driven behavior change. The `evals/` harness drives the real skill chain
+through a real model (`claude -p`) and asserts on observable behavior with
+model-robust invariants — the **L2 evaluation instrument** for rig's own skills.
+Run it locally before releases and after a model change; running it under two
+models and diffing the reports is the drift check. Not part of `npm test`, not a
+CI gate (the nightly lane is operator-gated). See
+[evals/README.md](evals/README.md) and
+[docs/architecture.md](docs/architecture.md#behavioral-eval-harness-evals).
 
 ## Dogfooding
 
