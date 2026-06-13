@@ -2,7 +2,7 @@ import { resolve } from 'node:path';
 import { FileTracker } from './file-tracker.js';
 import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
-import { checkStaleTests } from './stale-test.js';
+import { checkStaleTests, staleSetKey } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
 import { checkZeroDefect } from './zero-defect.js';
 import {
@@ -49,6 +49,23 @@ export function extractBashOutput(
  * channel for command output (see extractBashOutput).
  */
 export function handlePostToolUse(
+  tool: string,
+  args: Record<string, unknown>,
+  tracker: FileTracker,
+  cache: SessionCache,
+  config: HarnessConfig,
+  execFn?: ExecFn,
+  toolResponse?: unknown,
+): EnforcementViolation | null {
+  // Batch every cache mutation this invocation makes (turn counter,
+  // edited-file sets, turn-stamped history, stale key, metric counters) into a
+  // single session-cache file write instead of one write per setter.
+  return cache.transaction(() =>
+    runPostToolChecks(tool, args, tracker, cache, config, execFn, toolResponse),
+  );
+}
+
+function runPostToolChecks(
   tool: string,
   args: Record<string, unknown>,
   tracker: FileTracker,
@@ -122,9 +139,15 @@ export function handlePostToolUse(
       if (constitutional) violations.push(constitutional);
     }
 
-    // Stale test check
-    const stale = checkStaleTests(tracker, config);
-    if (stale) violations.push(stale);
+    // Stale test check — gated on a change to the stale source-file set so an
+    // unchanged (often growing) list is not re-emitted on every Edit/Write.
+    // updateStaleKey runs on every Edit/Write to track transitions, including
+    // the set clearing to empty (which resets the dedup so a later relapse
+    // re-fires); checkStaleTests still returns null when nothing is stale.
+    if (cache.updateStaleKey(staleSetKey(tracker, config))) {
+      const stale = checkStaleTests(tracker, config);
+      if (stale) violations.push(stale);
+    }
   }
 
   // Zero-defect check on test command output
