@@ -28,6 +28,11 @@ describe('grade: loop opt-in detection (model-robust tokens)', () => {
   it('does NOT fire on ambient "signal stack" mentions (the discriminator)', () => {
     expect(matchLoopOptIn('We considered which layers of the signal stack this CLI touches.')).toBe(false);
   });
+  it('fires on a dismissal-by-name — it is a presence detector, not an offer detector', () => {
+    // Naming the trajectory to DISMISS it still trips the token match; the
+    // offer-vs-mention call is the runner+judge job (see runner.test.ts).
+    expect(matchLoopOptIn(extractAssistantText(fx('canned-loop-fit-dismissal.jsonl')))).toBe(true);
+  });
 });
 
 describe('grade: sections present', () => {

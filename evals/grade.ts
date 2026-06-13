@@ -32,17 +32,20 @@ export function extractAssistantText(jsonl: string): string {
 }
 
 /**
- * True iff the transcript fired the loop opt-in (loop-specific tokens only).
+ * True iff the transcript REFERENCES the loop trajectory (loop-specific tokens
+ * only). This is a PRESENCE detector: it does NOT distinguish OFFERING the
+ * trajectory from DISMISSING it by name ("this does not fit the agent-loop
+ * pattern" / "I won't propose a maintainer trajectory"), which a non-fitting
+ * brief legitimately does in visible output.
  *
- * KNOWN LIMITATION (surfaced by a live run, 2026-06-12): this detects token
- * PRESENCE, which conflates OFFERING the trajectory with merely MENTIONING it.
- * On a live Opus run of the negative (CLI) scenario the model wrote "this does
- * not fit the agent-loop pattern" in VISIBLE output — a dismissal-by-name that
- * this matcher false-positives as an opt-in. The canned negative fixture did
- * not expose this (its dismissal sat in a thinking block, which
- * extractAssistantText drops). Refinement tracked: detect offer-context
- * (question + inclusion language) or promote the judge to primary for the
- * loop-fit scenarios. See the eval-harness PR discussion.
+ * That offer-vs-mention judgment is made downstream, in gradeTranscript's
+ * loop-optin-absent case: "no token" → compliant (nothing was referenced, so
+ * nothing was offered); "token present" → the judge decides (its prompt asks
+ * the offer question directly). For the positive scenario presence IS the
+ * correct signal — a fitting brief that names the trajectory has offered it.
+ * (Originally this matcher's bare-presence result was used as the negative
+ * verdict too, which false-positived a live Opus run that dismissed the
+ * pattern by name; routing token-present cases to the judge fixed that.)
  */
 export function matchLoopOptIn(text: string): boolean {
   return LOOP_OPTIN_TOKENS.some((re) => re.test(text));

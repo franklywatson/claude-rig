@@ -40,13 +40,24 @@ export async function gradeTranscript(
       return { pass: ok, observed: ok ? 'loop opt-in present' : 'loop opt-in MISSING' };
     }
     case 'loop-optin-absent': {
-      if (matchLoopOptIn(text)) {
-        return { pass: false, observed: 'loop opt-in unexpectedly present' };
+      // Token PRESENCE alone can't tell OFFERING the trajectory apart from
+      // DISMISSING it by name ("this does not fit the agent-loop pattern" / "I
+      // won't propose a maintainer trajectory") — which a non-fitting brief
+      // legitimately does in visible output (confirmed by a live Opus run). So:
+      //   - no token at all → deterministically compliant; you can't offer a
+      //     trajectory you never reference, and the judge call is unnecessary.
+      //   - token present → the judge decides offer-vs-mention (its prompt asks
+      //     exactly that). This keeps the clean case structural/deterministic
+      //     and confines the model-graded judgment to the genuinely ambiguous one.
+      if (!matchLoopOptIn(text)) {
+        return { pass: true, observed: 'no loop trajectory referenced' };
       }
-      const compliant = await judge(text); // judge consulted only when structurally absent
+      const compliant = await judge(text);
       return {
         pass: compliant,
-        observed: compliant ? 'no loop offered (judge confirmed)' : 'judge flagged a loop offer',
+        observed: compliant
+          ? 'loop referenced but not offered (judge confirmed)'
+          : 'judge flagged a loop offer',
       };
     }
     case 'sections-present': {
