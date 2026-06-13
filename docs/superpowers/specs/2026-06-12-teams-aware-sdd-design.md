@@ -1,7 +1,9 @@
 # Teams-Aware sdd+ — Design
 
 **Date:** 2026-06-12
-**Status:** Approved
+**Status:** Approved — plan written
+(`docs/superpowers/plans/2026-06-12-teams-aware-sdd.md`); execution pending
+the #25 merge.
 **Task:** #23. Sequenced behind the hook-payload-drift fix (task #25) for merge
 order only; no code dependency.
 
