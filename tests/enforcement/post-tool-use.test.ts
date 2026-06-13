@@ -49,11 +49,101 @@ describe('handlePostToolUse', () => {
     );
   });
 
-  it('checks zero-defect on Bash test commands', () => {
+  it('checks zero-defect on Bash test commands (legacy tool_input.output fallback)', () => {
     const testOutput = 'FAIL tests/a.test.ts\nTests: 1 failed';
     const result = handlePostToolUse('Bash', { command: 'npx vitest run', output: testOutput }, tracker, cache, config);
     expect(result).not.toBeNull();
     expect(result?.message).toContain('ZERO-DEFECT');
+  });
+
+  describe('zero-defect output extraction from the real hook payload (tool_response)', () => {
+    // Claude Code's PostToolUse payload delivers command output in
+    // `tool_response` (a string, or an object with stdout/stderr) — NOT in
+    // `tool_input.output`. The handler must read the real field or the check
+    // is dormant in every live session.
+    const failingOutput = 'FAIL tests/a.test.ts\nTests: 1 failed';
+
+    it('fires when output arrives as a tool_response string', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        failingOutput,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('fires when output arrives as tool_response { stdout }', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        { stdout: failingOutput },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('joins stdout and stderr when both present (failures often land on stderr)', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        { stdout: 'RUN v3.0.0', stderr: 'FAIL tests/a.test.ts\nTests: 1 failed' },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('prefers tool_response over the legacy tool_input.output when both present', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run', output: 'Tests: 5 passed' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        failingOutput,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('passes cleanly when tool_response shows a passing run', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        'Test Files  1 passed (1)\nTests  5 passed (5)',
+      );
+      expect(result).toBeNull();
+    });
+
+    it('returns null when tool_response carries no string output', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        { interrupted: false },
+      );
+      expect(result).toBeNull();
+    });
   });
 
   it('checks constitutional on stack test file edits', () => {

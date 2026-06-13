@@ -13,10 +13,40 @@ import {
 import type { ExecFn } from '../session/metrics.js';
 
 /**
+ * Extract a Bash command's output from the PostToolUse payload.
+ *
+ * Claude Code delivers command output in `tool_response` — either a plain
+ * string or an object carrying `stdout`/`stderr` (joined here because test
+ * runners routinely report failures on stderr). `tool_input.output` is kept
+ * as a fallback for older harnesses and hand-built fixtures; it is never
+ * populated by current Claude Code payloads.
+ */
+export function extractBashOutput(
+  toolResponse: unknown,
+  args: Record<string, unknown>,
+): string | undefined {
+  if (typeof toolResponse === 'string' && toolResponse.length > 0) {
+    return toolResponse;
+  }
+  if (toolResponse && typeof toolResponse === 'object') {
+    const response = toolResponse as Record<string, unknown>;
+    const parts = [response.stdout, response.stderr].filter(
+      (v): v is string => typeof v === 'string' && v.length > 0,
+    );
+    if (parts.length > 0) return parts.join('\n');
+  }
+  const legacy = args.output;
+  return typeof legacy === 'string' && legacy.length > 0 ? legacy : undefined;
+}
+
+/**
  * PostToolUse hook handler. Composes all enforcement checks.
  * Returns null if all clean, or a combined violation whose level is derived
  * from the checks themselves (any block-level violation → 'block') — never
  * from message text, which can embed arbitrary tool output.
+ *
+ * `toolResponse` is the hook payload's `tool_response` field — the real
+ * channel for command output (see extractBashOutput).
  */
 export function handlePostToolUse(
   tool: string,
@@ -25,6 +55,7 @@ export function handlePostToolUse(
   cache: SessionCache,
   config: HarnessConfig,
   execFn?: ExecFn,
+  toolResponse?: unknown,
 ): EnforcementViolation | null {
   const metric = incrementMetric(tool, args);
   if (metric) {
@@ -77,7 +108,7 @@ export function handlePostToolUse(
   // Zero-defect check on test command output
   if (tool === 'Bash') {
     const command = args.command as string;
-    const output = args.output as string;
+    const output = extractBashOutput(toolResponse, args);
 
     if (command && output) {
       // Check if this was a test run
