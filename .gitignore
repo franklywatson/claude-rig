@@ -14,6 +14,7 @@ coverage/
 .claude/hooks/
 .claude/skills/
 .claude/agents/
+.claude/worktrees/
 
 # --- rig-managed (do not edit below) ---
 .harness.yaml.local

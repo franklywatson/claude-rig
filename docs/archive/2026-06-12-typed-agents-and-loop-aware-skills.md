@@ -4,6 +4,8 @@
 <!-- Working plan document: long lines are verbatim dispatch prompts and test
      expectations whose content must not be wrapped. -->
 
+> **Status:** Executed — all 14 tasks complete, shipped in v0.5.0 (PR #34); archived 2026-06-12
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship three typed agent definitions (code-reviewer, spec-reviewer, implementer) plus an `sdd+` skill so rig dispatches named, tool-scoped subagents instead of general-purpose; encode the agent-loop/signal-stack operating model as an opt-in design vocabulary in brain+/plan+.

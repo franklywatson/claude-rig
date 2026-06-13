@@ -1,7 +1,7 @@
 # Branch/PR Discipline with Isolation Strategy — Design
 
 **Date:** 2026-06-12
-**Status:** Approved
+**Status:** Implemented — shipped in v0.6.0 (PR #40); archived 2026-06-12
 **Depends on:** the enforcement-visibility fix (advise output via
 `hookSpecificOutput.additionalContext`) — this feature's advisories ride that
 channel and touch the same hook templates, so it lands after that PR merges.
