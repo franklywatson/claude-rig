@@ -51,6 +51,7 @@ export const DEFAULT_CONFIG: HarnessConfig = {
       branch_discipline: 'advise',
       protected_branches: ['master', 'main'],
       isolation_strategy: 'auto',
+      team_execution: 'offer',
     },
     enforcement: {
       default_level: 'advise',
