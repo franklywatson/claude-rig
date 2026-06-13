@@ -7,6 +7,11 @@ import { mkdtempSync, rmSync, unlinkSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
+/** Narrow a router result to its advisory message ('' for null/rewrites). */
+function msg(result: unknown): string {
+  return (result as { message?: string } | null)?.message ?? '';
+}
+
 function makeEnv(overrides: Partial<Environment> = {}): Environment {
   return {
     rtkAvailable: false,
@@ -41,16 +46,17 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Grep', { pattern: 'function' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('jcodemunch');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('jcodemunch');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('blocks sed -i regardless of environment', () => {
     cache.setEnvironment(makeEnv({ rtkAvailable: true, jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Bash', { command: "sed -i 's/old/new/g' file.ts" }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('block');
-    expect(result).toContain('Edit');
+    expect(result).toMatchObject({ level: 'block' });
+    expect(msg(result)).toContain('block');
+    expect(msg(result)).toContain('Edit');
   });
 
   it('advises rtk for grep when rtk available but rewrite declines', () => {
@@ -59,7 +65,7 @@ describe('handlePreToolUse', () => {
     // passed because the spawn failed (ENOENT), polluting the field diag log.
     const result = handlePreToolUse('Bash', { command: 'grep -r pattern .' }, cache, config, undefined, () => null);
     expect(result).not.toBeNull();
-    expect(result).toContain('rtk');
+    expect(msg(result)).toContain('rtk');
   });
 
   it('returns null for pass-through tools', () => {
@@ -78,8 +84,8 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Grep', { pattern: 'test' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('jcodemunch');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('jcodemunch');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('suppresses jcodemunch advisory for native Grep on second call (first-occurrence)', () => {
@@ -102,7 +108,7 @@ describe('handlePreToolUse', () => {
     // Call 11 — re-advisory fires
     const readvisory = handlePreToolUse('Grep', { pattern: 'p11' }, cache, config);
     expect(readvisory).not.toBeNull();
-    expect(readvisory).toContain('jcodemunch');
+    expect(msg(readvisory)).toContain('jcodemunch');
     // Call 12 — suppressed again
     expect(handlePreToolUse('Grep', { pattern: 'p12' }, cache, config)).toBeNull();
   });
@@ -111,8 +117,8 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Read', { file_path: '/some/file.ts' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('jcodemunch');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('jcodemunch');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('suppresses native Read advisory on second call (first-occurrence)', () => {
@@ -144,8 +150,8 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Grep', { pattern: 'function' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('jcodemunch');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('jcodemunch');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('suppresses Grep advisory on second call (first-occurrence)', () => {
@@ -165,8 +171,8 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Glob', { pattern: '**/*.ts' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('jcodemunch');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('jcodemunch');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('suppresses Glob advisory on second call (first-occurrence)', () => {
@@ -186,8 +192,9 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv());
     const result = handlePreToolUse('Bash', { command: 'rtk cat /some/file.ts' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('BLOCK');
-    expect(result).toContain('jcodemunch');
+    expect(result).toMatchObject({ level: 'block' });
+    expect(msg(result)).toContain('BLOCK');
+    expect(msg(result)).toContain('jcodemunch');
   });
 
   it('allows rtk cat on non-code files', () => {
@@ -209,7 +216,8 @@ describe('handlePreToolUse', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Read', { file_path: '/some/file.ts' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('BLOCK');
+    expect(result).toMatchObject({ level: 'block' });
+    expect(msg(result)).toContain('BLOCK');
   });
 
   // Python environment rewrite tests
@@ -297,8 +305,8 @@ describe('scout_explore advisory', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'find auth files' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('scout');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('scout');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('suppresses scout advisory for Agent Explore on second call (first-occurrence)', () => {
@@ -312,15 +320,15 @@ describe('scout_explore advisory', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: false }));
     const result = handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'map the codebase' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('scout');
-    expect(result).toContain('ADVISE');
+    expect(msg(result)).toContain('scout');
+    expect(msg(result)).toContain('ADVISE');
   });
 
   it('falls through to file_discovery advisory when jcodemunch not available but rtk available', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: false, rtkAvailable: true, rtkPath: '/usr/bin/rtk' }));
     const result = handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'find tests' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('rtk find');
+    expect(msg(result)).toContain('rtk find');
     expect(result).not.toContain('scout');
   });
 
@@ -328,7 +336,7 @@ describe('scout_explore advisory', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: false, rtkAvailable: false }));
     const result = handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'find config' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('Glob');
+    expect(msg(result)).toContain('Glob');
     expect(result).not.toContain('scout');
   });
 
@@ -343,8 +351,9 @@ describe('scout_explore advisory', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     const result = handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'find auth' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('BLOCK');
-    expect(result).toContain('scout');
+    expect(result).toMatchObject({ level: 'block' });
+    expect(msg(result)).toContain('BLOCK');
+    expect(msg(result)).toContain('scout');
   });
 });
 
@@ -414,9 +423,9 @@ describe('handlePreToolUse test-scope check', () => {
 
     const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('[ADVISE]');
-    expect(result).toContain('TEST SCOPE');
-    expect(result).toContain('tests/router/resolver.test.ts');
+    expect(msg(result)).toContain('[ADVISE]');
+    expect(msg(result)).toContain('TEST SCOPE');
+    expect(msg(result)).toContain('tests/router/resolver.test.ts');
   });
 
   it('advises scoped run for npm test during sdd+ phase', () => {
@@ -425,8 +434,8 @@ describe('handlePreToolUse test-scope check', () => {
 
     const result = handlePreToolUse('Bash', { command: 'npm test' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('TEST SCOPE');
-    expect(result).toContain('npm test -- tests/enforcement/test-scope.test.ts');
+    expect(msg(result)).toContain('TEST SCOPE');
+    expect(msg(result)).toContain('npm test -- tests/enforcement/test-scope.test.ts');
   });
 
   it('blocks full-suite run when config says block', () => {
@@ -436,7 +445,7 @@ describe('handlePreToolUse test-scope check', () => {
 
     const result = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('[BLOCK]');
+    expect(msg(result)).toContain('[BLOCK]');
   });
 
   it('passes through full-suite run when no phase is set', () => {
@@ -480,7 +489,7 @@ describe('handlePreToolUse test-scope check', () => {
 
     const first = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
     const second = handlePreToolUse('Bash', { command: 'npx vitest run' }, cache, config);
-    expect(first).toContain('TEST SCOPE');
-    expect(second).toContain('TEST SCOPE');
+    expect(msg(first)).toContain('TEST SCOPE');
+    expect(msg(second)).toContain('TEST SCOPE');
   });
 });

@@ -32,6 +32,13 @@ describe('checkStaleTests', () => {
     expect(result?.message).not.toContain('src/router/resolver.ts');
   });
 
+  it('returns null at silent enforcement even when sources are stale', () => {
+    config.rules.stale_tests = { enforcement: 'silent', grace_period: 0 };
+    tracker.recordEdit('src/router/rules.ts');
+    tracker.nextTurn();
+    expect(checkStaleTests(tracker, config)).toBeNull();
+  });
+
   it('includes enforcement level from config', () => {
     config.rules.stale_tests = { enforcement: 'block', grace_period: 0 };
     tracker.recordEdit('src/router/rules.ts');

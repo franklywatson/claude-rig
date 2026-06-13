@@ -8,6 +8,7 @@ import type { EnforcementViolation, HarnessConfig } from '../types.js';
 export function checkStaleTests(tracker: FileTracker, config: HarnessConfig): EnforcementViolation | null {
   const gracePeriod = config.rules.stale_tests?.grace_period ?? 0;
   const enforcement = config.rules.stale_tests?.enforcement ?? 'advise';
+  if (enforcement === 'silent') return null;
   const stale = tracker.getStaleSources(gracePeriod);
 
   if (stale.length === 0) return null;

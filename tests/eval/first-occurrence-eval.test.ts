@@ -88,9 +88,9 @@ describe('Context Eval: first-occurrence advisory suppression', () => {
 
       if (scenario.expectedFirst === 'advise') {
         expect(first).not.toBeNull();
-        expect(first).toContain('ADVISE');
+        expect(first).toMatchObject({ level: 'advise' });
       } else {
-        expect(first).toContain('BLOCK');
+        expect(first).toMatchObject({ level: 'block' });
       }
 
       // Second call
@@ -105,9 +105,9 @@ describe('Context Eval: first-occurrence advisory suppression', () => {
         expect(second).toBeNull();
       } else if (scenario.expectedSecond === 'advise') {
         expect(second).not.toBeNull();
-        expect(second).toContain('ADVISE');
+        expect(second).toMatchObject({ level: 'advise' });
       } else {
-        expect(second).toContain('BLOCK');
+        expect(second).toMatchObject({ level: 'block' });
       }
     });
   }

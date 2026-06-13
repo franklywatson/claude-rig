@@ -4,15 +4,23 @@ import type { EvalResult } from './score.js';
 import type { ExpectedOutcome } from './scenarios.js';
 
 describe('scoreResult', () => {
+  // handlePreToolUse returns structured { level, message } results — the
+  // action comes from the level field, never from message-text sniffing.
   it('scores 1.0 for exact match on advise', () => {
     const expected: ExpectedOutcome = { action: 'advise', tool: 'rtk grep' };
-    const actual = '[ADVISE] Tool Router: text_search detected\nadvise: use rtk grep — ...';
+    const actual = {
+      level: 'advise' as const,
+      message: '[ADVISE] Tool Router: text_search detected\nadvise: use rtk grep — ...',
+    };
     expect(scoreResult(expected, actual)).toBe(1.0);
   });
 
   it('scores 0.5 for action match but wrong tool', () => {
     const expected: ExpectedOutcome = { action: 'advise', tool: 'rtk grep' };
-    const actual = '[ADVISE] Tool Router: text_search detected\nadvise: use Grep — ...';
+    const actual = {
+      level: 'advise' as const,
+      message: '[ADVISE] Tool Router: text_search detected\nadvise: use Grep — ...',
+    };
     expect(scoreResult(expected, actual)).toBe(0.5);
   });
 
@@ -28,26 +36,47 @@ describe('scoreResult', () => {
 
   it('scores 0.0 for expected allow but got advise', () => {
     const expected: ExpectedOutcome = { action: 'allow' };
-    const actual = '[ADVISE] Tool Router: file_read detected\nadvise: use Read — ...';
+    const actual = {
+      level: 'advise' as const,
+      message: '[ADVISE] Tool Router: file_read detected\nadvise: use Read — ...',
+    };
     expect(scoreResult(expected, actual)).toBe(0.0);
   });
 
   it('scores 1.0 for exact match on block', () => {
     const expected: ExpectedOutcome = { action: 'block' };
-    const actual = '[BLOCK] Tool Router: file_modify operation blocked\nReason: ...';
+    const actual = {
+      level: 'block' as const,
+      message: '[BLOCK] Tool Router: file_modify operation blocked\nReason: ...',
+    };
     expect(scoreResult(expected, actual)).toBe(1.0);
   });
 
   it('scores 1.0 for advise with no specific tool expected', () => {
     const expected: ExpectedOutcome = { action: 'block' };
-    const actual = '[BLOCK] Tool Router: file_modify operation blocked';
+    const actual = {
+      level: 'block' as const,
+      message: '[BLOCK] Tool Router: file_modify operation blocked',
+    };
     expect(scoreResult(expected, actual)).toBe(1.0);
   });
 
   it('scores 0.0 for wrong action', () => {
     const expected: ExpectedOutcome = { action: 'block' };
-    const actual = '[ADVISE] Tool Router: text_search detected';
+    const actual = {
+      level: 'advise' as const,
+      message: '[ADVISE] Tool Router: text_search detected',
+    };
     expect(scoreResult(expected, actual)).toBe(0.0);
+  });
+
+  it('does not escalate an advisory whose message embeds the literal [BLOCK]', () => {
+    const expected: ExpectedOutcome = { action: 'advise' };
+    const actual = {
+      level: 'advise' as const,
+      message: "[ADVISE] advise: use Grep — output mentions '[BLOCK]' literally",
+    };
+    expect(scoreResult(expected, actual)).toBe(1.0);
   });
 });
 

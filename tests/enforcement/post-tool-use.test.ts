@@ -49,11 +49,101 @@ describe('handlePostToolUse', () => {
     );
   });
 
-  it('checks zero-defect on Bash test commands', () => {
+  it('checks zero-defect on Bash test commands (legacy tool_input.output fallback)', () => {
     const testOutput = 'FAIL tests/a.test.ts\nTests: 1 failed';
     const result = handlePostToolUse('Bash', { command: 'npx vitest run', output: testOutput }, tracker, cache, config);
     expect(result).not.toBeNull();
     expect(result?.message).toContain('ZERO-DEFECT');
+  });
+
+  describe('zero-defect output extraction from the real hook payload (tool_response)', () => {
+    // Claude Code's PostToolUse payload delivers command output in
+    // `tool_response` (a string, or an object with stdout/stderr) — NOT in
+    // `tool_input.output`. The handler must read the real field or the check
+    // is dormant in every live session.
+    const failingOutput = 'FAIL tests/a.test.ts\nTests: 1 failed';
+
+    it('fires when output arrives as a tool_response string', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        failingOutput,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('fires when output arrives as tool_response { stdout }', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        { stdout: failingOutput },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('joins stdout and stderr when both present (failures often land on stderr)', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        { stdout: 'RUN v3.0.0', stderr: 'FAIL tests/a.test.ts\nTests: 1 failed' },
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('prefers tool_response over the legacy tool_input.output when both present', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run', output: 'Tests: 5 passed' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        failingOutput,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('passes cleanly when tool_response shows a passing run', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        'Test Files  1 passed (1)\nTests  5 passed (5)',
+      );
+      expect(result).toBeNull();
+    });
+
+    it('returns null when tool_response carries no string output', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        { interrupted: false },
+      );
+      expect(result).toBeNull();
+    });
   });
 
   it('checks constitutional on stack test file edits', () => {
@@ -286,6 +376,63 @@ describe('handlePostToolUse', () => {
     );
 
     expect(cache.getGraphifyStats('/external/unreachable')).toBeUndefined();
+  });
+
+  describe('stale-test detection across hook processes (turn model)', () => {
+    // Hooks run as separate processes: every invocation builds a FRESH
+    // FileTracker. A "turn" is one PostToolUse Edit/Write invocation, counted
+    // in the session cache; the turn-stamped edit history is hydrated into
+    // the fresh tracker so a source file edited in an earlier invocation
+    // (and not covered by a test edit) fires on a later one.
+    function freshInvocation(
+      sharedCache: SessionCache,
+      filePath: string,
+    ): ReturnType<typeof handlePostToolUse> {
+      // Fresh tracker per call simulates the separate hook process.
+      return handlePostToolUse(
+        'Edit',
+        { file_path: filePath, old_string: 'a', new_string: 'b' },
+        new FileTracker(),
+        sharedCache,
+        config,
+      );
+    }
+
+    it('fires on the second consecutive edit of the same source file', () => {
+      const first = freshInvocation(cache, 'src/feature/widget.ts');
+      expect(first).toBeNull();
+
+      const second = freshInvocation(cache, 'src/feature/widget.ts');
+      expect(second).not.toBeNull();
+      expect(second?.level).toBe('advise');
+      expect(second?.message).toContain('STALE TEST');
+      expect(second?.message).toContain('src/feature/widget.ts');
+    });
+
+    it('fires for an earlier uncovered source edit when a different file is edited', () => {
+      freshInvocation(cache, 'src/feature/widget.ts');
+      const result = freshInvocation(cache, 'src/feature/gadget.ts');
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('src/feature/widget.ts');
+      // The current invocation's edit is exempt (creation turn).
+      expect(result?.message).not.toContain('src/feature/gadget.ts');
+    });
+
+    it('does not fire once a covering test edit is recorded', () => {
+      freshInvocation(cache, 'src/feature/widget.ts');
+      freshInvocation(cache, 'tests/feature/widget.test.ts');
+      const result = freshInvocation(cache, 'src/feature/widget.ts');
+      expect(result).toBeNull();
+    });
+
+    it('respects grace_period across invocations', () => {
+      config.rules.stale_tests = { enforcement: 'advise', grace_period: 1 };
+      freshInvocation(cache, 'src/feature/widget.ts'); // turn 1
+      expect(freshInvocation(cache, 'src/feature/widget.ts')).toBeNull(); // turn 2, within grace
+      const third = freshInvocation(cache, 'src/feature/widget.ts'); // turn 3, past grace
+      expect(third).not.toBeNull();
+      expect(third?.message).toContain('STALE TEST');
+    });
   });
 
   describe('session cache persistence of edits', () => {

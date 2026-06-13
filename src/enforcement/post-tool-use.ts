@@ -13,10 +13,40 @@ import {
 import type { ExecFn } from '../session/metrics.js';
 
 /**
+ * Extract a Bash command's output from the PostToolUse payload.
+ *
+ * Claude Code delivers command output in `tool_response` — either a plain
+ * string or an object carrying `stdout`/`stderr` (joined here because test
+ * runners routinely report failures on stderr). `tool_input.output` is kept
+ * as a fallback for older harnesses and hand-built fixtures; it is never
+ * populated by current Claude Code payloads.
+ */
+export function extractBashOutput(
+  toolResponse: unknown,
+  args: Record<string, unknown>,
+): string | undefined {
+  if (typeof toolResponse === 'string' && toolResponse.length > 0) {
+    return toolResponse;
+  }
+  if (toolResponse && typeof toolResponse === 'object') {
+    const response = toolResponse as Record<string, unknown>;
+    const parts = [response.stdout, response.stderr].filter(
+      (v): v is string => typeof v === 'string' && v.length > 0,
+    );
+    if (parts.length > 0) return parts.join('\n');
+  }
+  const legacy = args.output;
+  return typeof legacy === 'string' && legacy.length > 0 ? legacy : undefined;
+}
+
+/**
  * PostToolUse hook handler. Composes all enforcement checks.
  * Returns null if all clean, or a combined violation whose level is derived
  * from the checks themselves (any block-level violation → 'block') — never
  * from message text, which can embed arbitrary tool output.
+ *
+ * `toolResponse` is the hook payload's `tool_response` field — the real
+ * channel for command output (see extractBashOutput).
  */
 export function handlePostToolUse(
   tool: string,
@@ -25,6 +55,7 @@ export function handlePostToolUse(
   cache: SessionCache,
   config: HarnessConfig,
   execFn?: ExecFn,
+  toolResponse?: unknown,
 ): EnforcementViolation | null {
   const metric = incrementMetric(tool, args);
   if (metric) {
@@ -52,15 +83,37 @@ export function handlePostToolUse(
   // Track file edits
   if (tool === 'Edit' || tool === 'Write') {
     const filePath = args.file_path as string;
+
+    // Cross-process turn model: hooks run as separate processes, so the
+    // FileTracker arrives empty and its in-memory turn counter never
+    // advances — which made the creation-turn exemption apply forever and
+    // left the stale-test check dormant. A "turn" is one PostToolUse
+    // Edit/Write invocation: the counter and the turn-stamped edit history
+    // persist in the session cache. An empty tracker (the real hook case)
+    // is hydrated from history; a tracker that already carries edits
+    // (same-process reuse in unit tests) is left intact to avoid duplicates.
+    const turn = cache.advanceEditTurn();
+    if (tracker.getSourceEdits().length === 0 && tracker.getTestEdits().length === 0) {
+      for (const edit of cache.getEditHistory()) {
+        tracker.setTurn(edit.turn);
+        tracker.recordEdit(edit.file);
+      }
+    }
+    // Never rewind: a same-process tracker may have advanced its own turn
+    // (nextTurn) past the cache counter; the effective turn is the max.
+    tracker.setTurn(Math.max(turn, tracker.getTurn()));
+
     if (filePath) {
       tracker.recordEdit(filePath);
 
       // Persist to the session cache: hooks run as separate processes, so the
       // in-memory FileTracker resets between invocations. The cache is what
-      // lets the PreToolUse test-scope check see prior source edits.
+      // lets the PreToolUse test-scope check and the stale-test turn model
+      // see prior edits.
       const category = tracker.classifyFile(filePath);
       if (category === 'source' || category === 'test') {
         cache.addEditedFile(filePath, category);
+        cache.recordEditTurn(filePath, category, turn);
       }
 
       // Constitutional check on edited test files
@@ -77,7 +130,7 @@ export function handlePostToolUse(
   // Zero-defect check on test command output
   if (tool === 'Bash') {
     const command = args.command as string;
-    const output = args.output as string;
+    const output = extractBashOutput(toolResponse, args);
 
     if (command && output) {
       // Check if this was a test run

@@ -301,12 +301,15 @@ describe('initCommand', () => {
     }
   });
 
-  it('generates pre-tool-use hook that only exits 2 for BLOCK, not ADVISE', async () => {
+  it('generates pre-tool-use hook that only exits 2 for block-level results, not advisories', async () => {
     await initCommand(tempDir, { force: false });
 
     const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'pre-tool-use.ts'), 'utf-8');
-    // Must check for [BLOCK] prefix before exiting 2
-    expect(content).toContain("startsWith('[BLOCK]')");
+    // Severity must come from the structured result's level — never from
+    // sniffing the message text for a '[BLOCK]' prefix, which can appear
+    // legitimately inside advisory messages.
+    expect(content).toContain("result.level === 'block'");
+    expect(content).not.toContain("startsWith('[BLOCK]')");
     // Exit 2 must be conditional, not unconditional
     expect(content).not.toMatch(/process\.exit\(2\)\s*;\s*\n\s*\}/);
     // Final fallback must be exit 0

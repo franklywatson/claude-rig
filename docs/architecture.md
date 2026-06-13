@@ -214,6 +214,18 @@ grace period, source edits without corresponding test edits trigger a warning.
 The source's creation turn is exempt -- you don't get flagged for the edit you
 just made.
 
+**Turn model (cross-process):** hooks run as separate processes, so each
+invocation builds a fresh `FileTracker` — an in-memory turn counter alone
+would never advance and the creation-turn exemption would apply forever. A
+"turn" is therefore defined as **one PostToolUse Edit/Write invocation**: the
+counter and a turn-stamped edit history persist in the session cache, and the
+handler hydrates the fresh tracker from that history before running the
+check. With `grace_period: 0`, a source file edited in one invocation and
+still uncovered by a matching test edit fires on the next Edit/Write
+invocation — and keeps firing on subsequent ones until a covering test edit
+is recorded. Entering `tdd+`/`sdd+` from another phase clears the history
+along with the edited-file sets (the counter stays monotonic).
+
 ### Test scope control
 
 During `tdd+` or `sdd+` phase, running the full test suite (e.g., `npm test`,

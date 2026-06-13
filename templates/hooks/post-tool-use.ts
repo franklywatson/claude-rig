@@ -52,7 +52,9 @@ import { execSync } from 'node:child_process';
     execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...opts }) as string;
 
   loadConfig(resolve(cwd, '.harness.yaml')).then((config: any) => {
-    const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn);
+    // tool_response carries the tool's real output (Bash stdout/stderr) —
+    // tool_input never does in current Claude Code payloads.
+    const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn, input.tool_response);
 
     if (result) {
       // The severity comes from the structured result's level, derived by the

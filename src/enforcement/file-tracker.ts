@@ -45,6 +45,20 @@ export class FileTracker {
     this.turn++;
   }
 
+  /**
+   * Set the current turn explicitly. Used by the cross-process turn model:
+   * hooks rebuild a fresh FileTracker per invocation and replay turn-stamped
+   * edits from the session cache, so the turn cannot be derived by counting
+   * nextTurn() calls within one process.
+   */
+  setTurn(turn: number): void {
+    this.turn = turn;
+  }
+
+  getTurn(): number {
+    return this.turn;
+  }
+
   getSourceEdits(): FileEdit[] {
     return [...this.sourceEdits];
   }
