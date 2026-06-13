@@ -83,7 +83,7 @@ JSON. The seam for a custom check is the generated hook script, around that
 ```typescript
 // In .claude/hooks/scripts/post-tool-use.ts (the generated file), after:
 //   const result = handlePostToolUse(input.tool_name, input.tool_input,
-//     tracker, cache, config, execFn);
+//     tracker, cache, config, execFn, input.tool_response);
 import { checkSecrets } from './check-secrets.js';
 
 let custom: EnforcementViolation | null = null;
