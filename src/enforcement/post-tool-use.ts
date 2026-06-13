@@ -130,7 +130,7 @@ function runPostToolChecks(
       const category = tracker.classifyFile(filePath);
       if (category === 'source' || category === 'test') {
         cache.addEditedFile(filePath, category);
-        cache.recordEditTurn(filePath, category, turn);
+        cache.recordEditTurn(filePath, turn);
       }
 
       // Constitutional check on edited test files

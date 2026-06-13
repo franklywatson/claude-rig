@@ -118,9 +118,10 @@ export class SessionCache {
     return this.editTurnCounter;
   }
 
-  /** Record a turn-stamped edit for cross-process stale-test detection. */
-  recordEditTurn(file: string, category: 'source' | 'test', turn: number): void {
-    this.editHistory.push({ file, category, turn });
+  /** Record a turn-stamped edit for cross-process stale-test detection. The
+   *  file's category is reclassified on hydration, so it isn't stored here. */
+  recordEditTurn(file: string, turn: number): void {
+    this.editHistory.push({ file, turn });
     this.save();
   }
 

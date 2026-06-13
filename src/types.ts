@@ -181,10 +181,11 @@ export interface SessionCacheFile {
 }
 
 /** A turn-stamped file edit, persisted for the cross-process stale-test
- * turn model: one PostToolUse Edit/Write invocation = one turn. */
+ * turn model: one PostToolUse Edit/Write invocation = one turn. The tracker
+ * reclassifies each file on hydration (FileTracker.recordEdit), so only the
+ * path and turn are stored — no category. */
 export interface EditHistoryEntry {
   file: string;
-  category: 'source' | 'test';
   turn: number;
 }
 
