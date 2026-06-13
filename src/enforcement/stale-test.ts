@@ -36,3 +36,18 @@ export function checkStaleTests(tracker: FileTracker, config: HarnessConfig): En
 
   return { level, message: lines.join('\n') };
 }
+
+/**
+ * Stable identity of the current stale source-file set: sorted, de-duplicated
+ * file paths joined by '|', or '' when nothing is stale. The PostToolUse
+ * handler feeds this to SessionCache.updateStaleKey so an unchanged stale set
+ * doesn't re-emit the (often growing) advisory on every Edit/Write. The set is
+ * de-duplicated because a file edited across several turns produces one
+ * getStaleSources entry per turn — without it, a third identical edit would
+ * look like a changed set.
+ */
+export function staleSetKey(tracker: FileTracker, config: HarnessConfig): string {
+  const gracePeriod = config.rules.stale_tests?.grace_period ?? 0;
+  const files = tracker.getStaleSources(gracePeriod).map(edit => edit.file);
+  return [...new Set(files)].sort().join('|');
+}

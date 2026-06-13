@@ -197,6 +197,34 @@ describe('SessionCache', () => {
       expect(cache.shouldAdvise('native_grep')).toBe(true);
     });
   });
+
+  describe('updateStaleKey (stale-test advisory dedup)', () => {
+    it('returns true on the first set and when the set changes, false when unchanged', () => {
+      expect(cache.updateStaleKey('a')).toBe(true);   // first non-empty set
+      expect(cache.updateStaleKey('a')).toBe(false);  // unchanged → suppress repeat
+      expect(cache.updateStaleKey('a|b')).toBe(true); // a new file joined the set
+      expect(cache.updateStaleKey('a|b')).toBe(false);
+    });
+
+    it('treats the empty set as a reset so a re-introduced set re-fires', () => {
+      expect(cache.updateStaleKey('a')).toBe(true);
+      expect(cache.updateStaleKey('')).toBe(true);    // set cleared (all covered)
+      expect(cache.updateStaleKey('')).toBe(false);   // still empty
+      expect(cache.updateStaleKey('a')).toBe(true);   // same set, but after a clear → re-fire
+    });
+
+    it('clears the stale key on reset', () => {
+      cache.updateStaleKey('a');
+      cache.reset();
+      expect(cache.updateStaleKey('a')).toBe(true);
+    });
+  });
+
+  describe('transaction (batched writes)', () => {
+    it('returns the callback result', () => {
+      expect(cache.transaction(() => 42)).toBe(42);
+    });
+  });
 });
 
 describe('SessionCache (file-backed)', () => {
@@ -228,6 +256,24 @@ describe('SessionCache (file-backed)', () => {
       { file: 'src/feature/widget.ts', category: 'source', turn: 1 },
     ]);
     expect(second.advanceEditTurn()).toBe(2);
+  });
+
+  it('transaction batches writes — disk stays at the pre-transaction state until it ends', () => {
+    const path = trackPath(sessionCachePath(testCwd));
+    const cache = new SessionCache(testCwd);
+    cache.setPhase('plan+'); // committed to disk before the transaction
+    cache.transaction(() => {
+      cache.setPhase('tdd+');
+      cache.advanceEditTurn();
+      // Mid-transaction: intermediate saves are suppressed, so disk is stale.
+      const onDisk = JSON.parse(readFileSync(path, 'utf-8')) as SessionCacheFile;
+      expect(onDisk.currentPhase).toBe('plan+');
+      expect(onDisk.editTurnCounter).toBe(0);
+    });
+    // After the transaction: a fresh hook process sees the committed state.
+    const reloaded = new SessionCache(testCwd);
+    expect(reloaded.getCurrentPhase()).toBe('tdd+');
+    expect(reloaded.getEditTurn()).toBe(1);
   });
 
   it('generates deterministic path from cwd', () => {

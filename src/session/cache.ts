@@ -45,6 +45,9 @@ export class SessionCache {
   private advisorySuppressCounts: Map<string, number> = new Map();
   private editTurnCounter = 0;
   private editHistory: EditHistoryEntry[] = [];
+  private lastStaleKey = '';
+  private saveSuppressed = false;
+  private saveDirty = false;
 
   constructor(cwd?: string, sessionId?: string) {
     this.cwd = cwd;
@@ -123,6 +126,42 @@ export class SessionCache {
 
   getEditHistory(): EditHistoryEntry[] {
     return [...this.editHistory];
+  }
+
+  /**
+   * Stale-test advisory dedup. Returns true when `key` differs from the last
+   * stale set we advised on (and stores the new key), false when unchanged.
+   * The handler passes the sorted unique set of stale source files; an empty
+   * key ('' — nothing stale) is stored too, so a set that clears and later
+   * re-appears re-fires instead of staying suppressed forever. Keeps the
+   * stale-test advisory from re-emitting an identical (often growing) list on
+   * every Edit/Write — the advisory-fatigue fix.
+   */
+  updateStaleKey(key: string): boolean {
+    if (key === this.lastStaleKey) return false;
+    this.lastStaleKey = key;
+    this.save();
+    return true;
+  }
+
+  /**
+   * Run `fn` with intermediate save()s suppressed, then write the cache file
+   * exactly once at the end — and only if a save was actually requested. A
+   * single PostToolUse invocation mutates several fields (turn counter,
+   * edited-file sets, turn-stamped history, stale key, metric counters);
+   * without batching, each setter rewrites the whole JSON file. Re-entrant
+   * calls flatten — only the outermost transaction performs the write.
+   */
+  transaction<T>(fn: () => T): T {
+    if (this.saveSuppressed) return fn(); // already inside a transaction
+    this.saveSuppressed = true;
+    this.saveDirty = false;
+    try {
+      return fn();
+    } finally {
+      this.saveSuppressed = false;
+      if (this.saveDirty) this.save();
+    }
   }
 
   setPhase(phase: string): void {
@@ -266,6 +305,7 @@ export class SessionCache {
     this.advisorySuppressCounts = new Map();
     this.editTurnCounter = 0;
     this.editHistory = [];
+    this.lastStaleKey = '';
     this.save();
   }
 
@@ -290,6 +330,7 @@ export class SessionCache {
       advisorySuppressCounts: Object.fromEntries(this.advisorySuppressCounts),
       editTurnCounter: this.editTurnCounter,
       editHistory: [...this.editHistory],
+      lastStaleKey: this.lastStaleKey,
     };
   }
 
@@ -330,12 +371,18 @@ export class SessionCache {
       this.advisorySuppressCounts = new Map(Object.entries(data.advisorySuppressCounts ?? {}));
       this.editTurnCounter = data.editTurnCounter ?? 0;
       this.editHistory = data.editHistory ?? [];
+      this.lastStaleKey = data.lastStaleKey ?? '';
     } catch {
       // Corrupt or unreadable file — start fresh
     }
   }
 
   private save(): void {
+    // Inside a transaction, defer the write and remember that one is due.
+    if (this.saveSuppressed) {
+      this.saveDirty = true;
+      return;
+    }
     if (!this.cwd) return;
     const path = sessionCachePath(this.cwd, this.sessionId);
     try {

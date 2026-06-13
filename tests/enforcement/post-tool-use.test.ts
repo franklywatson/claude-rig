@@ -433,6 +433,26 @@ describe('handlePostToolUse', () => {
       expect(third).not.toBeNull();
       expect(third?.message).toContain('STALE TEST');
     });
+
+    it('suppresses a repeat advisory when the stale set is unchanged (dedup)', () => {
+      expect(freshInvocation(cache, 'src/feature/widget.ts')).toBeNull();        // turn 1, exempt
+      const fires = freshInvocation(cache, 'src/feature/widget.ts');             // turn 2, {widget} → fire
+      expect(fires?.message).toContain('STALE TEST');
+      // turn 3, identical stale set {widget} → no repeat advisory (advisory fatigue fix)
+      expect(freshInvocation(cache, 'src/feature/widget.ts')).toBeNull();
+    });
+
+    it('re-fires when a new file joins the stale set', () => {
+      freshInvocation(cache, 'src/feature/widget.ts');                           // turn 1, exempt
+      expect(freshInvocation(cache, 'src/feature/widget.ts')?.message)           // turn 2, {widget} → fire
+        .toContain('STALE TEST');
+      // turn 3 edits gadget (its own creation turn is exempt); set still {widget} → suppressed
+      expect(freshInvocation(cache, 'src/feature/gadget.ts')).toBeNull();
+      // turn 4: gadget is now past its creation turn → set {widget, gadget} changed → re-fire
+      const grew = freshInvocation(cache, 'src/feature/gadget.ts');
+      expect(grew?.message).toContain('src/feature/gadget.ts');
+      expect(grew?.message).toContain('src/feature/widget.ts');
+    });
   });
 
   describe('session cache persistence of edits', () => {

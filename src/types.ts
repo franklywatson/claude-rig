@@ -175,6 +175,9 @@ export interface SessionCacheFile {
   scoutedDirs?: string[];
   editTurnCounter?: number;
   editHistory?: EditHistoryEntry[];
+  /** Last stale source-file set the stale-test check advised on (sorted unique
+   *  paths joined by '|'), for advisory dedup across hook processes. */
+  lastStaleKey?: string;
 }
 
 /** A turn-stamped file edit, persisted for the cross-process stale-test
