@@ -253,6 +253,14 @@ Parses test output (vitest, jest, pytest patterns) for failure indicators. Class
 or unknown. Supports pre-existing failure classification via `git diff` — failures in untouched
 files are reported separately from regressions based on `zero_defect.unrelated_errors` config.
 
+The check is **phase-aware**, mirroring test scope control: during `tdd+`/`sdd+`
+a failing run is the expected RED step of red-green-refactor — indistinguishable
+from a regression to a pattern match — so a blocking violation is downgraded to
+advisory (the failures still surface, the loop is not halted). The block returns
+in `verify+`, where a green suite is mandatory. The phase comes from the session
+cache (`cache.getCurrentPhase()`); callers that pass no phase keep the strict
+behavior unchanged.
+
 **Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
 
 ---
