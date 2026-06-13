@@ -140,6 +140,8 @@ export interface Environment {
   graphifyVersion?: string | null;
   headroomAvailable?: boolean;
   headroomInitialized?: boolean;
+  /** Claude Code's experimental agent-teams feature is enabled for this session. */
+  agentTeamsAvailable?: boolean;
   detectedAt: number;
 }
 

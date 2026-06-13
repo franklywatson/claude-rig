@@ -91,6 +91,7 @@ export async function detectEnvironment(
   statCheck: (path: string) => { size: number } | undefined = defaultStatCheck,
   mcpQuery: McpQueryFn = defaultMcpQuery,
   registrationLookup: RegistrationLookupFn = resolveJcodemunchRegistration,
+  envVars: Record<string, string | undefined> = process.env,
 ): Promise<Environment> {
   const rtkResult = detectRtk(exec);
   const jmResult = await detectJcodemunch(cwd, exec, mcpQuery, registrationLookup);
@@ -110,6 +111,7 @@ export async function detectEnvironment(
     graphifyGraphPath: graphifyResult.state === 'ready' ? graphifyResult.graphPath ?? null : null,
     graphifyVersion: graphifyResult.cliVersion ?? null,
     graphBuildInfo: graphifyResult.state === 'absent' && !graphifyResult._cliFound ? undefined : graphifyResult,
+    agentTeamsAvailable: envVars.CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS === '1',
     detectedAt: Date.now(),
   };
 }

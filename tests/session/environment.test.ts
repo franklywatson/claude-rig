@@ -1120,3 +1120,51 @@ describe('defaultMcpQuery (real-process integration)', () => {
     expect(result).toBeNull();
   });
 });
+
+describe('detectEnvironment agent-teams detection', () => {
+  const noToolsExec = makeExec({
+    'which rtk': new Error('not found'),
+    'which jcodemunch': new Error('not found'),
+    'which jcodemunch-mcp': new Error('not found'),
+    'which uvx': new Error('not found'),
+  });
+
+  it('detects agent teams from the experimental env flag', async () => {
+    const env = await detectEnvironment(
+      '/fake/cwd',
+      noToolsExec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => null,
+      { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' },
+    );
+    expect(env.agentTeamsAvailable).toBe(true);
+  });
+
+  it('reports agent teams unavailable when the flag is absent', async () => {
+    const env = await detectEnvironment(
+      '/fake/cwd',
+      noToolsExec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => null,
+      {},
+    );
+    expect(env.agentTeamsAvailable).toBe(false);
+  });
+
+  it('reports agent teams unavailable when the flag is not "1"', async () => {
+    const env = await detectEnvironment(
+      '/fake/cwd',
+      noToolsExec,
+      () => false,
+      () => undefined,
+      makeMcpQuery({}),
+      () => null,
+      { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '0' },
+    );
+    expect(env.agentTeamsAvailable).toBe(false);
+  });
+});
