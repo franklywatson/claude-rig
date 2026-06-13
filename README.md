@@ -23,11 +23,12 @@ and you carry the integration burden — remembering which is installed, which
 to reach for, and what each is saving you. Rig carries it instead:
 
 - **Plug-and-play detection** — session start probes the whole panel (PATH,
-  MCP registrations, proxy markers), auto-indexes the project, auto-builds the
-  knowledge graph, and reports what's online. Install a tool and it joins the
-  panel; remove one and rig degrades gracefully (jcodemunch-only analysis when
-  graphify fails, pass-through when rtk is absent, general-purpose subagents
-  when typed agents are deleted).
+  MCP registrations, proxy markers, the experimental agent-teams flag),
+  auto-indexes the project, auto-builds the knowledge graph, and reports what's
+  online. Install a tool and it joins the panel; remove one and rig degrades
+  gracefully (jcodemunch-only analysis when graphify fails, pass-through when
+  rtk is absent, general-purpose subagents when typed agents are deleted,
+  sequential dispatch when agent-teams is off).
 - **Routing, not memory** — PreToolUse hooks steer every operation to the best
   instrument available right now. You never have to remember the stack exists.
 - **One pane of glass** — `/savings` reports every layer side by side (tool
@@ -64,7 +65,7 @@ upgrades the three places where process text alone can't reach:
 | | plain superpowers | superpowers through rig |
 | --- | --- | --- |
 | **Enforcement** | Persuasive skill text the agent can rationalize around | PreToolUse/PostToolUse hooks that programmatically block or advise (`.harness.yaml`) |
-| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, backstop-calibrated turn budgets with partial-status resumption, worktree-isolated implementers (see architecture.md "Subagent operations") |
+| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, backstop-calibrated turn budgets with partial-status resumption, worktree-isolated implementers, and team-mode execution of independent plan tasks as parallel teammates when Claude Code's experimental agent-teams feature is detected (see architecture.md "Subagent operations") |
 | **Trajectory** | The skill chain ends at merge | Opt-in agent-loop trajectory: `brain+`/`plan+` can design a layered signal stack so the system self-assembles gate-by-gate and hands off to an always-on maintainer agent |
 
 The result: the same superpowers workflows, but the review chain is
