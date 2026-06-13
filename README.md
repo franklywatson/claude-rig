@@ -228,6 +228,7 @@ rules:
     branch_discipline: advise  # block | advise | silent — git commit/push on a protected branch
     protected_branches: [master, main]
     isolation_strategy: auto   # auto | branch | worktree — auto picks worktree when the tree is dirty
+    team_execution: offer      # offer | auto | never — parallel teammates for independent tasks (needs experimental agent-teams)
 ```
 
 Each enforcement rule can be `block` (hook exits nonzero), `advise` (advisory
