@@ -65,7 +65,7 @@ upgrades the three places where process text alone can't reach:
 | | plain superpowers | superpowers through rig |
 | --- | --- | --- |
 | **Enforcement** | Persuasive skill text the agent can rationalize around | PreToolUse/PostToolUse hooks that programmatically block or advise (`.harness.yaml`) |
-| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, backstop-calibrated turn budgets with partial-status resumption, worktree-isolated implementers, and team-mode execution of independent plan tasks as parallel teammates when Claude Code's experimental agent-teams feature is detected (see architecture.md "Subagent operations") |
+| **Subagents** | Every implementer and reviewer dispatched as a general-purpose agent; role and discipline ride inside the prompt | Typed agents in `.claude/agents/`: tool-scoped (reviewers carry no Edit/Write tools), enforcement rules in their system prompt, named in the UI, backstop-calibrated turn budgets with partial-status resumption, worktree-isolated implementers, and team-mode execution of independent plan tasks as parallel teammates when Claude Code's experimental agent-teams feature is detected (see [architecture.md "Subagent operations"](docs/architecture.md#subagent-operations)) |
 | **Trajectory** | The skill chain ends at merge | Opt-in agent-loop trajectory: `brain+`/`plan+` can design a layered signal stack so the system self-assembles gate-by-gate and hands off to an always-on maintainer agent |
 
 The result: the same superpowers workflows, but the review chain is
@@ -118,11 +118,14 @@ data as a separate **context layer** line:
 [rig] Session Savings
   rtk: 1.2M saved (42 calls, +340K this session)
   jcodemunch: 85K saved (23 queries, 150M total all-time)
-  headroom: 40K saved (context layer -- 42 requests, 40% compression, 78% cache hits; not summed with tool-layer savings)
+  headroom: 40K saved (context layer — 42 requests, 40% compression, 78% cache hits; not summed with tool-layer savings)
+  graphify: 913 nodes, 1349 edges, 62 communities (100% EXTRACTED, 0% INFERRED, 0% AMBIGUOUS)
 ```
 
-The layers overlap at the rtk boundary, so rig reports them side by side and
-never adds them together.
+`/savings` reports every layer it detects side by side — rtk and jcodemunch on
+the tool layer, headroom on the context layer, and graphify's graph stats. The
+tool and context layers overlap at the rtk boundary, so rig reports them side
+by side and never adds them together.
 
 ## Quick start
 
