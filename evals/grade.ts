@@ -31,7 +31,19 @@ export function extractAssistantText(jsonl: string): string {
   return parts.join('\n');
 }
 
-/** True iff the transcript fired the loop opt-in (loop-specific tokens only). */
+/**
+ * True iff the transcript fired the loop opt-in (loop-specific tokens only).
+ *
+ * KNOWN LIMITATION (surfaced by a live run, 2026-06-12): this detects token
+ * PRESENCE, which conflates OFFERING the trajectory with merely MENTIONING it.
+ * On a live Opus run of the negative (CLI) scenario the model wrote "this does
+ * not fit the agent-loop pattern" in VISIBLE output — a dismissal-by-name that
+ * this matcher false-positives as an opt-in. The canned negative fixture did
+ * not expose this (its dismissal sat in a thinking block, which
+ * extractAssistantText drops). Refinement tracked: detect offer-context
+ * (question + inclusion language) or promote the judge to primary for the
+ * loop-fit scenarios. See the eval-harness PR discussion.
+ */
 export function matchLoopOptIn(text: string): boolean {
   return LOOP_OPTIN_TOKENS.some((re) => re.test(text));
 }

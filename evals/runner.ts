@@ -110,3 +110,41 @@ export function parseArgs(argv: string[]): EvalArgs {
   }
   return out;
 }
+
+export function formatReport(report: EvalReport): string {
+  const lines = [
+    `[eval] Behavioral Eval Report — model: ${report.model}`,
+    `  ${report.passCount}/${report.totalScenarios} scenarios passed`,
+  ];
+  for (const s of report.scenarios) {
+    const passed = s.runs.filter((r) => r.pass).length;
+    lines.push(`  ${s.pass ? 'PASS' : 'FAIL'}  ${s.id}  (${passed}/${s.runs.length} runs)`);
+  }
+  for (const f of report.failures) lines.push(`    ↳ ${f.id}: ${f.reason}`);
+  return lines.join('\n');
+}
+
+async function main(): Promise<void> {
+  const args = parseArgs(process.argv.slice(2));
+  const { makeLiveDriver, makeJudge } = await import('./drive.js');
+  const reg = new TeardownRegistry();
+  const deps: RunDeps & { scenarioId?: string } = {
+    driveSession: makeLiveDriver(reg),
+    model: args.model,
+    runs: args.runs,
+    judge: makeJudge(args.model),
+    scenarioId: args.scenario,
+  };
+  try {
+    const report = await runAll(deps);
+    process.stdout.write(formatReport(report) + '\n');
+    process.exitCode = report.passCount === report.totalScenarios ? 0 : 1;
+  } finally {
+    reg.cleanup();
+  }
+}
+
+// Run only when invoked directly (npm run eval), never on import.
+if (process.argv[1] && process.argv[1].endsWith('runner.ts')) {
+  void main();
+}
