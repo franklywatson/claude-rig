@@ -277,3 +277,40 @@ describe('checkZeroDefect with changedFiles', () => {
     expect(result?.message).not.toContain('old.test.ts');
   });
 });
+
+describe('checkZeroDefect phase awareness (tdd+/sdd+ RED exemption)', () => {
+  let config: HarnessConfig;
+
+  beforeEach(() => {
+    config = structuredClone(DEFAULT_CONFIG);
+    config.rules.zero_defect = { tolerance: 'strict', unrelated_errors: 'block' };
+  });
+
+  const failing = 'FAIL tests/widget.test.ts\nTests: 1 failed, 0 passed';
+
+  it('downgrades a strict block to advisory during tdd+ (the expected RED step)', () => {
+    const result = checkZeroDefect(failing, config, undefined, 'tdd+');
+    expect(result).not.toBeNull();
+    expect(result?.level).toBe('advise');
+  });
+
+  it('downgrades during sdd+ as well', () => {
+    expect(checkZeroDefect(failing, config, undefined, 'sdd+')?.level).toBe('advise');
+  });
+
+  it('still blocks during verify+ (final verification is where green is mandatory)', () => {
+    expect(checkZeroDefect(failing, config, undefined, 'verify+')?.level).toBe('block');
+  });
+
+  it('still blocks when no phase is set — default behavior unchanged', () => {
+    expect(checkZeroDefect(failing, config, undefined, null)?.level).toBe('block');
+    expect(checkZeroDefect(failing, config)?.level).toBe('block');
+  });
+
+  it('downgrades a regression block to advisory during tdd+ (changed-files path)', () => {
+    const output = 'FAIL tests/router/resolver.test.ts\nTests: 1 failed';
+    // resolver.test.ts is a changed file → normally a blocking regression
+    const result = checkZeroDefect(output, config, ['tests/router/resolver.test.ts'], 'tdd+');
+    expect(result?.level).toBe('advise');
+  });
+});

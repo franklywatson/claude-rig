@@ -144,6 +144,22 @@ describe('handlePostToolUse', () => {
       );
       expect(result).toBeNull();
     });
+
+    it('threads the cache phase into zero-defect: a tdd+ RED run is advisory, not a block', () => {
+      config.rules.zero_defect = { tolerance: 'strict', unrelated_errors: 'block' };
+      cache.setPhase('tdd+');
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npx vitest run' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        'FAIL tests/a.test.ts\nTests: 1 failed',
+      );
+      expect(result).not.toBeNull();
+      expect(result?.level).toBe('advise');
+    });
   });
 
   it('checks constitutional on stack test file edits', () => {

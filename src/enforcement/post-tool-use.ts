@@ -160,7 +160,12 @@ function runPostToolChecks(
       const isTestCommand = /vitest|jest|pytest|mocha/.test(command);
       if (isTestCommand) {
         const changedFiles = cache.getChangedFiles();
-        const zeroDefect = checkZeroDefect(output, config, changedFiles.length > 0 ? changedFiles : undefined);
+        const zeroDefect = checkZeroDefect(
+          output,
+          config,
+          changedFiles.length > 0 ? changedFiles : undefined,
+          cache.getCurrentPhase(),
+        );
         if (zeroDefect) violations.push(zeroDefect);
       }
     }

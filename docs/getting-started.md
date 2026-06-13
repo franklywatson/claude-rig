@@ -249,7 +249,7 @@ After each tool use, the post-tool-use hook runs three checks:
 
 1. **Stale tests** -- Did you edit source files without updating tests?
 2. **Constitutional** -- Are there mocks in stack/E2E test files? (mocks are appropriate in unit tests; configurable — set `no_mocks: silent` to disable)
-3. **Zero defect** -- Do the test results show failures?
+3. **Zero defect** -- Do the test results show failures? (phase-aware: during `tdd+`/`sdd+` a failing run is the expected RED step, so a block is downgraded to advisory; the block returns in `verify+`)
 
 Each check returns a violation message or null. Advise-level violations are
 emitted as agent-visible `additionalContext` (the agent sees them next to the
