@@ -331,6 +331,23 @@ below are what make that hierarchy reliable in practice:
   advisories via `additionalContext`, blocks via exit 2, and the typed
   agents' system prompts instruct reading `.harness.yaml` at runtime.
 
+**Hook coverage in worktrees (empirically probed).** Hooks fire for
+subagent/teammate tool calls regardless of the command's working directory:
+they run in the session process via `${CLAUDE_PROJECT_DIR}`, so a
+`cd <worktree> && sed -i ...` issued from a worktree-isolated agent is
+blocked by the router exactly as in the main checkout (observed: `[BLOCK]
+Tool Router: file_modify operation blocked`, command never executed).
+Config resolution inside a worktree cwd falls back to built-in defaults:
+`.harness.yaml` is gitignored, so worktrees lack it, and `loadConfig`
+resolves (rather than rejecting) with a config equal to `DEFAULT_CONFIG` —
+enforcement still runs, at default levels, unless a `.harness.yaml` is
+copied into the worktree. Session-cache writes from a worktree cwd land in a
+per-worktree fragment (observed: a fresh `/tmp/rig-session-*.json` with
+`"cwd"` set to the worktree path), invisible to `/savings` same-cwd matching
+— the same fragmentation already documented for subdirectory contexts.
+Teammates additionally carry enforcement in their typed system prompts, so
+the hook layer and the prompt layer overlap rather than depend on each other.
+
 **Agent teams (forward-looking).** Claude Code's experimental agent-teams
 feature maps naturally onto `sdd+`: genuinely independent plan tasks could
 execute as a team of worktree-isolated implementer teammates sharing a task
