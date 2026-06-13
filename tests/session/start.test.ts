@@ -934,6 +934,36 @@ describe('handleSessionStart', () => {
       expect(output).toContain('headroom: proxy configured (context-layer compression)');
     });
 
+    it('reports agent-teams when the experimental flag is set', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        envVars: { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' },
+      });
+
+      expect(output).toContain('agent-teams: available (experimental)');
+    });
+
+    it('omits the agent-teams line when the flag is absent', async () => {
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+        if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+        return '';
+      });
+
+      const output = await startSession('/home/user/test-project', cache, {
+        envVars: {},
+      });
+
+      expect(output).not.toContain('agent-teams');
+    });
+
     it('renders the rtk version when known', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';
