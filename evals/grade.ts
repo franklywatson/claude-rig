@@ -48,7 +48,15 @@ export function matchLoopOptIn(text: string): boolean {
   return LOOP_OPTIN_TOKENS.some((re) => re.test(text));
 }
 
-/** True iff an opted-in design carries all three required sections. */
+/**
+ * True iff an opted-in design carries all three required sections.
+ *
+ * Same presence-vs-structure caveat as matchLoopOptIn: this keys on free-text
+ * concept presence, so a single shallow sentence naming all three concepts
+ * would pass. Lower risk than the negative case (the sections scenario scripts
+ * a "YES, include…" answer and asks for headed sections), but a stricter
+ * heading-marker match is the tracked refinement.
+ */
 export function matchSectionsPresent(text: string): boolean {
   const hasSignalStack = /signal stack/i.test(text);
   const hasBoundary =
@@ -82,7 +90,7 @@ export async function judgeNegative(transcript: string, drive: JudgeDriver): Pro
     return false;
   }
   const v = String(verdict);
-  if (/\bFAIL\b/i.test(v)) return false;
-  if (/\bPASS\b/i.test(v)) return true;
+  if (/\bFAIL(ED)?\b/i.test(v)) return false;
+  if (/\bPASS(ED)?\b/i.test(v)) return true;
   return false;
 }

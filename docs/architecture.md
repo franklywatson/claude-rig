@@ -555,7 +555,7 @@ npm run eval [--model M] [--scenario ID] [--runs K]
 runner.main()
      |
 for each scenario (N-of-M runs):
-  drive.ts: scaffold temp project -> rig init -> write brief
+  session-driver.ts: scaffold temp project -> rig init -> write brief
             -> claude -p <prompt> --model M --output-format stream-json
             -> capture transcript -> track temp dir + session fragments
   grade.ts: extractAssistantText (visible output only) -> structural match

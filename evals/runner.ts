@@ -1,5 +1,5 @@
 // Eval runner: orchestration (drive → grade → reduce). The live claude -p
-// driver and its filesystem scaffold/teardown live in evals/drive.ts and are
+// driver and its filesystem scaffold/teardown live in evals/session-driver.ts and are
 // injected here as `driveSession`, so this module is fully unit-testable with
 // canned transcripts.
 
@@ -126,7 +126,7 @@ export function formatReport(report: EvalReport): string {
 
 async function main(): Promise<void> {
   const args = parseArgs(process.argv.slice(2));
-  const { makeLiveDriver, makeJudge } = await import('./drive.js');
+  const { makeLiveDriver, makeJudge } = await import('./session-driver.js');
   const reg = new TeardownRegistry();
   const deps: RunDeps & { scenarioId?: string } = {
     driveSession: makeLiveDriver(reg),

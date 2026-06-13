@@ -70,6 +70,11 @@ not fit the agent-loop pattern" in visible output). Surfaced by the first live
 run. Refinement — offer-context detection or judge-primary for the loop-fit
 scenarios — is tracked as a follow-up.
 
+`matchSectionsPresent` carries the same presence-vs-structure caveat (a
+heading-marker match is the tracked refinement), and the grader does not yet
+distinguish an errored `claude -p` run (`is_error`) from a model that declined
+— both are minor follow-ups.
+
 ## The drift check (running across models)
 
 Run the suite under two models and diff the reports:
@@ -104,7 +109,7 @@ change.
 - `reduce.ts` — N-of-M majority + report builder.
 - `runner.ts` — orchestration (`gradeTranscript`, `runScenario`, `runAll`,
   `TeardownRegistry`, `parseArgs`, `main`).
-- `drive.ts` — the live `claude -p` driver (`buildClaudeArgs`, `makeLiveDriver`,
-  `makeJudge`); not imported by unit tests.
+- `session-driver.ts` — the live `claude -p` driver (`buildClaudeArgs`,
+  `makeLiveDriver`, `makeJudge`, `sessionFragmentOwnedBy`); not imported by unit tests.
 - Pure logic is unit-tested under `tests/evals/` with canned recorded
   transcripts; the live runs are the harness's output, not part of `npm test`.

@@ -50,4 +50,7 @@ describe('grade: confined judge fallback (fail-closed)', () => {
   it('garbage verdict -> fail-closed (not compliant)', async () => {
     expect(await judgeNegative('...', async () => 'I am not sure')).toBe(false);
   });
+  it('accepts the natural "PASSED" wording', async () => {
+    expect(await judgeNegative('...', async () => 'PASSED')).toBe(true);
+  });
 });
