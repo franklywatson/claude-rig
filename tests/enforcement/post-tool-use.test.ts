@@ -378,6 +378,63 @@ describe('handlePostToolUse', () => {
     expect(cache.getGraphifyStats('/external/unreachable')).toBeUndefined();
   });
 
+  describe('stale-test detection across hook processes (turn model)', () => {
+    // Hooks run as separate processes: every invocation builds a FRESH
+    // FileTracker. A "turn" is one PostToolUse Edit/Write invocation, counted
+    // in the session cache; the turn-stamped edit history is hydrated into
+    // the fresh tracker so a source file edited in an earlier invocation
+    // (and not covered by a test edit) fires on a later one.
+    function freshInvocation(
+      sharedCache: SessionCache,
+      filePath: string,
+    ): ReturnType<typeof handlePostToolUse> {
+      // Fresh tracker per call simulates the separate hook process.
+      return handlePostToolUse(
+        'Edit',
+        { file_path: filePath, old_string: 'a', new_string: 'b' },
+        new FileTracker(),
+        sharedCache,
+        config,
+      );
+    }
+
+    it('fires on the second consecutive edit of the same source file', () => {
+      const first = freshInvocation(cache, 'src/feature/widget.ts');
+      expect(first).toBeNull();
+
+      const second = freshInvocation(cache, 'src/feature/widget.ts');
+      expect(second).not.toBeNull();
+      expect(second?.level).toBe('advise');
+      expect(second?.message).toContain('STALE TEST');
+      expect(second?.message).toContain('src/feature/widget.ts');
+    });
+
+    it('fires for an earlier uncovered source edit when a different file is edited', () => {
+      freshInvocation(cache, 'src/feature/widget.ts');
+      const result = freshInvocation(cache, 'src/feature/gadget.ts');
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('src/feature/widget.ts');
+      // The current invocation's edit is exempt (creation turn).
+      expect(result?.message).not.toContain('src/feature/gadget.ts');
+    });
+
+    it('does not fire once a covering test edit is recorded', () => {
+      freshInvocation(cache, 'src/feature/widget.ts');
+      freshInvocation(cache, 'tests/feature/widget.test.ts');
+      const result = freshInvocation(cache, 'src/feature/widget.ts');
+      expect(result).toBeNull();
+    });
+
+    it('respects grace_period across invocations', () => {
+      config.rules.stale_tests = { enforcement: 'advise', grace_period: 1 };
+      freshInvocation(cache, 'src/feature/widget.ts'); // turn 1
+      expect(freshInvocation(cache, 'src/feature/widget.ts')).toBeNull(); // turn 2, within grace
+      const third = freshInvocation(cache, 'src/feature/widget.ts'); // turn 3, past grace
+      expect(third).not.toBeNull();
+      expect(third?.message).toContain('STALE TEST');
+    });
+  });
+
   describe('session cache persistence of edits', () => {
     it('persists source file edits to the session cache', () => {
       handlePostToolUse('Edit', { file_path: 'src/router/resolver.ts' }, tracker, cache, config);

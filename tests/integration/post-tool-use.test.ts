@@ -292,6 +292,51 @@ describe('PostToolUse hook E2E', () => {
     }
   }, HOOK_TIMEOUT);
 
+  describe('stale-test detection across hook processes', () => {
+    // Each hook invocation is a separate process with a fresh FileTracker —
+    // the turn counter and edit history must come from the session cache or
+    // the creation-turn exemption applies forever and the check is dormant.
+    const STALE_SESSION = 'e2e-post-stale';
+
+    function editPayload(file: string) {
+      return {
+        session_id: STALE_SESSION,
+        hook_event_name: 'PostToolUse',
+        tool_name: 'Edit',
+        tool_input: { file_path: file, old_string: 'a', new_string: 'b' },
+        tool_response: { filePath: file },
+      };
+    }
+
+    afterAll(() => {
+      const path = sessionCachePath(tempDir, STALE_SESSION);
+      if (existsSync(path)) unlinkSync(path);
+    });
+
+    it('fires the stale-test advisory on the second consecutive source edit', async () => {
+      const first = await runHook(hookPath, editPayload('src/feature/widget.ts'), tempDir);
+      expect(first.exitCode).toBe(0);
+      expect(first.stdout).not.toContain('STALE TEST');
+
+      const second = await runHook(hookPath, editPayload('src/feature/widget.ts'), tempDir);
+      expect(second.exitCode).toBe(0);
+      const jsonLine = second.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine as string);
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('STALE TEST');
+      expect(parsed.hookSpecificOutput.additionalContext).toContain('src/feature/widget.ts');
+    }, HOOK_TIMEOUT);
+
+    it('stops firing once a covering test edit lands in a later invocation', async () => {
+      const testEdit = await runHook(hookPath, editPayload('tests/feature/widget.test.ts'), tempDir);
+      expect(testEdit.exitCode).toBe(0);
+
+      const third = await runHook(hookPath, editPayload('src/feature/widget.ts'), tempDir);
+      expect(third.exitCode).toBe(0);
+      expect(third.stdout).not.toContain('STALE TEST');
+    }, HOOK_TIMEOUT);
+  });
+
   it('runs successfully for various tool types', async () => {
     // Verify multiple tool types all exit cleanly
     const tools = [

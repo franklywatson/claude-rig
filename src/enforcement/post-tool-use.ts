@@ -83,15 +83,37 @@ export function handlePostToolUse(
   // Track file edits
   if (tool === 'Edit' || tool === 'Write') {
     const filePath = args.file_path as string;
+
+    // Cross-process turn model: hooks run as separate processes, so the
+    // FileTracker arrives empty and its in-memory turn counter never
+    // advances — which made the creation-turn exemption apply forever and
+    // left the stale-test check dormant. A "turn" is one PostToolUse
+    // Edit/Write invocation: the counter and the turn-stamped edit history
+    // persist in the session cache. An empty tracker (the real hook case)
+    // is hydrated from history; a tracker that already carries edits
+    // (same-process reuse in unit tests) is left intact to avoid duplicates.
+    const turn = cache.advanceEditTurn();
+    if (tracker.getSourceEdits().length === 0 && tracker.getTestEdits().length === 0) {
+      for (const edit of cache.getEditHistory()) {
+        tracker.setTurn(edit.turn);
+        tracker.recordEdit(edit.file);
+      }
+    }
+    // Never rewind: a same-process tracker may have advanced its own turn
+    // (nextTurn) past the cache counter; the effective turn is the max.
+    tracker.setTurn(Math.max(turn, tracker.getTurn()));
+
     if (filePath) {
       tracker.recordEdit(filePath);
 
       // Persist to the session cache: hooks run as separate processes, so the
       // in-memory FileTracker resets between invocations. The cache is what
-      // lets the PreToolUse test-scope check see prior source edits.
+      // lets the PreToolUse test-scope check and the stale-test turn model
+      // see prior edits.
       const category = tracker.classifyFile(filePath);
       if (category === 'source' || category === 'test') {
         cache.addEditedFile(filePath, category);
+        cache.recordEditTurn(filePath, category, turn);
       }
 
       // Constitutional check on edited test files

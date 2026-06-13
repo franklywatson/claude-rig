@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import { readFileSync, writeFileSync, existsSync, unlinkSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import type { Environment, GraphBuildInfo, GraphifyProjectStats, MetricsBaseline, PythonEnv, SessionCacheFile } from '../types.js';
+import type { EditHistoryEntry, Environment, GraphBuildInfo, GraphifyProjectStats, MetricsBaseline, PythonEnv, SessionCacheFile } from '../types.js';
 
 const ENV_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
 
@@ -43,6 +43,8 @@ export class SessionCache {
   private pythonEnv: PythonEnv | undefined;
   private advisedIntents: Set<string> = new Set();
   private advisorySuppressCounts: Map<string, number> = new Map();
+  private editTurnCounter = 0;
+  private editHistory: EditHistoryEntry[] = [];
 
   constructor(cwd?: string, sessionId?: string) {
     this.cwd = cwd;
@@ -85,13 +87,42 @@ export class SessionCache {
   }
 
   /**
-   * Clear all recorded source and test edits. Called when a scoped-execution
-   * phase (tdd+/sdd+) is entered from a different phase, so test-scope
-   * suggestions reflect the current feature's edits, not the whole session's.
+   * Clear all recorded source and test edits (including the turn-stamped
+   * history). Called when a scoped-execution phase (tdd+/sdd+) is entered
+   * from a different phase, so test-scope suggestions and stale-test checks
+   * reflect the current feature's edits, not the whole session's. The turn
+   * counter itself stays monotonic — only the history is scoped.
    */
   clearEditedFiles(): void {
     this.editedFiles.clear();
+    this.editHistory = [];
     this.save();
+  }
+
+  /**
+   * Cross-process turn model for the stale-test check: one PostToolUse
+   * Edit/Write invocation = one turn. Hooks run as separate processes, so
+   * the counter must live here, not in the in-memory FileTracker.
+   */
+  getEditTurn(): number {
+    return this.editTurnCounter;
+  }
+
+  /** Advance the edit-turn counter and return the new turn number. */
+  advanceEditTurn(): number {
+    this.editTurnCounter++;
+    this.save();
+    return this.editTurnCounter;
+  }
+
+  /** Record a turn-stamped edit for cross-process stale-test detection. */
+  recordEditTurn(file: string, category: 'source' | 'test', turn: number): void {
+    this.editHistory.push({ file, category, turn });
+    this.save();
+  }
+
+  getEditHistory(): EditHistoryEntry[] {
+    return [...this.editHistory];
   }
 
   setPhase(phase: string): void {
@@ -233,6 +264,8 @@ export class SessionCache {
     this.pythonEnv = undefined;
     this.advisedIntents = new Set();
     this.advisorySuppressCounts = new Map();
+    this.editTurnCounter = 0;
+    this.editHistory = [];
     this.save();
   }
 
@@ -255,6 +288,8 @@ export class SessionCache {
       pythonEnv: this.pythonEnv ?? null,
       advisedIntents: Array.from(this.advisedIntents),
       advisorySuppressCounts: Object.fromEntries(this.advisorySuppressCounts),
+      editTurnCounter: this.editTurnCounter,
+      editHistory: [...this.editHistory],
     };
   }
 
@@ -293,6 +328,8 @@ export class SessionCache {
       this.pythonEnv = data.pythonEnv ?? undefined;
       this.advisedIntents = new Set(data.advisedIntents ?? []);
       this.advisorySuppressCounts = new Map(Object.entries(data.advisorySuppressCounts ?? {}));
+      this.editTurnCounter = data.editTurnCounter ?? 0;
+      this.editHistory = data.editHistory ?? [];
     } catch {
       // Corrupt or unreadable file — start fresh
     }

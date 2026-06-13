@@ -120,6 +120,41 @@ describe('SessionCache', () => {
     expect(cache.getMetricCounters()).toEqual({ rtkCalls: 2, jmCalls: 1, efficientCalls: 0, graphifyCalls: 0 });
   });
 
+  describe('edit-turn counter and turn-stamped history (cross-process stale-test model)', () => {
+    it('starts the edit turn counter at 0', () => {
+      expect(cache.getEditTurn()).toBe(0);
+    });
+
+    it('advances the edit turn counter and returns the new value', () => {
+      expect(cache.advanceEditTurn()).toBe(1);
+      expect(cache.advanceEditTurn()).toBe(2);
+      expect(cache.getEditTurn()).toBe(2);
+    });
+
+    it('records turn-stamped edits in history', () => {
+      cache.recordEditTurn('src/router/resolver.ts', 'source', 1);
+      cache.recordEditTurn('tests/router/resolver.test.ts', 'test', 2);
+      expect(cache.getEditHistory()).toEqual([
+        { file: 'src/router/resolver.ts', category: 'source', turn: 1 },
+        { file: 'tests/router/resolver.test.ts', category: 'test', turn: 2 },
+      ]);
+    });
+
+    it('clearEditedFiles clears the turn-stamped history too', () => {
+      cache.recordEditTurn('src/a.ts', 'source', 1);
+      cache.clearEditedFiles();
+      expect(cache.getEditHistory()).toEqual([]);
+    });
+
+    it('reset clears the counter and history', () => {
+      cache.advanceEditTurn();
+      cache.recordEditTurn('src/a.ts', 'source', 1);
+      cache.reset();
+      expect(cache.getEditTurn()).toBe(0);
+      expect(cache.getEditHistory()).toEqual([]);
+    });
+  });
+
   describe('shouldAdvise (advisory re-suppression)', () => {
     it('returns true on the first call for an intent', () => {
       expect(cache.shouldAdvise('native_grep')).toBe(true);
@@ -179,6 +214,21 @@ describe('SessionCache (file-backed)', () => {
     cleanupPaths.push(path);
     return path;
   }
+
+  it('persists the edit-turn counter and history across instances (hook processes)', () => {
+    trackPath(sessionCachePath(testCwd));
+    const first = new SessionCache(testCwd);
+    const turn = first.advanceEditTurn();
+    first.recordEditTurn('src/feature/widget.ts', 'source', turn);
+
+    // A later hook invocation (separate process) loads from disk.
+    const second = new SessionCache(testCwd);
+    expect(second.getEditTurn()).toBe(1);
+    expect(second.getEditHistory()).toEqual([
+      { file: 'src/feature/widget.ts', category: 'source', turn: 1 },
+    ]);
+    expect(second.advanceEditTurn()).toBe(2);
+  });
 
   it('generates deterministic path from cwd', () => {
     const path = sessionCachePath(testCwd);
