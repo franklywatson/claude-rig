@@ -538,6 +538,52 @@ existing settings).
 
 ---
 
+## Behavioral eval harness (`evals/`)
+
+The deterministic test suite is **model-independent by construction** — it never
+runs through a model, so it cannot observe model-driven behavior change. The
+`evals/` harness closes that gap: it drives the real skill chain through a real
+model via `claude -p` and asserts on observable behavior.
+
+In the agent-loops vocabulary it is the **L2 (evaluation-quality) instrument**
+for rig's own skills — frozen reference scenarios (fixture project briefs) with
+human-validated expected behavior, re-evaluated by the current model+prompt.
+
+```
+npm run eval [--model M] [--scenario ID] [--runs K]
+     |
+runner.main()
+     |
+for each scenario (N-of-M runs):
+  drive.ts: scaffold temp project -> rig init -> write brief
+            -> claude -p <prompt> --model M --output-format stream-json
+            -> capture transcript -> track temp dir + session fragments
+  grade.ts: extractAssistantText (visible output only) -> structural match
+            (loop-specific tokens; judge fallback on the negative case)
+  reduce.ts: majority vote -> EvalReport
+  teardown: remove exactly the tracked paths
+```
+
+**Separation from `npm test`:** `evals/` is excluded from the vitest run
+(`vitest.config.ts`); its live `claude -p` runs are the harness's *output*, not
+part of the deterministic suite. The harness's own pure logic (matchers, the
+N-of-M reducer, the report builder) **is** unit-tested under `tests/evals/`
+with canned recorded transcripts — no live model in the unit tests.
+
+**Model robustness:** invariants assert facts a correct system produces under
+any model; the opt-in is keyed on `agent-loop pattern` / `maintainer
+trajectory` (not the ambient `signal stack`); grading uses visible text only;
+the judge is confined to one binary fact on the negative case. Running the
+suite under two models and diffing the reports is the drift check the
+deterministic suite cannot produce.
+
+**Deferred (operator-gated):** a nightly, non-gating CI lane with an
+`ANTHROPIC_API_KEY` secret is specified in `evals/README.md` but not built —
+it commits credentials and recurring spend. Until then, run `npm run eval`
+locally before releases and after model changes.
+
+See `evals/README.md` for usage and the full design.
+
 ## Data flow: init command
 
 ```
