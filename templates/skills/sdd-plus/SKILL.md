@@ -44,6 +44,16 @@ subagent using the superpowers prompt template for that role.
    worktree (`superpowers:using-git-worktrees`) when the plan is multi-task or
    the working tree is dirty, a plain feature branch otherwise.
 
+5. **Team-mode preflight.** If session-start reported `agent-teams: available
+   (experimental)` AND `rules.workflow.team_execution` is not `never`:
+   compute task independence from the plan's contract (disjoint `**Files:**`
+   lists AND no `Depends on:` marker either way). If ≥2 tasks are pairwise
+   independent: at `offer`, ask once — "Team mode available: tasks [N, M, …]
+   are independent — run them as parallel teammates? Sequential otherwise." —
+   and proceed per the answer; at `auto`, use team mode without asking. In
+   every other case (flag absent, `never`, declined, no independent pairs),
+   use the standard sequential dispatch below, unchanged.
+
 ### Phase B: Execute (delegate to superpowers:subagent-driven-development)
 
 1. Invoke `superpowers:subagent-driven-development` with the loaded plan.
@@ -59,6 +69,31 @@ subagent using the superpowers prompt template for that role.
    *outside* this plan (a different branch, disjoint files, no merge-order
    dependency) may proceed concurrently in its own worktree; reviewers are
    read-only and always safe to run in parallel.
+
+### Phase B-team: Team execution (when team mode is on)
+
+1. Create a team named after the plan (e.g. `sdd-<plan-slug>`); the team's
+   shared task list mirrors the plan: one entry per plan task, with
+   `Depends on:` markers encoded as blocked-by edges so only unblocked tasks
+   are claimable.
+2. Spawn implementer teammates — at most 3, and never more than the number of
+   currently-unblocked independent tasks. Each is the typed `implementer`
+   agent, worktree-isolated, joined to the team with a distinct name. Each
+   teammate's standing instructions: claim one unblocked task, execute it on
+   its own branch (`<plan-branch>-task-N`) off the plan branch following the
+   task's TDD steps exactly, push the branch, mark the task complete, then
+   claim the next unblocked task or go idle.
+3. **Lead loop (you):** on each task-completion notification, run the
+   standard two-stage review from Phase B (spec-reviewer, then code-reviewer)
+   against that task's branch. Route review findings back as new blocked
+   tasks assigned to a fresh implementer dispatch. Merge each approved task
+   branch into the plan branch in dependency order — one merge at a time,
+   re-running the suite after each merge.
+4. When all plan tasks are complete and merged: send each teammate a shutdown
+   request, delete the team, and continue to Phase C as in sequential mode.
+5. Turn budgets, worktree isolation, and enforcement apply to teammates
+   exactly as to any typed implementer dispatch (see architecture.md
+   "Subagent operations", including the worktree hook-coverage note).
 
 ### Phase C: Wrap Up
 

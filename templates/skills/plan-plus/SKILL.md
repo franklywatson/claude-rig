@@ -80,6 +80,14 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - Rollout gates (credentials, schedule enablement, live writes) are
      explicitly reserved to the user — never automated in any task
 
+5. **Independence contract** (consumed by sdd+ team mode): every task's
+   `**Files:**` list must be exhaustive — include shared test files a task
+   extends (a tests file touched by several tasks makes them dependent).
+   Where ordering matters even without file overlap, add an explicit
+   `Depends on: Task N` line under the task header. A pair of tasks is
+   parallelizable only when their Files lists are disjoint AND neither
+   depends on the other.
+
 ### Phase C: Validate Plan
 
 1. Confirm the plan:
