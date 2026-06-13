@@ -46,7 +46,7 @@ import { readFileSync } from 'node:fs';
     const result = handlePreToolUse(input.tool_name, input.tool_input, cache, config);
 
     // Transparent rewrite: output JSON with updatedInput
-    if (result && typeof result === 'object' && result.type === 'rewrite') {
+    if (result && result.type === 'rewrite') {
       const output = JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
@@ -57,10 +57,13 @@ import { readFileSync } from 'node:fs';
       process.exit(0);
     }
 
-    // Block: exit 2 + stderr (rejects the tool call, agent-visible)
-    if (result && typeof result === 'string') {
-      if (result.startsWith('[BLOCK]')) {
-        console.error(result);
+    if (result) {
+      // The severity comes from the structured result's level, derived by
+      // the router itself — never from sniffing the message text, which can
+      // embed arbitrary content (e.g. the literal string '[BLOCK]').
+      if (result.level === 'block') {
+        // Block: exit 2 + stderr (rejects the tool call, agent-visible)
+        console.error(result.message);
         process.exit(2); // block
       }
       // Advise: agent-visible additionalContext JSON. Plain text on exit 0
@@ -68,7 +71,7 @@ import { readFileSync } from 'node:fs';
       console.log(JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
-          additionalContext: result,
+          additionalContext: result.message,
         },
       }));
     }

@@ -1,4 +1,4 @@
-import type { HarnessConfig } from '../types.js';
+import type { EnforcementViolation, HarnessConfig } from '../types.js';
 
 const UNSCOPED_TEST_PATTERNS = [
   { pattern: /^(npx\s+)?vitest\s+run\s*$/, runner: 'npx vitest run' },
@@ -37,14 +37,16 @@ function deriveTestPath(sourcePath: string): string {
 /**
  * Check if a test command should be scoped based on the current phase and
  * recent source edits (file paths, e.g. from the session cache).
- * Returns null if no redirect needed.
+ * Returns null if no redirect needed, or a violation carrying its level —
+ * severity is structural ({ level, message }), never sniffed from the
+ * message text.
  */
 export function checkTestScope(
   command: string,
   currentPhase: string | null,
   sourceEdits: string[],
   config: HarnessConfig,
-): string | null {
+): EnforcementViolation | null {
   // Only enforce during scoped-execution phases (tdd+ and sdd+ tasks both run scoped)
   if (!currentPhase || !SCOPED_PHASES.includes(currentPhase)) return null;
 
@@ -59,7 +61,8 @@ export function checkTestScope(
 
   if (sourceEdits.length === 0) return null;
 
-  const prefix = enforcement === 'block' ? '[BLOCK]' : '[ADVISE]';
+  const level = enforcement === 'block' ? 'block' : 'advise';
+  const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
 
   const testPaths = sourceEdits.map(deriveTestPath);
   const scopedCommand = `${runner} ${testPaths.join(' ')}`;
@@ -76,5 +79,5 @@ export function checkTestScope(
     `Full suite runs are reserved for the verify+ phase (final verification).`,
   ];
 
-  return lines.join('\n');
+  return { level, message: lines.join('\n') };
 }

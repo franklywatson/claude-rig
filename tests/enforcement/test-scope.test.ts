@@ -35,9 +35,9 @@ describe('checkTestScope', () => {
 
     const result = checkTestScope('npx vitest run', 'tdd+', sourceEdits, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('TEST SCOPE');
-    expect(result).toContain('resolver.test.ts');
-    expect(result).toContain('zero-defect.test.ts');
+    expect(result?.message).toContain('TEST SCOPE');
+    expect(result?.message).toContain('resolver.test.ts');
+    expect(result?.message).toContain('zero-defect.test.ts');
   });
 
   it('returns null for unscoped test during verify+ phase', () => {
@@ -56,7 +56,7 @@ describe('checkTestScope', () => {
 
     const result = checkTestScope('pytest', 'tdd+', sourceEdits, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('TEST SCOPE');
+    expect(result?.message).toContain('TEST SCOPE');
   });
 
   it('returns null for scoped pytest run', () => {
@@ -69,13 +69,15 @@ describe('checkTestScope', () => {
     config.rules.test_scope = { enforcement: 'block', allowed_unscoped: [] };
 
     const result = checkTestScope('npx vitest run', 'tdd+', sourceEdits, config);
-    expect(result).toContain('[BLOCK]');
+    expect(result?.level).toBe('block');
+    expect(result?.message).toContain('[BLOCK]');
   });
 
   it('shows advise by default', () => {
     sourceEdits.push('src/router/resolver.ts');
     const result = checkTestScope('npx vitest run', 'tdd+', sourceEdits, config);
-    expect(result).toContain('[ADVISE]');
+    expect(result?.level).toBe('advise');
+    expect(result?.message).toContain('[ADVISE]');
   });
 
   it('generates correct scoped command suggestion', () => {
@@ -83,7 +85,7 @@ describe('checkTestScope', () => {
     sourceEdits.push('src/router/rules.ts');
 
     const result = checkTestScope('npx vitest run', 'tdd+', sourceEdits, config);
-    expect(result).toContain('npx vitest run tests/router/resolver.test.ts tests/router/rules.test.ts');
+    expect(result?.message).toContain('npx vitest run tests/router/resolver.test.ts tests/router/rules.test.ts');
   });
 
   it('redirects unscoped test during sdd+ phase', () => {
@@ -91,8 +93,8 @@ describe('checkTestScope', () => {
 
     const result = checkTestScope('npx vitest run', 'sdd+', sourceEdits, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('TEST SCOPE');
-    expect(result).toContain('tests/router/resolver.test.ts');
+    expect(result?.message).toContain('TEST SCOPE');
+    expect(result?.message).toContain('tests/router/resolver.test.ts');
   });
 
   it('returns null when enforcement is silent', () => {
@@ -108,8 +110,8 @@ describe('checkTestScope', () => {
 
     const result = checkTestScope('npm test', 'tdd+', sourceEdits, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('TEST SCOPE');
-    expect(result).toContain('npm test -- tests/router/resolver.test.ts');
+    expect(result?.message).toContain('TEST SCOPE');
+    expect(result?.message).toContain('npm test -- tests/router/resolver.test.ts');
   });
 
   it('detects npm run test as an unscoped full-suite run', () => {
@@ -117,6 +119,6 @@ describe('checkTestScope', () => {
 
     const result = checkTestScope('npm run test', 'sdd+', sourceEdits, config);
     expect(result).not.toBeNull();
-    expect(result).toContain('npm test -- tests/router/resolver.test.ts');
+    expect(result?.message).toContain('npm test -- tests/router/resolver.test.ts');
   });
 });

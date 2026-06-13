@@ -31,22 +31,24 @@ export interface ParsedResult {
 
 /**
  * Parse a hook result into a structured { action, tool? } form.
- * Handles string output (advise/block), RewriteResult (rewrite), and null (allow).
+ * Handles structured EnforcementViolation output (advise/block),
+ * RewriteResult (rewrite), and null (allow). Severity comes from the
+ * structured level — never from sniffing the message text.
  */
-export function parseResult(result: string | import('../../src/types.js').RewriteResult | null): ParsedResult {
+export function parseResult(
+  result: import('../../src/types.js').EnforcementViolation | import('../../src/types.js').RewriteResult | null,
+): ParsedResult {
   if (result === null) return { action: 'allow' };
-  if (typeof result === 'object' && result.type === 'rewrite') {
+  if ('type' in result && result.type === 'rewrite') {
     const firstWord = result.command.split(/\s+/)[0];
     // "rtk grep ..." -> tool is "rtk grep"
     const secondWord = result.command.split(/\s+/)[1];
     const tool = secondWord ? `${firstWord} ${secondWord}` : firstWord;
     return { action: 'rewrite', tool };
   }
-  // String output
-  const str = result as string;
-  if (str.includes('[BLOCK]')) return { action: 'block' };
-  if (str.includes('[ADVISE]')) {
-    const match = str.match(/advise: use (.+?) —/i) ?? str.match(/advise: use (\S+)/i);
+  if ('level' in result) {
+    if (result.level === 'block') return { action: 'block' };
+    const match = result.message.match(/advise: use (.+?) —/i) ?? result.message.match(/advise: use (\S+)/i);
     return { action: 'advise', tool: match?.[1]?.trim() };
   }
   return { action: 'unknown' };
@@ -61,7 +63,7 @@ export function parseResult(result: string | import('../../src/types.js').Rewrit
  */
 export function scoreResult(
   expected: ExpectedOutcome,
-  result: string | import('../../src/types.js').RewriteResult | null,
+  result: import('../../src/types.js').EnforcementViolation | import('../../src/types.js').RewriteResult | null,
 ): number {
   const parsed = parseResult(result);
 

@@ -1,6 +1,6 @@
 import { execFileSync, execSync } from 'node:child_process';
 import { appendFileSync } from 'node:fs';
-import type { HarnessConfig, RewriteResult } from '../types.js';
+import type { EnforcementViolation, HarnessConfig, RewriteResult } from '../types.js';
 import { SessionCache } from '../session/cache.js';
 import { findMatchingRule, getDefaultRules } from './rules.js';
 import { resolve } from './resolver.js';
@@ -141,8 +141,11 @@ function defaultEnv() {
 }
 
 /**
- * PreToolUse hook handler. Returns null to allow, a string to advise/block,
- * or a RewriteResult to transparently rewrite the tool call.
+ * PreToolUse hook handler. Returns null to allow, a structured
+ * EnforcementViolation ({ level, message }) to advise/block, or a
+ * RewriteResult to transparently rewrite the tool call. Severity is
+ * structural — the hook template switches on `level`, never on message-text
+ * prefixes like '[BLOCK]', which can legitimately appear inside messages.
  *
  * Flow:
  * 1. Resolution-level blocks (file_modify, rtk_cat_code) — always block
@@ -157,7 +160,7 @@ export function handlePreToolUse(
   config: HarnessConfig,
   cwd?: string,
   options?: ExecRewriteFn | HookOptions,
-): string | RewriteResult | null {
+): EnforcementViolation | RewriteResult | null {
   const effectiveCwd = cwd ?? process.cwd();
   const resolvedOptions: HookOptions = typeof options === 'function'
     ? { execRewrite: options }
@@ -175,14 +178,18 @@ export function handlePreToolUse(
       // advises, then every ADVISORY_READVISE_PERIOD-th suppressed
       // occurrence re-advises.
       if (enforcement === 'advise' && !cache.shouldAdvise('scout_explore')) return null;
-      const prefix = enforcement === 'block' ? '[BLOCK]' : '[ADVISE]';
-      return [
-        `${prefix} Tool Router: scout_explore detected`,
-        `advise: use scout — You MUST use Agent with subagent_type: "scout" instead of Explore when examining codebases. Scout uses jcodemunch and graphify MCP tools for token-efficient exploration (80%+ fewer tokens).`,
-        enforcement === 'block'
-          ? 'This operation is blocked by .harness.yaml. Use the recommended tool instead.'
-          : 'Do not dismiss this advisory. Switch to subagent_type: "scout" now.',
-      ].join('\n');
+      const level = enforcement === 'block' ? 'block' : 'advise';
+      const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
+      return {
+        level,
+        message: [
+          `${prefix} Tool Router: scout_explore detected`,
+          `advise: use scout — You MUST use Agent with subagent_type: "scout" instead of Explore when examining codebases. Scout uses jcodemunch and graphify MCP tools for token-efficient exploration (80%+ fewer tokens).`,
+          level === 'block'
+            ? 'This operation is blocked by .harness.yaml. Use the recommended tool instead.'
+            : 'Do not dismiss this advisory. Switch to subagent_type: "scout" now.',
+        ].join('\n'),
+      };
     }
     // jcodemunch not available — fall through to file_discovery
     match = findMatchingRule(tool, args, rules, new Set(['scout_explore']));
@@ -192,11 +199,14 @@ export function handlePreToolUse(
   if (match) {
     const resolution = resolve(match, env);
     if (resolution.action === 'block') {
-      return [
-        `[BLOCK] Tool Router: ${match.intent} operation blocked`,
-        `Reason: ${resolution.reason}`,
-        'This operation is always blocked. Use the recommended alternative.',
-      ].join('\n');
+      return {
+        level: 'block',
+        message: [
+          `[BLOCK] Tool Router: ${match.intent} operation blocked`,
+          `Reason: ${resolution.reason}`,
+          'This operation is always blocked. Use the recommended alternative.',
+        ].join('\n'),
+      };
     }
   }
 
@@ -209,7 +219,7 @@ export function handlePreToolUse(
   // today because no UNSCOPED_TEST_PATTERNS command is rtk- or
   // python-rewritable — revisit if RTK_PREFIXES ever gains test runners.
   if (tool === 'Bash' && typeof args.command === 'string') {
-    const preflight: { level: 'advise' | 'block'; message: string }[] = [];
+    const preflight: EnforcementViolation[] = [];
 
     // Step 1.5: Test-scope check — during tdd+/sdd+, advise a scoped run
     // before a full-suite command executes. Hooks are separate processes, so
@@ -222,12 +232,7 @@ export function handlePreToolUse(
       cache.getEditedFiles('source'),
       config,
     );
-    if (scopeViolation) {
-      preflight.push({
-        level: scopeViolation.startsWith('[BLOCK]') ? 'block' : 'advise',
-        message: scopeViolation,
-      });
-    }
+    if (scopeViolation) preflight.push(scopeViolation);
 
     // Step 1.6: Branch discipline — git commit/push on a protected branch
     // advises on the first occurrence and every ADVISORY_READVISE_PERIOD-th
@@ -241,8 +246,8 @@ export function handlePreToolUse(
     if (discipline) preflight.push(discipline);
 
     const blocked = preflight.find(r => r.level === 'block');
-    if (blocked) return blocked.message;
-    if (preflight.length > 0) return preflight[0].message;
+    if (blocked) return blocked;
+    if (preflight.length > 0) return preflight[0];
   }
 
   // Step 2: Python environment rewrite for Bash commands (skip compound commands)
@@ -294,16 +299,19 @@ export function handlePreToolUse(
     if (!cache.shouldAdvise(match.intent)) return null;
   }
 
-  const prefix = enforcementLevel === 'block' ? '[BLOCK]' : '[ADVISE]';
-
   if (resolution.action === 'advise') {
-    return [
-      `${prefix} Tool Router: ${match.intent} detected`,
-      `advise: use ${resolution.tool} — ${resolution.reason}`,
-      enforcementLevel === 'block'
-        ? 'This operation is blocked by .harness.yaml. Use the recommended tool instead.'
-        : 'Consider using the recommended tool for better efficiency.',
-    ].join('\n');
+    const level = enforcementLevel === 'block' ? 'block' : 'advise';
+    const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
+    return {
+      level,
+      message: [
+        `${prefix} Tool Router: ${match.intent} detected`,
+        `advise: use ${resolution.tool} — ${resolution.reason}`,
+        level === 'block'
+          ? 'This operation is blocked by .harness.yaml. Use the recommended tool instead.'
+          : 'Consider using the recommended tool for better efficiency.',
+      ].join('\n'),
+    };
   }
 
   return null;

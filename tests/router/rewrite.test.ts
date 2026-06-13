@@ -313,8 +313,8 @@ describe('handlePreToolUse: block rules take priority', () => {
     const result = handlePreToolUse(
       'Bash', { command: "sed -i 's/foo/bar/' file.ts" }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[BLOCK]');
+    expect(result).toMatchObject({ level: 'block' });
+    expect((result as { message: string }).message).toContain('[BLOCK]');
   });
 
   it('blocks rtk cat on code files even when rtk available', () => {
@@ -323,8 +323,8 @@ describe('handlePreToolUse: block rules take priority', () => {
     const result = handlePreToolUse(
       'Bash', { command: 'rtk cat src/types.ts' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[BLOCK]');
+    expect(result).toMatchObject({ level: 'block' });
+    expect((result as { message: string }).message).toContain('[BLOCK]');
   });
 });
 
@@ -343,7 +343,7 @@ describe('handlePreToolUse: non-Bash tools', () => {
     detectedAt: Date.now(),
   };
 
-  it('Read tool returns string (advise), never RewriteResult', () => {
+  it('Read tool returns a structured advisory, never RewriteResult', () => {
     const cache = new SessionCache();
     cache.setEnvironment(ENV_WITH_RTK);
     const result = handlePreToolUse(
@@ -351,29 +351,32 @@ describe('handlePreToolUse: non-Bash tools', () => {
     );
     // Should be string (advise about jcodemunch) or null (allow), never a RewriteResult
     if (result !== null) {
-      expect(typeof result).toBe('string');
+      expect((result as { type?: string }).type).not.toBe('rewrite');
+      expect(result).toMatchObject({ level: 'advise' });
     }
   });
 
-  it('Grep tool returns string (advise), never RewriteResult', () => {
+  it('Grep tool returns a structured advisory, never RewriteResult', () => {
     const cache = new SessionCache();
     cache.setEnvironment(ENV_WITH_RTK);
     const result = handlePreToolUse(
       'Grep', { pattern: 'function resolve' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
     if (result !== null) {
-      expect(typeof result).toBe('string');
+      expect((result as { type?: string }).type).not.toBe('rewrite');
+      expect(result).toMatchObject({ level: 'advise' });
     }
   });
 
-  it('Glob tool returns string (advise), never RewriteResult', () => {
+  it('Glob tool returns a structured advisory, never RewriteResult', () => {
     const cache = new SessionCache();
     cache.setEnvironment(ENV_WITH_RTK);
     const result = handlePreToolUse(
       'Glob', { pattern: '**/*.ts' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
     if (result !== null) {
-      expect(typeof result).toBe('string');
+      expect((result as { type?: string }).type).not.toBe('rewrite');
+      expect(result).toMatchObject({ level: 'advise' });
     }
   });
 
@@ -411,8 +414,8 @@ describe('handlePreToolUse: rtk unavailable', () => {
     );
     // rtk not available, so mockRewriteSuccess is never called
     // Falls through to advise about jcodemunch (default config has grep: 'advise')
-    expect(typeof result).toBe('string');
-    expect(result).toContain('jcodemunch');
+    expect(result).toMatchObject({ level: 'advise' });
+    expect((result as { message: string }).message).toContain('jcodemunch');
   });
 
   it('cat falls through to advise jcodemunch when rtk unavailable', () => {
@@ -421,8 +424,8 @@ describe('handlePreToolUse: rtk unavailable', () => {
     const result = handlePreToolUse(
       'Bash', { command: 'cat src/file.ts' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[ADVISE]');
+    expect(result).toMatchObject({ level: 'advise' });
+    expect((result as { message: string }).message).toContain('[ADVISE]');
   });
 
   it('find falls through to advise jcodemunch when rtk unavailable', () => {
@@ -431,8 +434,8 @@ describe('handlePreToolUse: rtk unavailable', () => {
     const result = handlePreToolUse(
       'Bash', { command: 'find . -name "*.ts"' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[ADVISE]');
+    expect(result).toMatchObject({ level: 'advise' });
+    expect((result as { message: string }).message).toContain('[ADVISE]');
   });
 });
 
@@ -457,8 +460,8 @@ describe('handlePreToolUse: neither rtk nor jcodemunch', () => {
     const result = handlePreToolUse(
       'Bash', { command: 'cat src/file.ts' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('Read');
+    expect(result).toMatchObject({ level: 'advise' });
+    expect((result as { message: string }).message).toContain('Read');
   });
 
   it('grep falls through to advise Grep', () => {
@@ -467,8 +470,8 @@ describe('handlePreToolUse: neither rtk nor jcodemunch', () => {
     const result = handlePreToolUse(
       'Bash', { command: 'grep -r "TODO" src/' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('Grep');
+    expect(result).toMatchObject({ level: 'advise' });
+    expect((result as { message: string }).message).toContain('Grep');
   });
 
   it('find falls through to advise Glob', () => {
@@ -477,8 +480,8 @@ describe('handlePreToolUse: neither rtk nor jcodemunch', () => {
     const result = handlePreToolUse(
       'Bash', { command: 'find . -name "*.ts"' }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('Glob');
+    expect(result).toMatchObject({ level: 'advise' });
+    expect((result as { message: string }).message).toContain('Glob');
   });
 
   it('git status is allowed (no routing needed)', () => {
@@ -546,8 +549,8 @@ describe('handlePreToolUse: pipe handling', () => {
     const result = handlePreToolUse(
       'Bash', { command: "rg pattern . ; sed -i 's/a/b/g' f" }, cache, DEFAULT_CONFIG, undefined, mockRewriteSuccess,
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[BLOCK]');
+    expect(result).toMatchObject({ level: 'block' });
+    expect((result as { message: string }).message).toContain('[BLOCK]');
   });
 
   it('chained ls; diff passes through without rtk rewrite', () => {
@@ -611,7 +614,7 @@ describe('handlePreToolUse: rtk returns identical command', () => {
     );
     // tryRtkRewrite returns null for identical, so falls through to advise
     expect(result).not.toBeNull();
-    // Should be an advise string, not a RewriteResult
-    expect(typeof result).toBe('string');
+    // Should be a structured advisory, not a RewriteResult
+    expect(result).toMatchObject({ level: 'advise' });
   });
 });

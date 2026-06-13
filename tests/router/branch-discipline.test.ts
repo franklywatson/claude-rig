@@ -307,10 +307,11 @@ describe('handlePreToolUse branch discipline wiring', () => {
       undefined,
       { branchExec: exec },
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[ADVISE]');
-    expect(result).toContain('Branch discipline');
-    expect(result).toContain('master');
+    expect(result).toMatchObject({ level: 'advise' });
+    const advisory = result as { level: string; message: string };
+    expect(advisory.message).toContain('[ADVISE]');
+    expect(advisory.message).toContain('Branch discipline');
+    expect(advisory.message).toContain('master');
   });
 
   it('returns the [BLOCK] message for git push on master at block level', () => {
@@ -324,9 +325,10 @@ describe('handlePreToolUse branch discipline wiring', () => {
       undefined,
       { branchExec: exec },
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[BLOCK]');
-    expect(result).toContain('Branch discipline');
+    expect(result).toMatchObject({ level: 'block' });
+    const blockResult = result as { level: string; message: string };
+    expect(blockResult.message).toContain('[BLOCK]');
+    expect(blockResult.message).toContain('Branch discipline');
   });
 
   it('branch-discipline block wins for a compound command during tdd+ phase', () => {
@@ -344,9 +346,10 @@ describe('handlePreToolUse branch discipline wiring', () => {
       undefined,
       { branchExec: exec },
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[BLOCK]');
-    expect(result).toContain('Branch discipline');
+    expect(result).toMatchObject({ level: 'block' });
+    const compound = result as { level: string; message: string };
+    expect(compound.message).toContain('[BLOCK]');
+    expect(compound.message).toContain('Branch discipline');
   });
 
   it('test-scope block wins over a branch-discipline advisory on the same command', () => {
@@ -366,9 +369,10 @@ describe('handlePreToolUse branch discipline wiring', () => {
       undefined,
       { branchExec: exec },
     );
-    expect(typeof result).toBe('string');
-    expect(result).toContain('[BLOCK]');
-    expect(result).toContain('TEST SCOPE');
+    expect(result).toMatchObject({ level: 'block' });
+    const scopeBlock = result as { level: string; message: string };
+    expect(scopeBlock.message).toContain('[BLOCK]');
+    expect(scopeBlock.message).toContain('TEST SCOPE');
   });
 
   it('passes git commit through on a feature branch', () => {
