@@ -1,7 +1,7 @@
 # Typed Subagent Dispatch & Loop-Aware Skill Chain — Design
 
 **Date:** 2026-06-12
-**Status:** Approved
+**Status:** Implemented — shipped in v0.5.0 (PRs #34, #35); archived 2026-06-12
 **Scope:** Two-part evolution of rig's skill chain. Part 1 replaces general-purpose
 subagent dispatch with typed agent definitions. Part 2 encodes the agent-loop /
 signal-stack operating model as an opt-in design vocabulary in `brain+` and `plan+`.

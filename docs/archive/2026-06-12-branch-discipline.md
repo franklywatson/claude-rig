@@ -1,5 +1,7 @@
 # Branch/PR Discipline Implementation Plan
 
+> **Status:** Executed — all tasks complete, shipped in v0.6.0 (PR #40); archived 2026-06-12
+>
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Configurable branch/PR discipline — session-start nudge with worktree-vs-branch strategy, once-per-session commit-time advisory (or block), and skill-chain propagation. Spec: `docs/superpowers/specs/2026-06-12-branch-discipline-design.md`.
