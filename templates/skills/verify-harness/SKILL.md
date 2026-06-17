@@ -18,8 +18,8 @@ Run each check and report PASS/FAIL with evidence.
 
 - [ ] **S1**: Session started without hook errors
 - [ ] **S2**: Run `which rtk` — report if available
-- [ ] **S3**: Run `which jcodemunch` — report if available
-- [ ] **S4**: Check if CWD is indexed: run `jcodemunch list_repos` if available
+- [ ] **S3**: Run `which jcodemunch-mcp` (or `which uvx`) — report if available
+- [ ] **S4**: Check if CWD is indexed: run `jcodemunch-mcp list-repos` if available
 - [ ] **S5**: Check `.harness.yaml` exists and parses
 
 ### Tool Router (PreToolUse Hook)
