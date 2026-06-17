@@ -1,5 +1,8 @@
 # Plan — Fix PostToolUse Write-content field + refresh stale ai-news harness
 
+> **Status:** Executed — fix shipped in commit 677a63a (args.content ?? new_string in post-tool-use.ts); eval in 291ecef; archived 2026-06-17
+
+
 - **Branch:** `fix/post-tool-use-write-content-field` (claude-rig)
 - **Date:** 2026-06-17
 - **Source:** `/verify-harness` findings (brain+ design, approved: _Full fix + refresh ai-news_; cross-OS: _flag, don't hack_)
