@@ -69,6 +69,27 @@ const ENFORCEMENT_SCENARIOS: EnforcementScenario[] = [
     expectedViolation: false,
   },
   {
+    id: 'enforce_mock_in_stack_test_via_write',
+    description: 'vi.mock in stack test file created via Write (content) → constitutional violation',
+    tool: 'Write',
+    args: {
+      file_path: '/project/tests/stack/database.stack.test.ts',
+      content: 'vi.mock("../src/database", () => ({ db: {} }))',
+    },
+    expectedViolation: true,
+    expectedMatch: 'mock',
+  },
+  {
+    id: 'enforce_mock_in_unit_test_via_write',
+    description: 'vi.mock in unit test file created via Write (content) → no constitutional violation',
+    tool: 'Write',
+    args: {
+      file_path: '/project/tests/unit/calculator.test.ts',
+      content: 'vi.mock("../src/external-api", () => ({ fetch: vi.fn() }))',
+    },
+    expectedViolation: false,
+  },
+  {
     id: 'enforce_test_failure',
     description: 'test command with failure output → zero-defect violation',
     tool: 'Bash',
