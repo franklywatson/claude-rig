@@ -177,6 +177,24 @@ describe('handlePostToolUse', () => {
     expect(result?.message).toContain('no_mocks');
   });
 
+  it('checks constitutional on stack test files written via Write (content, not new_string)', () => {
+    // The Write tool delivers file content in `content`, not `new_string`.
+    // Constitutional inspection must read `content` or the check is dormant for
+    // every file created via Write.
+    const result = handlePostToolUse(
+      'Write',
+      {
+        file_path: 'tests/router/resolver.stack.test.ts',
+        content: "jest.mock('../src/router/resolver.js');",
+      },
+      tracker,
+      cache,
+      config,
+    );
+    expect(result).not.toBeNull();
+    expect(result?.message).toContain('no_mocks');
+  });
+
   it('combines multiple violations into single output', () => {
     // Edit a stack test file with a mock
     const result = handlePostToolUse(

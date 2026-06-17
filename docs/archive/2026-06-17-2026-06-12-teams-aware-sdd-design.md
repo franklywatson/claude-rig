@@ -1,5 +1,8 @@
 # Teams-Aware sdd+ — Design
 
+> **Status:** Executed — design realized by the shipped teams-aware sdd+; archived 2026-06-17
+
+
 **Date:** 2026-06-12
 **Status:** Approved — plan written
 (`docs/superpowers/plans/2026-06-12-teams-aware-sdd.md`); execution pending

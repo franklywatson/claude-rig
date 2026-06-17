@@ -1,5 +1,8 @@
 # Behavioral Eval Harness — Design
 
+> **Status:** Executed — design realized by the shipped eval harness (PR #45); archived 2026-06-17
+
+
 **Date:** 2026-06-12
 **Status:** Approved
 **Task:** #26.

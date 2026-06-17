@@ -1,5 +1,8 @@
 # Plan: macOS jcodemunch Detection + Advisory Suppression Fixes
 
+> **Status:** Executed — shipped in PR #25 / commit f0d8467; uvx detection + basename + broad-permissions live; archived 2026-06-17
+
+
 **Date:** 2026-05-15
 **Status:** Approved — ready for tdd+
 

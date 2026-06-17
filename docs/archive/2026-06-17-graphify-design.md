@@ -1,5 +1,8 @@
 # Graphify Integration Redesign — Design Context
 
+> **Status:** Executed — investigation/design context consumed by the shipped graphify redesign; archived 2026-06-17
+
+
 ## Investigation Results
 
 ### Graphify CLI Lifecycle (exercised on ~/tools/hermes-agent)

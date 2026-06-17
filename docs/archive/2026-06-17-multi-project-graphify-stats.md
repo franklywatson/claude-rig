@@ -1,5 +1,8 @@
 # Plan: Multi-Project Graphify Stats
 
+> **Status:** Executed — shipped in PR #11 / commit 294e3c1; Record type + accessors live; archived 2026-06-17
+
+
 **Branch:** `fix/multi-project-graphify-stats`
 **Date:** 2026-04-23
 

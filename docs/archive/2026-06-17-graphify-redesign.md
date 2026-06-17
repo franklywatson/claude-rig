@@ -1,5 +1,8 @@
 # Plan: Graphify Integration Redesign
 
+> **Status:** Executed — all 10 tasks shipped across commits f6c0a42 to 1f5a57f; live in src/scout/graph-state.ts; archived 2026-06-17
+
+
 ## Constitutional Rules for This Plan
 
 - Use injectable `ExecFn` and `ExistsCheck` for all subprocess/filesystem calls — no hardcoded shell commands in source, no real filesystem in tests

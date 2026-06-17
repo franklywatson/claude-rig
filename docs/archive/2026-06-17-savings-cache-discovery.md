@@ -1,5 +1,8 @@
 # Savings Cache Discovery Fix
 
+> **Status:** Executed — shipped in PR #12 / commits a80e723, 31fdbac; cwd + resolveGraphifyStats live; archived 2026-06-17
+
+
 ## Problem
 
 Two bugs prevent `/savings` from working on multi-project hosts:
