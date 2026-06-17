@@ -133,8 +133,10 @@ function runPostToolChecks(
         cache.recordEditTurn(filePath, turn);
       }
 
-      // Constitutional check on edited test files
-      const content = (args.new_string as string) ?? '';
+      // Constitutional check on edited test files. Edit delivers the inserted
+      // text in `new_string`; Write delivers the full file body in `content`.
+      // Read both or Write-created files skip the check entirely.
+      const content = (args.content as string) ?? (args.new_string as string) ?? '';
       const constitutional = checkConstitutional(filePath, content, config);
       if (constitutional) violations.push(constitutional);
     }
