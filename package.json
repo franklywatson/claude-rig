@@ -27,10 +27,11 @@
   "license": "MIT",
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^3.0.0",
     "markdownlint-cli2": "^0.22.0",
+    "tsx": "^4.22.4",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0",
-    "@vitest/coverage-v8": "^3.0.0"
+    "vitest": "^3.0.0"
   },
   "dependencies": {
     "commander": "^14.0.3",
