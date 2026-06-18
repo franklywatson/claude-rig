@@ -1,0 +1,27 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      # Reads conventional commits on master, maintains a release PR that bumps
+      # package.json + package-lock.json. Merging that PR tags vX.Y.Z and
+      # publishes the GitHub Release with generated notes. Config + manifest are
+      # auto-detected at the repo root (release-please-config.json,
+      # .release-please-manifest.json).
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
