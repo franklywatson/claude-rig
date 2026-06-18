@@ -319,6 +319,21 @@ CI gate (the nightly lane is operator-gated). See
 [evals/README.md](evals/README.md) and
 [docs/architecture.md](docs/architecture.md#behavioral-eval-harness-evals).
 
+### Releasing
+
+Releases are automated with
+[release-please](https://github.com/googleapis/release-please) -- you don't cut
+them by hand. Merge feature PRs with
+[conventional commit](https://www.conventionalcommits.org) messages (`feat:`,
+`fix:`, `feat!`/`BREAKING CHANGE:`) and release-please keeps a release PR open
+that bumps `package.json` and `package-lock.json`. Merging that release PR tags
+`vX.Y.Z` and publishes the GitHub Release with generated notes. There is no
+in-repo `CHANGELOG.md` (`skip-changelog`); the notes live on the Release page.
+
+The workflow (`.github/workflows/release.yml`) runs on every push to `master`.
+A release PR appears only once a releasable commit (`feat:` or `fix:`) lands
+after the latest tag -- `chore:`/`ci:`/`docs:` commits alone do not trigger one.
+
 ## Dogfooding
 
 Rig uses itself during development. After building, run `rig init` in this repo to install hooks, skills, and agents into the local `.claude/` directory:
