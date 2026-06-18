@@ -1,6 +1,6 @@
 {
   "name": "rig",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Agent harness that enforces tool routing, skill chains, and multi-agent discipline in Claude Code",
   "type": "module",
   "main": "dist/cli/index.js",
