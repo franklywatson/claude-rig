@@ -41,11 +41,15 @@ const defaultWriteDiag = (line: string): void => {
  *   2           deny rule matched — pass through (never use stdout)
  *   3 + stdout  "Ask" verdict — rewrite valid, but must not be auto-allowed
  *
- * rig never auto-allows (the hook emits updatedInput without a
- * permissionDecision, so Claude Code's own permission flow applies to the
- * rewritten command), which makes exit 3 equivalent to exit 0 here. rtk maps
- * commands without an explicit allow rule — notably all git commands — to
- * Ask, so dropping exit-3 output would lose the most common rewrites.
+ * rig emits each rewrite as updatedInput paired with permissionDecision
+ * "allow" (see templates/hooks/pre-tool-use.ts): Claude Code only applies
+ * updatedInput when a permissionDecision is present, so "allow" auto-approves
+ * the rewritten command in place of the original. This makes exit 3 equivalent
+ * to exit 0 here. rtk maps commands without an explicit allow rule — notably
+ * all git commands — to Ask, so dropping exit-3 output would lose the most
+ * common rewrites. Rewrites only take effect in permission modes that consult
+ * the hook's decision (default mode) — not bypassPermissions, where
+ * updatedInput is ignored and the original command runs unmodified.
  *
  * Anything outside the protocol — exit 3 without output, other exit codes,
  * signals, ENOENT — is appended as a JSON line to the diagnostic log so

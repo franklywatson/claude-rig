@@ -45,11 +45,18 @@ import { readFileSync } from 'node:fs';
   loadConfig(resolve(cwd, '.harness.yaml')).then((config: any) => {
     const result = handlePreToolUse(input.tool_name, input.tool_input, cache, config);
 
-    // Transparent rewrite: output JSON with updatedInput
+    // Transparent rewrite: output JSON with updatedInput.
+    // Claude Code only applies updatedInput when paired with a
+    // permissionDecision — "allow" auto-approves the rewritten command so it
+    // runs in place of the original. Without one the input is deferred and the
+    // ORIGINAL command runs unmodified, silently defeating every rtk rewrite.
+    // (Only takes effect in permission modes that consult the hook's decision,
+    // i.e. default mode — not bypassPermissions.)
     if (result && result.type === 'rewrite') {
       const output = JSON.stringify({
         hookSpecificOutput: {
           hookEventName: 'PreToolUse',
+          permissionDecision: 'allow',
           updatedInput: { command: result.command },
         },
       });
