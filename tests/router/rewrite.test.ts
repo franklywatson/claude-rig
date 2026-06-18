@@ -53,10 +53,10 @@ describe('makeDefaultExecRewrite diagnostics', () => {
   //   1           no RTK equivalent
   //   2           deny rule matched
   //   3 + stdout  "Ask" — rewrite valid, but the hook must not auto-allow.
-  // rig never auto-allows (it emits updatedInput without permissionDecision),
-  // so an exit-3 rewrite is used exactly like an exit-0 rewrite. Field bug:
-  // rtk maps git commands to Ask (Default verdict), so dropping exit-3 output
-  // silently lost every git rewrite.
+  // rig emits updatedInput paired with permissionDecision:"allow", which
+  // auto-approves the rewritten command — so an exit-3 rewrite is used exactly
+  // like an exit-0 rewrite. Field bug: rtk maps git commands to Ask (Default
+  // verdict), so dropping exit-3 output silently lost every git rewrite.
   it('uses the stdout rewrite on exit 3 (rtk Ask verdict) without diagnostics', () => {
     const writeDiag = vi.fn();
     const rewrite = makeDefaultExecRewrite(

@@ -301,6 +301,18 @@ describe('initCommand', () => {
     }
   });
 
+  it('pairs updatedInput with permissionDecision:"allow" for rtk rewrites', async () => {
+    // Claude Code's PreToolUse protocol only applies `updatedInput` when it is
+    // accompanied by a `permissionDecision` ("allow" auto-approves the rewritten
+    // command; without one the input is deferred and the original command runs
+    // unmodified — silently defeating every rtk rewrite). The generated wrapper
+    // must therefore emit both fields together in the rewrite branch.
+    await initCommand(tempDir, { force: false });
+    const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'pre-tool-use.ts'), 'utf-8');
+    expect(content).toMatch(/permissionDecision:\s*['"]allow['"]/);
+    expect(content).toContain('updatedInput');
+  });
+
   it('generates pre-tool-use hook that only exits 2 for block-level results, not advisories', async () => {
     await initCommand(tempDir, { force: false });
 

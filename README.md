@@ -41,7 +41,8 @@ to reach for, and what each is saving you. Rig carries it instead:
 Rig installs the cockpit into a Claude Code project:
 
 - **Tool Router** -- intercepts shell commands via PreToolUse hooks, transparently rewrites
-  `grep`/`find`/`cat`/`git` to rtk when available (using Claude Code's `updatedInput` protocol);
+  `grep`/`find`/`cat`/`git` to rtk when available (via `updatedInput` paired with `permissionDecision: "allow"`,
+  default permission mode only — `bypassPermissions` ignores the rewrite);
   advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and `rtk cat` on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, constitutional rules (real dependencies in stack/E2E tests),
   and zero-defect status (with pre-existing failure classification); a PreToolUse test-scope check redirects full-suite runs

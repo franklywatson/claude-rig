@@ -128,10 +128,13 @@ on the Grep tool.
 `src/hooks/rewrite_cmd.rs`): exit 0 + stdout = rewrite (safe to auto-allow),
 exit 1 = no RTK equivalent, exit 2 = deny rule matched, exit 3 + stdout =
 "Ask" verdict (rewrite valid, must not be auto-allowed). Rig uses exit-0 and
-exit-3 rewrites identically because it never auto-allows — the hook emits
-`updatedInput` without a `permissionDecision`, so Claude Code's own
-permission flow applies to the rewritten command. Exits 1 and 2 fall through
-silently to rig's own rules by design (stdout is never used on exit 2).
+exit-3 rewrites identically — the hook emits `updatedInput` paired with
+`permissionDecision: "allow"`, which auto-approves the rewritten command in
+place of the original (Claude Code ignores `updatedInput` unless a
+`permissionDecision` accompanies it). This only takes effect in default
+permission mode; in `bypassPermissions` the `updatedInput` is ignored and the
+original command runs unmodified. Exits 1 and 2 fall through silently to
+rig's own rules by design (stdout is never used on exit 2).
 Anything outside the protocol (exit 3 without output, other exit codes,
 signals, ENOENT) is appended as a JSON line to
 `/tmp/rig-rtk-rewrite-failures.log` so silent fallthroughs are
