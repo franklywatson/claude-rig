@@ -666,10 +666,51 @@ console.log('stale old hook');
       expect(deny).toContain('Edit(**/credentials/**)');
       expect(deny).toContain('Edit(**/*.pem)');
       expect(deny).toContain('Edit(**/*.key)');
-      expect(deny).toContain('Write(**/secrets/**)');
-      expect(deny).toContain('Write(**/credentials/**)');
-      expect(deny).toContain('Write(**/*.pem)');
-      expect(deny).toContain('Write(**/*.key)');
+    });
+
+    it('default init does not add Write(**/...) deny entries (Edit rules cover all file-editing tools)', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({}));
+      await initCommand(tempDir, { force: false, exec: noTools });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      const deny = settings.permissions.deny;
+      expect(deny).not.toContain('Write(**/secrets/**)');
+      expect(deny).not.toContain('Write(**/credentials/**)');
+      expect(deny).not.toContain('Write(**/*.pem)');
+      expect(deny).not.toContain('Write(**/*.key)');
+    });
+
+    it('re-init migrates away stale Write(**/...) deny entries from prior rig installs', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({
+        permissions: {
+          allow: [],
+          deny: [
+            'Read(**/secrets/**)',
+            'Edit(**/secrets/**)',
+            'Write(**/secrets/**)',
+            'Write(**/credentials/**)',
+            'Write(**/*.pem)',
+            'Write(**/*.key)',
+            'Bash(rm *)', // unrelated user deny entry — must survive
+          ],
+        },
+      }));
+      await initCommand(tempDir, { force: false, exec: noTools });
+
+      const settings = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8'));
+      const deny = settings.permissions.deny;
+      expect(deny).not.toContain('Write(**/secrets/**)');
+      expect(deny).not.toContain('Write(**/credentials/**)');
+      expect(deny).not.toContain('Write(**/*.pem)');
+      expect(deny).not.toContain('Write(**/*.key)');
+      // Untouched entries survive the migration
+      expect(deny).toContain('Read(**/secrets/**)');
+      expect(deny).toContain('Edit(**/secrets/**)');
+      expect(deny).toContain('Bash(rm *)');
     });
 
     // ── --broad-permissions flag ──

@@ -158,8 +158,15 @@ across machines.
 ### Permissions
 
 By default `rig init` only adds the secret-file **deny** list (`**/secrets/**`,
-`**/credentials/**`, `**/*.pem`, `**/*.key` for Read, Edit, Write). No allow entries
-are written — you control your own approval level.
+`**/credentials/**`, `**/*.pem`, `**/*.key` for Read and Edit — Claude Code
+treats `Edit(path)` as the umbrella rule covering all file-editing tools,
+including Write, so no separate `Write(path)` entry is needed). No allow
+entries are written — you control your own approval level.
+
+Versions before 0.7.2 also wrote redundant `Write(**/...)` deny entries, which
+Claude Code now flags at startup ("is not matched by file permission checks —
+only Edit(path) rules are"). Re-running `rig init` (no `--force` required)
+strips those stale entries from an existing `.claude/settings.json`.
 
 Use `--broad-permissions` to pre-authorize common tools and reduce repeated prompts:
 
