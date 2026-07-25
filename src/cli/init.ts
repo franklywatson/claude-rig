@@ -240,6 +240,14 @@ const SECRET_DENY_LIST = [
   'Edit(**/credentials/**)',
   'Edit(**/*.pem)',
   'Edit(**/*.key)',
+];
+
+// Written by rig <=0.7.x. Claude Code's permission engine now treats Edit(path)
+// as the umbrella rule covering all file-editing tools (Edit, Write,
+// NotebookEdit), so a separate Write(path) deny rule is a redundant no-op that
+// prints a startup warning. Stripped from existing settings.json on every
+// rig init run so already-installed projects self-heal without manual edits.
+const STALE_DENY_ENTRIES = [
   'Write(**/secrets/**)',
   'Write(**/credentials/**)',
   'Write(**/*.pem)',
@@ -358,6 +366,9 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
       permissions.deny.push(entry);
     }
   }
+
+  // Migration: drop stale Write(**/...) deny entries from prior rig installs.
+  permissions.deny = permissions.deny.filter((entry) => !STALE_DENY_ENTRIES.includes(entry));
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 }
