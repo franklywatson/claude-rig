@@ -132,7 +132,7 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('**SK6**');
     expect(content).toContain('**AG8**');
     expect(content).toContain('Agent(subagent_type="code-reviewer")');
-    expect(content).toContain('XX/37');
+    expect(content).toContain('XX/38');
   });
 
   it('tdd+ and sdd+ carry the branch-discipline preflight', () => {

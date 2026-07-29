@@ -22,6 +22,7 @@ Run each check and report PASS/FAIL with evidence.
 - [ ] **S4**: Check if CWD is indexed: run `jcodemunch-mcp list-repos` if available
 - [ ] **S5**: Check `.harness.yaml` exists and parses
 - [ ] **S6**: Session-start reports `superpowers: installed` (else install via `/plugin install superpowers@claude-plugins-official`)
+- [ ] **S7**: If headroom is configured, run `headroom doctor --json` — report pass/warn/fail (proxy liveness, routing, savings flow)
 
 ### Tool Router (PreToolUse Hook)
 
@@ -74,14 +75,14 @@ Run each check and report PASS/FAIL with evidence.
 ```
 Session Verification Report
 ============================
-Session Start:  X/6 passed
+Session Start:  X/7 passed
 Tool Router:    X/8 passed
 Enforcement:    X/6 passed
 Skills:         X/6 passed
 Agents:         X/9 passed
 Configuration:  X/2 passed
 
-TOTAL: XX/37 passed
+TOTAL: XX/38 passed
 
 Failures:
 - [ID]: [what happened]. Expected: [expected]. Got: [actual].
