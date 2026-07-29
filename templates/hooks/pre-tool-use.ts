@@ -45,22 +45,20 @@ import { readFileSync } from 'node:fs';
   loadConfig(resolve(cwd, '.harness.yaml')).then((config: any) => {
     const result = handlePreToolUse(input.tool_name, input.tool_input, cache, config);
 
-    // Transparent rewrite: output JSON with updatedInput.
-    // Claude Code only applies updatedInput when paired with a
-    // permissionDecision — "allow" auto-approves the rewritten command so it
-    // runs in place of the original. Without one the input is deferred and the
-    // ORIGINAL command runs unmodified, silently defeating every rtk rewrite.
+    // Transparent rewrite: output JSON with updatedInput. Auto-allow
+    // (permissionDecision:"allow") only for rewrites safe to auto-approve —
+    // rtk Allow (exit 0) and python-env path rewrites. For rtk Ask/Default
+    // (exit 3) emit updatedInput WITHOUT permissionDecision so Claude Code
+    // prompts the user (matches rtk's own hook; rtk-ai/rtk#1155).
     // (Only takes effect in permission modes that consult the hook's decision,
-    // i.e. default mode — not bypassPermissions.)
+    // i.e. default mode — not bypassPermissions, where updatedInput is ignored.)
     if (result && result.type === 'rewrite') {
-      const output = JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'PreToolUse',
-          permissionDecision: 'allow',
-          updatedInput: { command: result.command },
-        },
-      });
-      console.log(output);
+      const hookSpecificOutput = {
+        hookEventName: 'PreToolUse',
+        updatedInput: { command: result.command },
+        ...(result.autoAllow ? { permissionDecision: 'allow' } : {}),
+      };
+      console.log(JSON.stringify({ hookSpecificOutput }));
       process.exit(0);
     }
 

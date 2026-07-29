@@ -19,6 +19,14 @@ export interface RewriteResult {
   type: 'rewrite';
   command: string;
   original: string;
+  /**
+   * Whether the hook may auto-approve the rewritten command
+   * (permissionDecision:"allow"). rtk exit 0 (Allow) → true; rtk exit 3
+   * (Ask/Default — no matching allow rule, rtk-ai/rtk#1155) → false, so the
+   * hook emits updatedInput WITHOUT permissionDecision and Claude Code prompts.
+   * Python-env rewrites (venv/uv path resolution) → true (safe path fix).
+   */
+  autoAllow: boolean;
 }
 
 // ── Resolution Types ──

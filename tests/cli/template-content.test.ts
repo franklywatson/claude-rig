@@ -165,3 +165,13 @@ describe('skill templates — savings aggregation', () => {
     expect(content).toContain('older than 24 hours');
   });
 });
+
+describe('hook templates — rtk rewrite auto-allow gate', () => {
+  it('pre-tool-use.ts pairs permissionDecision:allow ONLY when the rewrite is autoAllow', () => {
+    const content = read('hooks/pre-tool-use.ts');
+    // rtk exit 3 (Ask/Default) must NOT be auto-allowed — emit updatedInput
+    // without permissionDecision so Claude Code prompts (rtk-ai/rtk#1155).
+    expect(content).toContain('autoAllow');
+    expect(content).toMatch(/autoAllow\s*\?\s*\{\s*permissionDecision/);
+  });
+});
