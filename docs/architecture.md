@@ -93,6 +93,11 @@ Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
 
 Git `commit`/`push` interception is not an intent type — it is handled by the
 branch-discipline step (Step 1.6, see "Branch discipline (commit-time)" below).
+A separate Step 1.7 check (`src/router/typed-agent.ts`, `checkTypedAgentDispatch`)
+intercepts `Task`/`Agent` dispatches during `sdd+`/`review+`: a missing or
+`general-purpose` `subagent_type` is steered to a typed agent (advise/block per
+`rules.workflow.typed_agent_enforcement`). superpowers' subagent-driven-development
+is general-purpose-native, so without this gate the typed agents are silently bypassed.
 
 ### Python environment detection
 
@@ -548,13 +553,21 @@ Loads `.harness.yaml` with layered merge (base config + local override). `getEnf
 
 ### Session (`src/session/`)
 
-`detectEnvironment()` checks for rtk, jcodemunch, graphify, and other tools via
+`detectEnvironment()` checks for rtk, jcodemunch, graphify, superpowers, and other tools via
 injectable `ExecFn`. `SessionCache` with a 4-hour env TTL persists to
 `/tmp/rig-session-{hash}.json` (hash of cwd + session id) for cross-process
 state sharing between hook invocations. Environment detection results, edited
 file tracking, phase, metrics baseline (including per-project graphify stats
 keyed by directory path), tool call counters, and a `toolsWarned` flag all
 persist. Deleting `/tmp/rig-session-*.json` forces immediate re-detection.
+
+**superpowers detection** (`superpowers.ts`): reads Claude Code's plugin registry
+(`~/.claude/plugins/installed_plugins.json`) for a `superpowers@*` key; session
+start reports `superpowers: installed (vX)` or warns with the `/plugin install`
+command (the skill chain requires it). **rtk global-hook deconfliction**
+(`rtk-global-hook.ts`): if rtk's own global PreToolUse hook is also installed
+(`~/.claude/settings.json`), session start hints removal — it double-rewrites
+commands rig's project hook already rewrites.
 
 **jcodemunch detection** (`environment.ts` + `claude-config.ts`) resolves a
 working transport in priority order:

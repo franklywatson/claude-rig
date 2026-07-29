@@ -125,6 +125,7 @@ data as a separate **context layer** line:
   jcodemunch: 85K saved (23 queries, 150M total all-time)
   headroom: 40K saved (context layer — 42 requests, 40% compression, 78% cache hits; not summed with tool-layer savings)
   graphify: 913 nodes, 1349 edges, 62 communities (100% EXTRACTED, 0% INFERRED, 0% AMBIGUOUS)
+  superpowers: installed (v6.2.0)
 ```
 
 `/savings` reports every layer it detects side by side — rtk and jcodemunch on
@@ -244,6 +245,7 @@ rules:
     protected_branches: [master, main]
     isolation_strategy: auto   # auto | branch | worktree — auto picks worktree when the tree is dirty
     team_execution: offer      # offer | auto | never — parallel teammates for independent tasks (needs experimental agent-teams)
+    typed_agent_enforcement: advise  # block | advise | silent — during sdd+/review+, steer general-purpose dispatches to typed agents
 ```
 
 Each enforcement rule can be `block` (hook exits nonzero), `advise` (advisory
