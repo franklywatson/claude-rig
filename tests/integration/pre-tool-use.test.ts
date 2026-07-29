@@ -4,7 +4,7 @@ import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
-import { runHook } from '../helpers/hook-runner.js';
+import { runHook, TSX_BIN } from '../helpers/hook-runner.js';
 import { SessionCache, sessionCachePath } from '../../src/session/cache.js';
 import type { Environment } from '../../src/types.js';
 
@@ -83,7 +83,7 @@ describe('PreToolUse hook E2E', () => {
   it('handles malformed stdin gracefully', async () => {
     const { spawn } = await import('node:child_process');
     const result = await new Promise<{ exitCode: number }>((resolve) => {
-      const child = spawn('npx', ['tsx', hookPath], {
+      const child = spawn(process.execPath, [TSX_BIN, hookPath], {
         cwd: tempDir,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
