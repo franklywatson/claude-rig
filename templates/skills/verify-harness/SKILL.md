@@ -61,6 +61,7 @@ Run each check and report PASS/FAIL with evidence.
 - [ ] **AG6**: spec-reviewer can be invoked with `Agent(subagent_type="spec-reviewer")`
 - [ ] **AG7**: implementer agent definition exists
 - [ ] **AG8**: implementer can be invoked with `Agent(subagent_type="implementer")`
+- [ ] **AG9**: During `sdd+`/`review+`, an `Agent` dispatch with `subagent_type: "general-purpose"` is steered to a typed agent (`rules.workflow.typed_agent_enforcement`)
 
 ### Configuration
 
@@ -76,10 +77,10 @@ Session Start:  X/5 passed
 Tool Router:    X/8 passed
 Enforcement:    X/6 passed
 Skills:         X/6 passed
-Agents:         X/8 passed
+Agents:         X/9 passed
 Configuration:  X/2 passed
 
-TOTAL: XX/35 passed
+TOTAL: XX/36 passed
 
 Failures:
 - [ID]: [what happened]. Expected: [expected]. Got: [actual].

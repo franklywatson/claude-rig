@@ -132,7 +132,7 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('**SK6**');
     expect(content).toContain('**AG8**');
     expect(content).toContain('Agent(subagent_type="code-reviewer")');
-    expect(content).toContain('XX/35');
+    expect(content).toContain('XX/36');
   });
 
   it('tdd+ and sdd+ carry the branch-discipline preflight', () => {
@@ -173,5 +173,13 @@ describe('hook templates — rtk rewrite auto-allow gate', () => {
     // without permissionDecision so Claude Code prompts (rtk-ai/rtk#1155).
     expect(content).toContain('autoAllow');
     expect(content).toMatch(/autoAllow\s*\?\s*\{\s*permissionDecision/);
+  });
+});
+
+describe('verify-harness — typed-agent enforcement check', () => {
+  it('includes the AG9 general-purpose→typed steering check', () => {
+    const content = read('skills/verify-harness/SKILL.md');
+    expect(content).toContain('typed_agent_enforcement');
+    expect(content).toContain('general-purpose');
   });
 });
