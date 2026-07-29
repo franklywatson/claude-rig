@@ -189,3 +189,26 @@ describe('verify-harness — typed-agent enforcement check', () => {
     expect(content).toContain('claude-plugins-official');
   });
 });
+
+describe('agent tool lists — Release 2 adoptions (F1 jcodemunch + F2 graphify)', () => {
+  it('scout adopts plan_turn/get_ranked_context/assemble_task_context + get_node/get_neighbors', () => {
+    const content = read('agents/scout.md');
+    for (const t of ['mcp__jcodemunch__plan_turn', 'mcp__jcodemunch__get_ranked_context', 'mcp__jcodemunch__assemble_task_context', 'mcp__graphify__get_node', 'mcp__graphify__get_neighbors']) {
+      expect(content, t).toContain(t);
+    }
+  });
+
+  it('code-reviewer adopts search_ast/winnow_symbols + get_node/get_neighbors', () => {
+    const content = read('agents/code-reviewer.md');
+    for (const t of ['mcp__jcodemunch__search_ast', 'mcp__jcodemunch__winnow_symbols', 'mcp__graphify__get_node', 'mcp__graphify__get_neighbors']) {
+      expect(content, t).toContain(t);
+    }
+  });
+
+  it('spec-reviewer adopts graphify get_node/get_neighbors', () => {
+    const content = read('agents/spec-reviewer.md');
+    for (const t of ['mcp__graphify__get_node', 'mcp__graphify__get_neighbors']) {
+      expect(content, t).toContain(t);
+    }
+  });
+});
