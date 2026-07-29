@@ -84,7 +84,7 @@ Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
 | `native_read` | `Read` tool on code files (no offset/limit) | jcodemunch `get_file_outline` or `get_symbol` |
 | `native_grep` | `Grep` tool | jcodemunch `search_text` |
 | `native_glob` | `Glob` tool on code file patterns | jcodemunch `get_file_tree` |
-| `rtk_cat_code` | `rtk cat` on code files | Block, redirect to jcodemunch |
+| `rtk_cat_code` | rtk code-reading (`rtk read`/`rtk smart`/`rtk cat`) on code files | Block, redirect to jcodemunch |
 | `text_search` | Bash `grep`, `rg` | rtk or jcodemunch `search_text` |
 | `file_discovery` | Bash `find`, `fd` | jcodemunch `get_file_tree` |
 | `file_read` | Bash `cat`, `head`, `tail` | rtk or jcodemunch `get_symbol` |
@@ -127,13 +127,15 @@ on the Grep tool.
 `rtk rewrite` follows a four-code permission protocol (rtk
 `src/hooks/rewrite_cmd.rs`): exit 0 + stdout = rewrite (safe to auto-allow),
 exit 1 = no RTK equivalent, exit 2 = deny rule matched, exit 3 + stdout =
-"Ask" verdict (rewrite valid, must not be auto-allowed). Rig uses exit-0 and
-exit-3 rewrites identically — the hook emits `updatedInput` paired with
-`permissionDecision: "allow"`, which auto-approves the rewritten command in
-place of the original (Claude Code ignores `updatedInput` unless a
-`permissionDecision` accompanies it). This only takes effect in default
-permission mode; in `bypassPermissions` the `updatedInput` is ignored and the
-original command runs unmodified. Exits 1 and 2 fall through silently to
+"Ask"/Default verdict (rewrite valid, must not be auto-allowed). Rig treats
+the two differently: an exit-0 rewrite is emitted as `updatedInput` paired
+with `permissionDecision: "allow"` (auto-approve); an exit-3 rewrite is
+emitted as `updatedInput` **without** `permissionDecision`, so Claude Code
+prompts the user (matching rtk's own `process_claude_payload`; rtk 0.36+ maps
+unrated commands to Default→exit 3, so exit-3 is the common case — auto-
+allowing it would defeat rtk's least-privilege default). This only takes
+effect in default permission mode; in `bypassPermissions` the `updatedInput`
+is ignored and the original command runs unmodified. Exits 1 and 2 fall through silently to
 rig's own rules by design (stdout is never used on exit 2).
 Anything outside the protocol (exit 3 without output, other exit codes,
 signals, ENOENT) is appended as a JSON line to
@@ -716,9 +718,9 @@ Key design decisions:
   in `~/.code-index/config.jsonc`). Session-start emits a `[WARNING]` when files
   are skipped, but search quality may be degraded for large projects until the
   limit is increased.
-- graphify build may fail on very large codebases (6000+ files) due to Python
-  AST recursion limits during tree-sitter traversal. The scout agent falls back
-  to jcodemunch-only analysis and reports the failure.
+- graphify has no file-count or AST-recursion limit; only the HTML
+  visualization is skipped above 5000 nodes (graph.json + GRAPH_REPORT.md
+  are always produced).
 - **Absolute paths and permission prompts**: Claude Code's system prompt (since
   v2.1.97) requires agents to use absolute paths unconditionally. Each new
   absolute path in a Bash command triggers a permission prompt unless pre-authorized.

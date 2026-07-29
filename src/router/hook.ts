@@ -10,7 +10,7 @@ import { checkTestScope } from '../enforcement/test-scope.js';
 import { checkBranchDisciplineCommand } from './branch-discipline.js';
 import type { ExecFn } from '../session/worktree.js';
 
-export type ExecRewriteFn = (rtkPath: string, args: string[]) => string | null;
+export type ExecRewriteFn = (rtkPath: string, args: string[]) => { command: string; autoAllow: boolean } | null;
 export type ExistsCheckFn = (path: string) => boolean;
 
 export interface HookOptions {
@@ -41,15 +41,15 @@ const defaultWriteDiag = (line: string): void => {
  *   2           deny rule matched — pass through (never use stdout)
  *   3 + stdout  "Ask" verdict — rewrite valid, but must not be auto-allowed
  *
- * rig emits each rewrite as updatedInput paired with permissionDecision
- * "allow" (see templates/hooks/pre-tool-use.ts): Claude Code only applies
- * updatedInput when a permissionDecision is present, so "allow" auto-approves
- * the rewritten command in place of the original. This makes exit 3 equivalent
- * to exit 0 here. rtk maps commands without an explicit allow rule — notably
- * all git commands — to Ask, so dropping exit-3 output would lose the most
- * common rewrites. Rewrites only take effect in permission modes that consult
- * the hook's decision (default mode) — not bypassPermissions, where
- * updatedInput is ignored and the original command runs unmodified.
+ * rig emits each rewrite as updatedInput. For exit 0 (Allow) and python-env
+ * rewrites it pairs permissionDecision:"allow" (auto-approve); for exit 3
+ * (Ask/Default) it emits updatedInput WITHOUT permissionDecision so Claude
+ * Code prompts the user — matching rtk's own hook (process_claude_payload).
+ * rtk 0.36+ maps unrated commands (notably all git commands) to Default→exit 3,
+ * so exit-3 rewrites are common and must NOT be auto-allowed (rtk-ai/rtk#1155).
+ * Rewrites only take effect in permission modes that consult the hook's
+ * decision (default mode) — not bypassPermissions, where updatedInput is
+ * ignored and the original command runs unmodified.
  *
  * Anything outside the protocol — exit 3 without output, other exit codes,
  * signals, ENOENT — is appended as a JSON line to the diagnostic log so
@@ -60,18 +60,23 @@ export function makeDefaultExecRewrite(
   writeDiag: (line: string) => void = defaultWriteDiag,
   rawExec: RawExecFileFn = execFileSync as unknown as RawExecFileFn,
 ): ExecRewriteFn {
-  return (rtkPath: string, args: string[]): string | null => {
+  return (rtkPath: string, args: string[]) => {
     try {
       const result = rawExec(rtkPath, args, {
         encoding: 'utf-8',
         timeout: 5000,
         stdio: ['pipe', 'pipe', 'pipe'],
       });
-      return result.trim() || null;
+      const rewritten = result.trim();
+      // Exit 0 (Allow): safe to auto-allow.
+      return rewritten ? { command: rewritten, autoAllow: true } : null;
     } catch (err) {
       const e = err as { status?: number; signal?: string; code?: string; stdout?: unknown; stderr?: unknown };
 
-      // Exit 3 = rtk's "Ask" verdict: the rewrite is on stdout.
+      // Exit 3 = rtk's "Ask"/Default verdict: the rewrite is on stdout, but
+      // it must NOT be auto-allowed (rtk 0.36+ maps unrated commands here;
+      // security test rtk-ai/rtk#1155). Return the rewrite with autoAllow:false
+      // so the hook emits updatedInput without permissionDecision (prompt).
       if (e?.status === 3) {
         const stdout =
           typeof e.stdout === 'string'
@@ -80,7 +85,7 @@ export function makeDefaultExecRewrite(
               ? e.stdout.toString('utf-8')
               : '';
         const rewritten = stdout.trim();
-        if (rewritten) return rewritten;
+        if (rewritten) return { command: rewritten, autoAllow: false };
         // Exit 3 without output violates the protocol — fall through to diag.
       }
 
@@ -119,15 +124,15 @@ export function tryRtkRewrite(
   command: string,
   rtkPath: string,
   execRewrite: ExecRewriteFn = defaultExecRewrite,
-): string | null {
+): { command: string; autoAllow: boolean } | null {
   // Only attempt rewrite for commands rtk is designed to handle
   const binary = command.trimStart().split(/\s+/)[0] ?? '';
   if (!RTK_PREFIXES.some(p => command.trimStart().startsWith(p)) && binary !== 'git') {
     return null;
   }
-  const rewritten = execRewrite(rtkPath, ['rewrite', command]);
-  if (!rewritten || rewritten === command) return null;
-  return rewritten;
+  const rewrite = execRewrite(rtkPath, ['rewrite', command]);
+  if (!rewrite || rewrite.command === command) return null;
+  return rewrite;
 }
 
 function defaultEnv() {
@@ -260,7 +265,7 @@ export function handlePreToolUse(
     if (pythonEnv) {
       const rewritten = tryPythonRewrite(args.command, effectiveCwd, pythonEnv, resolvedOptions.existsCheck);
       if (rewritten) {
-        return { type: 'rewrite', command: rewritten, original: args.command };
+        return { type: 'rewrite', command: rewritten, original: args.command, autoAllow: true };
       }
     }
   }
@@ -268,9 +273,9 @@ export function handlePreToolUse(
   // Step 3: Transparent rewrite via rtk for Bash commands (skip compound commands)
   if (tool === 'Bash' && typeof args.command === 'string') {
     if (env.rtkAvailable && env.rtkPath && !isCompoundCommand(args.command)) {
-      const rewritten = tryRtkRewrite(args.command, env.rtkPath, resolvedOptions.execRewrite);
-      if (rewritten) {
-        return { type: 'rewrite', command: rewritten, original: args.command };
+      const rewrite = tryRtkRewrite(args.command, env.rtkPath, resolvedOptions.execRewrite);
+      if (rewrite) {
+        return { type: 'rewrite', command: rewrite.command, original: args.command, autoAllow: rewrite.autoAllow };
       }
     }
   }

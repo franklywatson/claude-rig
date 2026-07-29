@@ -57,7 +57,7 @@ describe('SessionStart hook E2E', () => {
     const cache = readSessionCache(tempDir);
     expect(cache).not.toBeNull();
     expect(cache!.updatedAt).toBeGreaterThan(0);
-  });
+  }, 60000); // cold run: real detection + indexing + graphify/mcp probes
 
   it('detects environment in cache', async () => {
     const result = await runHook(hookPath, {}, tempDir);

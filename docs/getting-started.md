@@ -12,10 +12,10 @@
 
 Strongly recommended:
 
-- [rtk](https://github.com/franklywatson/rtk) -- token-optimized command proxy.
+- [rtk](https://github.com/rtk-ai/rtk) -- token-optimized command proxy.
   The tool router redirects shell commands through rtk when available,
   saving 60-90% on token usage for common dev operations.
-- [jcodemunch](https://github.com/franklywatson/jcodemunch) -- indexed code
+- [jcodemunch](https://github.com/jgravelle/jcodemunch-mcp) -- indexed code
   search MCP server. Powers the scout agent for cross-repo indexing and
   serves as the tool router's fallback for `grep`/`find`/`cat` redirection.
   Rig detects it via PATH or via the MCP server command registered in Claude
@@ -30,9 +30,9 @@ Strongly recommended:
   god nodes (core abstractions ranked by connection density), module communities
   (clustered subsystems), and dependency path queries via MCP tools. Graphify
   rebuilds via its own git hooks; rig detects the existing graph and auto-builds
-  on first use if needed. Note: graphify may fail on very large codebases
-  (6000+ files) due to Python AST recursion limits during tree-sitter traversal.
-  The scout agent falls back to jcodemunch-only analysis in this case.
+  on first use if needed. Note: graphify has no file-count or AST-recursion
+  limit; only the HTML visualization is skipped above 5000 nodes (graph.json
+  and GRAPH_REPORT.md are always produced).
 
 ## Install and initialize
 

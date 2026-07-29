@@ -192,6 +192,7 @@ describe('handleSessionStart', () => {
     expect(output).toContain('WARNING');
     expect(output).toContain('rtk');
     expect(output).toContain('install');
+    expect(output).toContain('rtk-ai/rtk');
   });
 
   it('warns when jcodemunch was not detected', async () => {
@@ -205,6 +206,7 @@ describe('handleSessionStart', () => {
     expect(output).toContain('WARNING');
     expect(output).toContain('jcodemunch');
     expect(output).toContain('install');
+    expect(output).toContain('jgravelle/jcodemunch-mcp');
   });
 
   it('warns when both tools are not installed', async () => {

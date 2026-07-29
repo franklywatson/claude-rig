@@ -80,7 +80,7 @@ describe.skipIf(!RTK)('rtk rewrite exit-code contract (installed binary)', () =>
     const execRewrite = makeDefaultExecRewrite(line => diagLines.push(line));
     const result = execRewrite(RTK!, ['rewrite', 'git status']);
 
-    expect(result).toBe('rtk git status');
+    expect(result?.command).toBe('rtk git status');
     expect(diagLines).toEqual([]);
   });
 
@@ -90,7 +90,7 @@ describe.skipIf(!RTK)('rtk rewrite exit-code contract (installed binary)', () =>
     const result = execRewrite(RTK!, ['rewrite', 'grep -r "TODO" src/']);
 
     expect(result).not.toBeNull();
-    expect(result!.startsWith('rtk grep')).toBe(true);
+    expect(result!.command.startsWith('rtk grep')).toBe(true);
     expect(diagLines).toEqual([]);
   });
 });

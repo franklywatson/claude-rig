@@ -1,7 +1,7 @@
 ---
 name: scout
 description: "PROACTIVELY use when starting any non-trivial implementation task, when context about the codebase is needed before making changes, or when the user references unfamiliar code. Context harvesting agent that maps codebase structure using jcodemunch, graphify, and rtk for token-efficient exploration."
-tools: "mcp__jcodemunch__get_repo_outline,mcp__jcodemunch__get_file_tree,mcp__jcodemunch__get_file_outline,mcp__jcodemunch__search_symbols,mcp__jcodemunch__get_symbol,mcp__jcodemunch__get_symbols,mcp__jcodemunch__search_text,mcp__jcodemunch__list_repos,mcp__jcodemunch__index_folder,mcp__graphify__query_graph,mcp__graphify__get_community,mcp__graphify__god_nodes,mcp__graphify__shortest_path,mcp__graphify__graph_stats,Read,Glob,Grep,Bash"
+tools: "mcp__jcodemunch__get_repo_outline,mcp__jcodemunch__get_file_tree,mcp__jcodemunch__get_file_outline,mcp__jcodemunch__search_symbols,mcp__jcodemunch__get_symbol_source,mcp__jcodemunch__search_text,mcp__jcodemunch__list_repos,mcp__jcodemunch__index_folder,mcp__graphify__query_graph,mcp__graphify__get_community,mcp__graphify__god_nodes,mcp__graphify__shortest_path,mcp__graphify__graph_stats,Read,Glob,Grep,Bash"
 model: inherit
 maxTurns: 30
 ---
@@ -73,9 +73,9 @@ Determine each directory's state from its `graphify-out/`:
 
 | State | On-disk indicator (per-directory) |
 | ----- | --------------------------------- |
-| ready | `<dir>/graphify-out/graph.json` exists and is >1KB — even when a `.rebuild.lock` is also present but **older** than `graph.json` (graphify leaves locks behind after completed builds; graph newer than lock = stale lock from a finished build) |
-| building | `<dir>/graphify-out/.rebuild.lock` is present and either no valid `graph.json` exists or the lock is **newer** than `graph.json` (another process owns this build — session-start, a git hook, or a parallel agent) |
-| absent | neither `graph.json` (>1KB) nor `.rebuild.lock` exists |
+| ready | `<dir>/graphify-out/graph.json` exists and is >1KB |
+| absent | no valid `graph.json` (>1KB) exists |
+| building | a `graphify update` is in progress this session (tracked in session state — graphify 0.4.31 writes no lockfile) |
 | failed | a previous `graphify update` attempt errored this session for this directory |
 
 Then act based on state AND the capability check from Step 0:
@@ -108,19 +108,14 @@ the CLI; reading does not.
    report the failure (see Alert Reporting). Other directories' graphs are
    unaffected.
 
-**building** (`<dir>/graphify-out/.rebuild.lock` newer than `graph.json`, or no valid graph):
+**building** (a `graphify update` is in progress this session):
 
 Another process owns this directory's build — do not run `graphify update`
 on it; the second invocation will conflict with the first. If `graph.json`
-is also present and >1KB, you may still read it (the lock indicates a
-*re*build, so the previous graph is on disk). Otherwise skip graph context
-for this directory and note `graph build in progress — retry next session`.
-Continue with any other directories whose state is independent.
-
-Note on stale locks: graphify does not clean up `.rebuild.lock` after a
-completed build, so a lock alongside a valid graph is common. Compare
-mtimes — `graph.json` newer than the lock means the build finished and the
-directory is actually **ready**, not building.
+is also present and >1KB, you may still read it (a *re*build leaves the
+previous graph on disk). Otherwise skip graph context for this directory
+and note `graph build in progress — retry next session`. Continue with any
+other directories whose state is independent.
 
 **failed:** skip graph context for this directory. Report the failure.
 
@@ -231,8 +226,8 @@ the response), report:
 
 ### graphify build failure
 
-If `graphify update` fails for a directory (e.g., Python recursion limit on large codebases,
-or the resulting graph.json is still under 1KB indicating a placeholder), report:
+If `graphify update` fails for a directory (e.g., the resulting graph.json is
+still under 1KB indicating a placeholder, or the build errored), report:
 
 ```
 [WARNING] graphify build failed for <directory>.

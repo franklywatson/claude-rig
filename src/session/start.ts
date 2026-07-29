@@ -270,10 +270,10 @@ export async function handleSessionStart(
   // One-time warning for missing tools
   if (!cache.getToolsWarned()) {
     if (!env.rtkAvailable) {
-      lines.push('[WARNING] rtk is not installed. Install for 60-90% token savings on dev operations: https://github.com/franklywatson/rtk');
+      lines.push('[WARNING] rtk is not installed. Install for 60-90% token savings on dev operations: https://github.com/rtk-ai/rtk');
     }
     if (!env.jcodemunchAvailable) {
-      lines.push('[WARNING] jcodemunch was not detected. Install for indexed code search: https://github.com/franklywatson/jcodemunch');
+      lines.push('[WARNING] jcodemunch was not detected. Install for indexed code search: https://github.com/jgravelle/jcodemunch-mcp');
       lines.push("  If installed as an MCP server, verify its registration with 'claude mcp list'.");
       if (hasOrphanedIndexData(deps.homeDir ?? homedir(), deps.readdir ?? readdirSync)) {
         lines.push('[WARNING] jcodemunch index data found at ~/.code-index but no working transport detected.');

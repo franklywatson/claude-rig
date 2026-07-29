@@ -56,6 +56,16 @@ describe('agent templates', () => {
     }
     expect(read('agents/scout.md')).toContain('maxTurns: 30');
   });
+
+  it('agent tool lists use get_symbol_source (jcodemunch consolidated get_symbol/get_symbols away in d040bf1)', () => {
+    for (const agent of ['scout', 'code-reviewer', 'spec-reviewer']) {
+      const content = read(`agents/${agent}.md`);
+      expect(content).toContain('mcp__jcodemunch__get_symbol_source');
+      // The exact old pair must be gone; get_symbol_source must not be a
+      // substring of either removed name (it isn't), so this is unambiguous.
+      expect(content).not.toContain('mcp__jcodemunch__get_symbol,mcp__jcodemunch__get_symbols');
+    }
+  });
 });
 
 describe('skill templates — typed dispatch', () => {
@@ -153,5 +163,15 @@ describe('skill templates — savings aggregation', () => {
     expect(content).toContain('session-start anchor');
     expect(content).toMatch(/`updatedAt` predates the anchor/);
     expect(content).toContain('older than 24 hours');
+  });
+});
+
+describe('hook templates — rtk rewrite auto-allow gate', () => {
+  it('pre-tool-use.ts pairs permissionDecision:allow ONLY when the rewrite is autoAllow', () => {
+    const content = read('hooks/pre-tool-use.ts');
+    // rtk exit 3 (Ask/Default) must NOT be auto-allowed — emit updatedInput
+    // without permissionDecision so Claude Code prompts (rtk-ai/rtk#1155).
+    expect(content).toContain('autoAllow');
+    expect(content).toMatch(/autoAllow\s*\?\s*\{\s*permissionDecision/);
   });
 });

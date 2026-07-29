@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 // Absolute path to the locally-installed tsx CLI. Resolving it from this file's
 // own location (not the subprocess cwd) keeps the spawn independent of where the
 // hook runs — the scaffolded tempDir projects under test have no node_modules.
-const TSX_BIN = fileURLToPath(new URL('../../node_modules/.bin/tsx', import.meta.url));
+export const TSX_BIN = fileURLToPath(new URL('../../node_modules/.bin/tsx', import.meta.url));
 import type { Environment, MetricsBaseline, SessionCacheFile } from '../../src/types.js';
 import { sessionCachePath } from '../../src/session/cache.js';
 

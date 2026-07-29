@@ -8,19 +8,20 @@ import type { RewriteResult } from '../../src/types.js';
 
 const mockRewriteSuccess: ExecRewriteFn = (_rtkPath, args) => {
   const command = args[1];
-  if (/^(cat|head|tail)\s+/.test(command)) return command.replace(/^(cat|head|tail)\s+/, 'rtk read ');
-  if (/^grep\s+/.test(command)) return command.replace(/^grep\s+/, 'rtk grep ');
-  if (/^rg\s+/.test(command)) return command.replace(/^rg\s+/, 'rtk grep ');
-  if (/^find\s+/.test(command)) return command.replace(/^find\s+/, 'rtk find ');
-  if (/^git\s+/.test(command)) return command.replace(/^git\s+/, 'rtk git ');
-  if (/^ls(\s|$)/.test(command)) return command.replace(/^ls\s*/, 'rtk ls ');
-  if (/^gh\s+/.test(command)) return command.replace(/^gh\s+/, 'rtk gh ');
+  const rewrite = (c: string) => ({ command: c, autoAllow: true });
+  if (/^(cat|head|tail)\s+/.test(command)) return rewrite(command.replace(/^(cat|head|tail)\s+/, 'rtk read '));
+  if (/^grep\s+/.test(command)) return rewrite(command.replace(/^grep\s+/, 'rtk grep '));
+  if (/^rg\s+/.test(command)) return rewrite(command.replace(/^rg\s+/, 'rtk grep '));
+  if (/^find\s+/.test(command)) return rewrite(command.replace(/^find\s+/, 'rtk find '));
+  if (/^git\s+/.test(command)) return rewrite(command.replace(/^git\s+/, 'rtk git '));
+  if (/^ls(\s|$)/.test(command)) return rewrite(command.replace(/^ls\s*/, 'rtk ls '));
+  if (/^gh\s+/.test(command)) return rewrite(command.replace(/^gh\s+/, 'rtk gh '));
   return null;
 };
 
 const mockRewriteNone: ExecRewriteFn = () => null;
 
-const mockRewriteIdentical: ExecRewriteFn = (_rtkPath, args) => args[1];
+const mockRewriteIdentical: ExecRewriteFn = (_rtkPath, args) => ({ command: args[1], autoAllow: true });
 
 // ── makeDefaultExecRewrite diagnostics ──
 
@@ -35,7 +36,7 @@ describe('makeDefaultExecRewrite diagnostics', () => {
     const writeDiag = vi.fn();
     const rewrite = makeDefaultExecRewrite(writeDiag, () => 'rtk grep foo\n');
 
-    expect(rewrite('/usr/bin/rtk', ['rewrite', 'grep foo'])).toBe('rtk grep foo');
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'grep foo'])).toEqual({ command: 'rtk grep foo', autoAllow: true });
     expect(writeDiag).not.toHaveBeenCalled();
   });
 
@@ -49,22 +50,21 @@ describe('makeDefaultExecRewrite diagnostics', () => {
   });
 
   // rtk rewrite exit-code protocol (src/hooks/rewrite_cmd.rs in rtk):
-  //   0 + stdout  rewrite, safe to auto-allow
-  //   1           no RTK equivalent
-  //   2           deny rule matched
-  //   3 + stdout  "Ask" — rewrite valid, but the hook must not auto-allow.
-  // rig emits updatedInput paired with permissionDecision:"allow", which
-  // auto-approves the rewritten command — so an exit-3 rewrite is used exactly
-  // like an exit-0 rewrite. Field bug: rtk maps git commands to Ask (Default
-  // verdict), so dropping exit-3 output silently lost every git rewrite.
-  it('uses the stdout rewrite on exit 3 (rtk Ask verdict) without diagnostics', () => {
+  //   0 + stdout  rewrite, safe to auto-allow              → autoAllow:true
+  //   1           no RTK equivalent                         → null
+  //   2           deny rule matched                         → null
+  //   3 + stdout  "Ask"/Default — rewrite valid, must NOT  → autoAllow:false
+  //               auto-allow (rtk 0.36+ maps unrated cmds here; rtk-ai/rtk#1155)
+  // rig emits updatedInput WITHOUT permissionDecision for exit 3 so Claude
+  // Code prompts the user (matches rtk's own process_claude_payload).
+  it('returns the exit-3 (rtk Ask/Default) rewrite with autoAllow:false', () => {
     const writeDiag = vi.fn();
     const rewrite = makeDefaultExecRewrite(
       writeDiag,
       execError({ status: 3, stdout: 'rtk git status' }),
     );
 
-    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git status'])).toBe('rtk git status');
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git status'])).toEqual({ command: 'rtk git status', autoAllow: false });
     expect(writeDiag).not.toHaveBeenCalled();
   });
 
@@ -75,7 +75,7 @@ describe('makeDefaultExecRewrite diagnostics', () => {
       execError({ status: 3, stdout: Buffer.from('rtk git log --oneline\n') }),
     );
 
-    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git log --oneline'])).toBe('rtk git log --oneline');
+    expect(rewrite('/usr/bin/rtk', ['rewrite', 'git log --oneline'])).toEqual({ command: 'rtk git log --oneline', autoAllow: false });
     expect(writeDiag).not.toHaveBeenCalled();
   });
 
@@ -143,7 +143,7 @@ describe('makeDefaultExecRewrite diagnostics', () => {
 describe('tryRtkRewrite', () => {
   it('returns rewritten command when exec returns a different string', () => {
     const result = tryRtkRewrite('cat file.ts', '/usr/bin/rtk', mockRewriteSuccess);
-    expect(result).toBe('rtk read file.ts');
+    expect(result).toEqual({ command: 'rtk read file.ts', autoAllow: true });
   });
 
   it('returns null when exec returns null (no rewrite)', () => {
@@ -163,17 +163,17 @@ describe('tryRtkRewrite', () => {
 
   it('rewrites grep to rtk grep', () => {
     const result = tryRtkRewrite('grep -r "TODO" src/', '/usr/bin/rtk', mockRewriteSuccess);
-    expect(result).toBe('rtk grep -r "TODO" src/');
+    expect(result).toEqual({ command: 'rtk grep -r "TODO" src/', autoAllow: true });
   });
 
   it('rewrites find to rtk find', () => {
     const result = tryRtkRewrite('find . -name "*.ts"', '/usr/bin/rtk', mockRewriteSuccess);
-    expect(result).toBe('rtk find . -name "*.ts"');
+    expect(result).toEqual({ command: 'rtk find . -name "*.ts"', autoAllow: true });
   });
 
   it('rewrites git to rtk git', () => {
     const result = tryRtkRewrite('git status', '/usr/bin/rtk', mockRewriteSuccess);
-    expect(result).toBe('rtk git status');
+    expect(result).toEqual({ command: 'rtk git status', autoAllow: true });
   });
 
   it('does not rewrite sed -i', () => {

@@ -39,13 +39,14 @@ describe('getDefaultRules', () => {
     expect(findRule!.resolutions.jcodemunch).toBeDefined();
   });
 
-  it('file_read rules advise rtk cat when rtk available', () => {
+  it('file_read rules advise rtk read when rtk available', () => {
     const rules = getDefaultRules();
     const catRule = rules.find(r => r.intent === 'file_read');
     expect(catRule).toBeDefined();
     const rtkRes = catRule!.resolutions.rtk as { action: string; tool: string };
     expect(rtkRes.action).toBe('advise');
-    expect(rtkRes.tool).toBe('rtk cat');
+    // rtk removed `cat` (now `rtk read`); the file_read advisory must name the real command.
+    expect(rtkRes.tool).toBe('rtk read');
   });
 });
 
@@ -158,6 +159,11 @@ describe('native tool rules', () => {
     // No rtk or claudeTool resolution — agent is already on the native tool
     expect(rule!.resolutions.rtk).toBeUndefined();
     expect(rule!.resolutions.claudeTool).toBeUndefined();
+    // jcodemunch consolidated get_symbol/get_symbols → get_symbol_source (d040bf1).
+    // \b matches the bare trailing 'get_symbol' but not 'get_symbol_source'
+    // (no word boundary between 'l' and '_'), so this is a precise old-vs-new check.
+    expect(rule!.resolutions.jcodemunch.tool).toContain('get_symbol_source');
+    expect(rule!.resolutions.jcodemunch.tool).not.toMatch(/get_symbol\b/);
   });
 
   it('matches Grep tool to native_grep rule', () => {
@@ -198,6 +204,16 @@ describe('native tool rules', () => {
     const match = findMatchingRule('Bash', { command: 'rtk cat /some/file.ts' }, rules);
     expect(match).toBeDefined();
     expect(match!.intent).toBe('rtk_cat_code');
+  });
+
+  it('matches rtk read and rtk smart on code files (rtk cat was removed; read/smart are the real code-reading commands)', () => {
+    for (const cmd of ['rtk read /some/file.ts', 'rtk smart /some/file.ts']) {
+      const match = findMatchingRule('Bash', { command: cmd }, rules);
+      expect(match, cmd).toBeDefined();
+      expect(match!.intent).toBe('rtk_cat_code');
+    }
+    // non-code files are never blocked
+    expect(findMatchingRule('Bash', { command: 'rtk read /some/readme.md' }, rules)).toBeUndefined();
   });
 
   it('does not match rtk cat on non-code file', () => {

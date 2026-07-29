@@ -5,8 +5,8 @@
 ![Docs Quality](https://github.com/franklywatson/claude-rig/actions/workflows/docs.yml/badge.svg)
 
 A cockpit for your [Claude Code](https://claude.ai/code) tooling stack.
-[rtk](https://github.com/franklywatson/rtk),
-[jcodemunch](https://github.com/franklywatson/jcodemunch),
+[rtk](https://github.com/rtk-ai/rtk),
+[jcodemunch](https://github.com/jgravelle/jcodemunch-mcp),
 [graphify](https://github.com/safishamsi/graphify),
 [Headroom](https://github.com/chopratejas/headroom), and
 [superpowers](https://github.com/obra/superpowers) are each excellent
@@ -43,7 +43,7 @@ Rig installs the cockpit into a Claude Code project:
 - **Tool Router** -- intercepts shell commands via PreToolUse hooks, transparently rewrites
   `grep`/`find`/`cat`/`git` to rtk when available (via `updatedInput` paired with `permissionDecision: "allow"`,
   default permission mode only — `bypassPermissions` ignores the rewrite);
-  advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and `rtk cat` on code files
+  advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and rtk code-reading (`rtk read`/`rtk smart`) on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, constitutional rules (real dependencies in stack/E2E tests),
   and zero-defect status (with pre-existing failure classification); a PreToolUse test-scope check redirects full-suite runs
   to scoped tests during `tdd+`/`sdd+`, and configurable branch/PR discipline with worktree-aware isolation advice guards
@@ -78,8 +78,8 @@ structural instead of persuasive, and projects that fit can graduate from
 - [Claude Code](https://claude.ai/code) CLI
 - Node.js 18+
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework (required; all skill chain skills wrap `superpowers:*` skills)
-- [rtk](https://github.com/franklywatson/rtk) -- token-optimized command proxy (strongly recommended; tool router redirects `grep`/`find`/`cat` through rtk when available)
-- [jcodemunch](https://github.com/franklywatson/jcodemunch) -- indexed code search MCP server
+- [rtk](https://github.com/rtk-ai/rtk) -- token-optimized command proxy (strongly recommended; tool router redirects `grep`/`find`/`cat` through rtk when available)
+- [jcodemunch](https://github.com/jgravelle/jcodemunch-mcp) -- indexed code search MCP server
   (strongly recommended; powers the scout agent and tool router fallback). Detected via PATH or,
   failing that, the MCP server command registered in Claude Code's own config (`claude mcp list`)
   -- wheel-URL `uvx --from` installs work out of the box.
@@ -100,14 +100,17 @@ at different stages of the token pipeline and can run in the same project:
 | Saves tokens by | Routing to cheaper tools *before* output is produced | Compressing context *after* it exists, before the API |
 | Also provides | Enforcement, skill chain, scout agent | Conversation compression, KV-cache alignment, memory |
 
-**The one conflict to avoid:** plain `headroom wrap claude` runs `rtk init --global`,
-which installs rtk's own *global* Bash-rewriting PreToolUse hook -- stacking a second
-rewriter on top of rig's project-level routing in every project on the machine.
+**The one conflict to avoid:** historically, plain `headroom wrap claude` ran
+`rtk init --global`, installing rtk's own *global* Bash-rewriting PreToolUse hook
+and stacking a second rewriter on rig's project-level routing in every project.
+Recent headroom (main / post-0.33) makes rtk **opt-in** (`--rtk` or `HEADROOM_RTK=1`),
+so plain `wrap claude` no longer touches rtk by default; against currently-released
+0.32.0 the old behavior still holds.
 
 **Recommendation:** let rig own the tool-routing seam and Headroom own the
 compression seam:
 
-- Trial per-invocation with `headroom wrap claude --no-context-tool` (skips the rtk hook), or
+- Trial per-invocation with `headroom wrap claude` (on recent headroom rtk is opt-in by default; `--no-context-tool`/`--no-rtk` are deprecated no-ops there), or
 - Install durably with `headroom init claude`, which configures only the proxy and does not touch rtk.
 
 Rig detects Headroom automatically: when the proxy is configured for a project
@@ -234,7 +237,7 @@ rules:
     native_read: advise        # advise jcodemunch for Read on code files
     native_grep: advise        # advise jcodemunch for Grep
     native_glob: advise        # advise jcodemunch for Glob on code patterns
-    rtk_cat_code: block        # block rtk cat on code files
+    rtk_cat_code: block        # block rtk read/smart on code files
   workflow:
     branch_discipline: advise  # block | advise | silent — git commit/push on a protected branch
     protected_branches: [master, main]

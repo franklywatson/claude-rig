@@ -233,7 +233,7 @@ describe('handlePreToolUse', () => {
       { existsCheck: (p) => p === '/project/.venv/bin/pytest' },
     );
     expect(result).not.toBeNull();
-    expect(result).toEqual({ type: 'rewrite', command: '.venv/bin/pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v' });
+    expect(result).toEqual({ type: 'rewrite', command: '.venv/bin/pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v', autoAllow: true });
   });
 
   it('rewrites to uv run when no venv but uv available and .py file in args', () => {
@@ -248,7 +248,7 @@ describe('handlePreToolUse', () => {
       { existsCheck: () => false },
     );
     expect(result).not.toBeNull();
-    expect(result).toEqual({ type: 'rewrite', command: 'uv run pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v' });
+    expect(result).toEqual({ type: 'rewrite', command: 'uv run pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v', autoAllow: true });
   });
 
   it('does not rewrite when no .py file in command', () => {
@@ -388,7 +388,7 @@ describe('handlePreToolUse with file-backed cache (long-running session)', () =>
 
     // A later hook invocation loads the cache from disk
     const cache = new SessionCache(testCwd);
-    const execRewrite = vi.fn(() => 'rtk grep -r pattern .');
+    const execRewrite = vi.fn(() => ({ command: 'rtk grep -r pattern .', autoAllow: true }));
     const result = handlePreToolUse(
       'Bash',
       { command: 'grep -r pattern .' },
@@ -403,6 +403,7 @@ describe('handlePreToolUse with file-backed cache (long-running session)', () =>
       type: 'rewrite',
       command: 'rtk grep -r pattern .',
       original: 'grep -r pattern .',
+      autoAllow: true,
     });
   });
 });
