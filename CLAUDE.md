@@ -17,7 +17,9 @@ npm run lint       # Type-check (tsc --noEmit)
 
 Four-layer middleware:
 
-1. **Tool Router** (`src/router/`) -- PreToolUse hook: intent classification, priority resolution (rtk > jcodemunch > claudeTool > fallback > allow), test-scope and branch-discipline checks
+1. **Tool Router** (`src/router/`) -- PreToolUse hook: intent classification, priority
+   resolution (rtk > jcodemunch > claudeTool > fallback > allow), test-scope,
+   branch-discipline, and typed-agent enforcement checks
 2. **Enforcement** (`src/enforcement/`) -- PostToolUse hook, composable pipeline: stale tests -> constitutional -> zero-defect
 3. **Skill Chain** (`src/skills/`) -- Phase tracker validates transitions (brain+ -> plan+ -> tdd+|sdd+ -> verify+ -> review+; debug+ standalone)
 4. **Scout** (`src/scout/`) -- Cross-repo indexing, CodebaseMap formatter, TTL cache
@@ -33,7 +35,7 @@ All types in `src/types.ts`. Important ones:
 - `EnforcementViolation` -- { level, message }; severity is structural, never sniffed from message text
 - `Resolution` -- allow, advise, block
 - `ToolRule` -- match pattern + resolutions per environment priority
-- `WorkflowRules` -- branch_discipline, protected_branches, isolation_strategy
+- `WorkflowRules` -- branch_discipline, protected_branches, isolation_strategy, typed_agent_enforcement
 - `CodebaseMap` -- structure, entryPoints, keyExports, dependencies, languages, symbols
 - `HarnessConfig` -- nested rules with enforcement levels
 

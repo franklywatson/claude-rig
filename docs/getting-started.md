@@ -213,6 +213,7 @@ rules:
     protected_branches: [master, main]
     isolation_strategy: auto     # auto | branch | worktree
     team_execution: offer        # offer | auto | never — parallel teammates for independent tasks (needs the experimental agent-teams flag)
+    typed_agent_enforcement: advise  # block | advise | silent — during sdd+/review+, steer general-purpose dispatches to typed agents
 ```
 
 **Branch discipline (`rules.workflow`):** when you commit or push on a branch
