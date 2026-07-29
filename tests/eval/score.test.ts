@@ -25,7 +25,7 @@ describe('scoreResult', () => {
   });
 
   it('scores 0.0 when expected advise but got null (allow)', () => {
-    const expected: ExpectedOutcome = { action: 'advise', tool: 'rtk cat' };
+    const expected: ExpectedOutcome = { action: 'advise', tool: 'rtk read' };
     expect(scoreResult(expected, null)).toBe(0.0);
   });
 

@@ -67,19 +67,24 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
       enforcement: 'advise',
     },
 
-    // ── rtk cat on code files (close the bypass) ──
+    // ── rtk-driven code reading (close the bypass) ──
+    // rtk removed the `cat` subcommand: it rewrites `cat`→`rtk read`, and a
+    // literal `rtk cat <file>` degrades to a raw passthrough `cat`. The real
+    // code-reading commands are `rtk read` / `rtk smart` — block all of them
+    // on code files so jcodemunch (symbol-level) handles it instead. Intent
+    // name kept as `rtk_cat_code` for config stability (.harness.yaml key).
     {
       match: (tool: string, args: Record<string, unknown>) => {
         if (tool !== 'Bash') return false;
         const command = args.command as string | undefined;
         if (!command) return false;
-        const rtkCatMatch = command.match(/^rtk\s+cat\s+(\S+)/);
-        if (!rtkCatMatch) return false;
-        return isCodeFile(rtkCatMatch[1]);
+        const rtkCodeReadMatch = command.match(/^rtk\s+(?:cat|read|smart)\s+(\S+)/);
+        if (!rtkCodeReadMatch) return false;
+        return isCodeFile(rtkCodeReadMatch[1]);
       },
       intent: 'rtk_cat_code',
       resolutions: {
-        _: { action: 'block', reason: 'rtk cat on code files wastes tokens. Use jcodemunch get_file_outline for structure, get_symbol_source for definitions.' },
+        _: { action: 'block', reason: 'rtk read/smart (or passthrough rtk cat) on code files wastes tokens. Use jcodemunch get_file_outline for structure, get_symbol_source for definitions.' },
       },
       enforcement: 'block',
     },
@@ -134,7 +139,7 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
       },
       intent: 'file_read',
       resolutions: {
-        rtk: { action: 'advise', tool: 'rtk cat', reason: 'rtk provides filtered, token-optimized file reading (60-90% savings)' },
+        rtk: { action: 'advise', tool: 'rtk read', reason: 'rtk provides filtered, token-optimized file reading via rtk read (60-90% savings)' },
         jcodemunch: { action: 'advise', tool: 'jcodemunch get_file_content', reason: 'jcodemunch provides cached, token-efficient file content (80-85% savings)' },
         claudeTool: { action: 'advise', tool: 'Read', reason: 'Use Claude Read tool instead of cat/head — cleaner output, no artifacts' },
         fallback: { action: 'allow' },

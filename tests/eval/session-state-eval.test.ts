@@ -108,7 +108,7 @@ const SESSION_STATE_SCENARIOS: SessionStateScenario[] = [
         graphifyStats: { nodes: 10, edges: 20, communities: 3, extractedPct: 90, inferredPct: 8, ambiguousPct: 2 },
       });
     },
-    expected: { action: 'advise', tool: 'rtk cat' },
+    expected: { action: 'advise', tool: 'rtk read' },
   },
   {
     id: 'state_graphify_with_python',
