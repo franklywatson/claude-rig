@@ -14,6 +14,8 @@ import { loadConfig } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
 import { detectHeadroom } from './headroom.js';
+import { detectSuperpowers } from './superpowers.js';
+import { detectRtkGlobalHook } from './rtk-global-hook.js';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
 interface FileCapWarning {
@@ -83,6 +85,8 @@ export async function handleSessionStart(
   );
   env.headroomAvailable = headroom.available;
   env.headroomInitialized = headroom.initialized;
+  const superpowers = detectSuperpowers(deps.readFile, deps.existsCheck ?? existsSync, deps.homeDir);
+  env.superpowers = superpowers;
   cache.setEnvironment(env);
 
   const pyEnv = await detectPythonEnv(cwd);
@@ -155,9 +159,18 @@ export async function handleSessionStart(
     `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
 
+  if (env.rtkAvailable && detectRtkGlobalHook(deps.readFile, deps.existsCheck ?? existsSync, deps.homeDir)) {
+    lines.push(
+      "[HINT] rtk's global PreToolUse hook is also installed (~/.claude/settings.json) — redundant with rig's project hook (double-rewrites Bash commands). Remove with: rtk init --uninstall -g",
+    );
+  }
+
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
   }
+  lines.push(
+    `  superpowers: ${env.superpowers?.installed ? `installed${env.superpowers.version ? ` (v${env.superpowers.version})` : ''}` : 'not found'}`,
+  );
 
   if (env.agentTeamsAvailable) {
     lines.push('  agent-teams: available (experimental)');
@@ -282,6 +295,11 @@ export async function handleSessionStart(
     }
     if (!env.graphBuildInfo) {
       lines.push('[HINT] graphify is not installed. Install for knowledge graph analysis: https://github.com/safishamsi/graphify');
+    }
+    if (!env.superpowers?.installed) {
+      lines.push(
+        "[WARNING] superpowers not detected — rig's skill chain wraps superpowers:* skills and requires it. Install: /plugin install superpowers@claude-plugins-official",
+      );
     }
     cache.setToolsWarned(true);
   }

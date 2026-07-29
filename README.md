@@ -33,7 +33,7 @@ to reach for, and what each is saving you. Rig carries it instead:
   instrument available right now. You never have to remember the stack exists.
 - **One pane of glass** — `/savings` reports every layer side by side (tool
   layer, context layer, graph stats) without double-counting;
-  `/verify-harness` is a 35-point preflight check; session start prints the
+  `/verify-harness` is a 38-point preflight check; session start prints the
   panel status every time you sit down.
 
 ## What it does
@@ -88,6 +88,8 @@ structural instead of persuasive, and projects that fit can graduate from
   module communities, and dependency path queries that complement jcodemunch's
   symbol search)
 
+> **Tested against:** rtk 0.44.1 · jcodemunch-mcp ~1.108.x · graphify 0.4.31 · headroom 0.32.0 · superpowers 6.2.0
+
 ### Using rig with Headroom
 
 [Headroom](https://github.com/chopratejas/headroom) is a context-compression proxy that
@@ -100,17 +102,16 @@ at different stages of the token pipeline and can run in the same project:
 | Saves tokens by | Routing to cheaper tools *before* output is produced | Compressing context *after* it exists, before the API |
 | Also provides | Enforcement, skill chain, scout agent | Conversation compression, KV-cache alignment, memory |
 
-**The one conflict to avoid:** historically, plain `headroom wrap claude` ran
-`rtk init --global`, installing rtk's own *global* Bash-rewriting PreToolUse hook
-and stacking a second rewriter on rig's project-level routing in every project.
-Recent headroom (main / post-0.33) makes rtk **opt-in** (`--rtk` or `HEADROOM_RTK=1`),
-so plain `wrap claude` no longer touches rtk by default; against currently-released
-0.32.0 the old behavior still holds.
+**The one conflict to avoid:** `headroom wrap claude` can install rtk's own
+*global* Bash-rewriting PreToolUse hook (when run with `--rtk` or `HEADROOM_RTK=1`),
+stacking a second rewriter on rig's project-level routing. Plain `wrap claude`
+does not enable rtk by default — but if you opt in, rig's session-start warns
+when the redundant global hook is present (remove with `rtk init --uninstall -g`).
 
 **Recommendation:** let rig own the tool-routing seam and Headroom own the
 compression seam:
 
-- Trial per-invocation with `headroom wrap claude` (on recent headroom rtk is opt-in by default; `--no-context-tool`/`--no-rtk` are deprecated no-ops there), or
+- Trial per-invocation with `headroom wrap claude` (rtk stays off unless you pass `--rtk`), or
 - Install durably with `headroom init claude`, which configures only the proxy and does not touch rtk.
 
 Rig detects Headroom automatically: when the proxy is configured for a project
@@ -184,7 +185,7 @@ session cache reads (`Bash(cat /tmp/rig-session-*)` etc.), `Bash(npx:*)`,
 `Bash(npm:*)`).
 
 **Why broad bash permissions?** Claude Code's system prompt requires agents to use
-absolute paths unconditionally (since v2.1.97). Each new absolute path triggers a
+absolute paths unconditionally. Each new absolute path triggers a
 permission prompt unless the command pattern is pre-authorized. `--broad-permissions`
 pre-authorizes common read-only operations so agents can explore the codebase without
 constant approval dialogs.

@@ -148,6 +148,8 @@ export interface Environment {
   graphifyVersion?: string | null;
   headroomAvailable?: boolean;
   headroomInitialized?: boolean;
+  /** superpowers plugin (required by the skill chain) — detected via the plugin registry. */
+  superpowers?: { installed: boolean; version?: string };
   /** Claude Code's experimental agent-teams feature is enabled for this session. */
   agentTeamsAvailable?: boolean;
   detectedAt: number;
@@ -247,6 +249,9 @@ export interface WorkflowRules {
   isolation_strategy?: 'auto' | 'branch' | 'worktree';
   /** How sdd+ uses agent-teams when detected: offer (ask once), auto, or never. */
   team_execution?: 'offer' | 'auto' | 'never';
+  /** During sdd+/review+, steer Task/Agent dispatches to rig's typed agents
+   * (implementer/spec-reviewer/code-reviewer) instead of general-purpose. */
+  typed_agent_enforcement?: EnforcementLevel;
 }
 
 export interface HarnessConfig {

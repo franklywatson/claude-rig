@@ -132,7 +132,7 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('**SK6**');
     expect(content).toContain('**AG8**');
     expect(content).toContain('Agent(subagent_type="code-reviewer")');
-    expect(content).toContain('XX/35');
+    expect(content).toContain('XX/38');
   });
 
   it('tdd+ and sdd+ carry the branch-discipline preflight', () => {
@@ -173,5 +173,42 @@ describe('hook templates — rtk rewrite auto-allow gate', () => {
     // without permissionDecision so Claude Code prompts (rtk-ai/rtk#1155).
     expect(content).toContain('autoAllow');
     expect(content).toMatch(/autoAllow\s*\?\s*\{\s*permissionDecision/);
+  });
+});
+
+describe('verify-harness — typed-agent enforcement check', () => {
+  it('includes the AG9 general-purpose→typed steering check', () => {
+    const content = read('skills/verify-harness/SKILL.md');
+    expect(content).toContain('typed_agent_enforcement');
+    expect(content).toContain('general-purpose');
+  });
+
+  it('includes the S6 superpowers detection check', () => {
+    const content = read('skills/verify-harness/SKILL.md');
+    expect(content).toContain('superpowers: installed');
+    expect(content).toContain('claude-plugins-official');
+  });
+});
+
+describe('agent tool lists — Release 2 adoptions (F1 jcodemunch + F2 graphify)', () => {
+  it('scout adopts plan_turn/get_ranked_context/assemble_task_context + get_node/get_neighbors', () => {
+    const content = read('agents/scout.md');
+    for (const t of ['mcp__jcodemunch__plan_turn', 'mcp__jcodemunch__get_ranked_context', 'mcp__jcodemunch__assemble_task_context', 'mcp__graphify__get_node', 'mcp__graphify__get_neighbors']) {
+      expect(content, t).toContain(t);
+    }
+  });
+
+  it('code-reviewer adopts search_ast/winnow_symbols + get_node/get_neighbors', () => {
+    const content = read('agents/code-reviewer.md');
+    for (const t of ['mcp__jcodemunch__search_ast', 'mcp__jcodemunch__winnow_symbols', 'mcp__graphify__get_node', 'mcp__graphify__get_neighbors']) {
+      expect(content, t).toContain(t);
+    }
+  });
+
+  it('spec-reviewer adopts graphify get_node/get_neighbors', () => {
+    const content = read('agents/spec-reviewer.md');
+    for (const t of ['mcp__graphify__get_node', 'mcp__graphify__get_neighbors']) {
+      expect(content, t).toContain(t);
+    }
   });
 });

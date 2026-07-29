@@ -5,9 +5,11 @@
 - [Claude Code](https://claude.ai/code) CLI installed and configured
 - Node.js 18+
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework.
-  **Required.** Every skill in the chain (`brain+`, `plan+`, `tdd+`, `sdd+`,
-  `verify+`, `review+`, `debug+`) wraps a `superpowers:*` skill. Without
-  superpowers installed, the skill chain will not function.
+  **Required.** Install via the Claude Code plugin marketplace:
+  `/plugin install superpowers@claude-plugins-official`. Every skill in the
+  chain (`brain+`, `plan+`, `tdd+`, `sdd+`, `verify+`, `review+`, `debug+`)
+  wraps a `superpowers:*` skill — without superpowers the chain won't function.
+  (rig detects it via `~/.claude/plugins/installed_plugins.json`.)
 - A project you want to add guardrails to
 
 Strongly recommended:
@@ -82,7 +84,7 @@ This generates:
 
 ## Reducing permission prompts
 
-Claude Code requires agents to use absolute paths (system prompt requirement since v2.1.97).
+Claude Code requires agents to use absolute paths (a system-prompt requirement).
 This means common shell operations like `ls /project/src/` trigger a permission prompt for
 each new path pattern, which can feel like a lot of approvals.
 
@@ -126,7 +128,7 @@ Start a Claude Code session in your project and run:
 /verify-harness
 ```
 
-This runs a 35-point checklist confirming hooks, skills, agents, and config are correctly wired.
+This runs a 38-point checklist confirming hooks, skills, agents, and config are correctly wired.
 
 ## Use the skill chain
 
