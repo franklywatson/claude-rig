@@ -12,7 +12,13 @@ describe('detectSuperpowers', () => {
     const r = detectSuperpowers(read(s), exists, '/fake');
     expect(r.installed).toBe(true);
     expect(r.version).toBe('6.2.0');
-    expect(r.path).toBe('/x/superpowers');
+  });
+
+  it('does not match near-names: superpowers-extra@ or mysuperpowers@', () => {
+    const s1 = JSON.stringify({ plugins: { 'superpowers-extra@claude-plugins-official': [{ version: '1.0' }] } });
+    expect(detectSuperpowers(read(s1), exists, '/fake').installed).toBe(false);
+    const s2 = JSON.stringify({ plugins: { 'mysuperpowers@x': [{ version: '1.0' }] } });
+    expect(detectSuperpowers(read(s2), exists, '/fake').installed).toBe(false);
   });
 
   it('detects superpowers from any marketplace', () => {

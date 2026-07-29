@@ -33,7 +33,7 @@ to reach for, and what each is saving you. Rig carries it instead:
   instrument available right now. You never have to remember the stack exists.
 - **One pane of glass** — `/savings` reports every layer side by side (tool
   layer, context layer, graph stats) without double-counting;
-  `/verify-harness` is a 35-point preflight check; session start prints the
+  `/verify-harness` is a 38-point preflight check; session start prints the
   panel status every time you sit down.
 
 ## What it does

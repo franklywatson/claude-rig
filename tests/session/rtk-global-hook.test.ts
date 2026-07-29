@@ -29,6 +29,11 @@ describe('detectRtkGlobalHook', () => {
     expect(detectRtkGlobalHook(read(s), exists, '/fake')).toBe(false);
   });
 
+  it('does not match "rtk hooks" (plural — trailing word boundary)', () => {
+    const s = settings([{ hooks: [{ command: 'rtk hooks something' }] }]);
+    expect(detectRtkGlobalHook(read(s), exists, '/fake')).toBe(false);
+  });
+
   it('returns false when settings.json is absent', () => {
     expect(detectRtkGlobalHook(() => '', () => false, '/fake')).toBe(false);
   });

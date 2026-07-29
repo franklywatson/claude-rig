@@ -5,8 +5,6 @@ import { homedir } from 'node:os';
 export interface SuperpowersDetection {
   installed: boolean;
   version?: string;
-  /** On-disk install path (for the verify-harness deepest check). */
-  path?: string;
 }
 
 // installed_plugins.json keys are `<plugin>@<marketplace>`; match superpowers
@@ -30,12 +28,12 @@ export function detectSuperpowers(
   try {
     if (!existsCheck(reg)) return { installed: false };
     const parsed = JSON.parse(readFile(reg)) as {
-      plugins?: Record<string, Array<{ version?: string; installPath?: string }>>;
+      plugins?: Record<string, Array<{ version?: string }>>;
     };
     for (const key of Object.keys(parsed.plugins ?? {})) {
       if (SUPERPOWERS_KEY.test(key)) {
         const entry = parsed.plugins?.[key]?.[0];
-        return { installed: true, version: entry?.version, path: entry?.installPath };
+        return { installed: true, version: entry?.version };
       }
     }
     return { installed: false };

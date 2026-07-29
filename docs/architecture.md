@@ -721,8 +721,8 @@ Key design decisions:
 - graphify has no file-count or AST-recursion limit; only the HTML
   visualization is skipped above 5000 nodes (graph.json + GRAPH_REPORT.md
   are always produced).
-- **Absolute paths and permission prompts**: Claude Code's system prompt (since
-  v2.1.97) requires agents to use absolute paths unconditionally. Each new
+- **Absolute paths and permission prompts**: Claude Code's system prompt requires
+  agents to use absolute paths unconditionally. Each new
   absolute path in a Bash command triggers a permission prompt unless pre-authorized.
   `rig init --broad-permissions` pre-authorizes common read-only operations to
   reduce this friction. Without the flag, users will see more approval dialogs —

@@ -159,9 +159,9 @@ export async function handleSessionStart(
     `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
 
-  if (env.rtkAvailable && detectRtkGlobalHook(deps.readFile, deps.existsCheck ?? existsSync)) {
+  if (env.rtkAvailable && detectRtkGlobalHook(deps.readFile, deps.existsCheck ?? existsSync, deps.homeDir)) {
     lines.push(
-      "  rtk: ⚠ global PreToolUse hook also installed in ~/.claude/settings.json — redundant with rig's project hook (double-rewrites Bash commands). Remove with: rtk init --uninstall -g",
+      "[HINT] rtk's global PreToolUse hook is also installed (~/.claude/settings.json) — redundant with rig's project hook (double-rewrites Bash commands). Remove with: rtk init --uninstall -g",
     );
   }
 
@@ -171,11 +171,6 @@ export async function handleSessionStart(
   lines.push(
     `  superpowers: ${env.superpowers?.installed ? `installed${env.superpowers.version ? ` (v${env.superpowers.version})` : ''}` : 'not found'}`,
   );
-  if (!env.superpowers?.installed) {
-    lines.push(
-      "[WARNING] superpowers not detected — rig's skill chain wraps superpowers:* skills and requires it. Install: /plugin install superpowers@claude-plugins-official",
-    );
-  }
 
   if (env.agentTeamsAvailable) {
     lines.push('  agent-teams: available (experimental)');
@@ -300,6 +295,11 @@ export async function handleSessionStart(
     }
     if (!env.graphBuildInfo) {
       lines.push('[HINT] graphify is not installed. Install for knowledge graph analysis: https://github.com/safishamsi/graphify');
+    }
+    if (!env.superpowers?.installed) {
+      lines.push(
+        "[WARNING] superpowers not detected — rig's skill chain wraps superpowers:* skills and requires it. Install: /plugin install superpowers@claude-plugins-official",
+      );
     }
     cache.setToolsWarned(true);
   }
