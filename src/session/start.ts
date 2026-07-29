@@ -14,6 +14,7 @@ import { loadConfig } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
 import { detectHeadroom } from './headroom.js';
+import { detectRtkGlobalHook } from './rtk-global-hook.js';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
 interface FileCapWarning {
@@ -154,6 +155,12 @@ export async function handleSessionStart(
     `  jcodemunch: ${describeJcodemunch(env)}`,
     `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
+
+  if (env.rtkAvailable && detectRtkGlobalHook(deps.readFile, deps.existsCheck ?? existsSync)) {
+    lines.push(
+      "  rtk: ⚠ global PreToolUse hook also installed in ~/.claude/settings.json — redundant with rig's project hook (double-rewrites Bash commands). Remove with: rtk init --uninstall -g",
+    );
+  }
 
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
