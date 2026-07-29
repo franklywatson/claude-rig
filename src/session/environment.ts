@@ -4,7 +4,6 @@ import { existsSync, statSync } from 'node:fs';
 import type { Environment, GraphBuildInfo, JcodemunchTransport } from '../types.js';
 import {
   graphJsonPath,
-  rebuildLockPath,
   GRAPH_JSON_REL,
   GRAPHIFY_PLACEHOLDER_THRESHOLD,
 } from '../constants.js';
@@ -207,21 +206,9 @@ export function detectGraphify(
     // Placeholder or tiny file — treat as absent
   }
 
-  // graphify leaves .rebuild.lock behind after completed builds: a lock with a
-  // graph newer than it is stale (finished build); a lock newer than the graph
-  // (or with no valid graph) means a rebuild is in progress.
-  const lockPath = rebuildLockPath(cwd);
-  if (existsCheck(lockPath)) {
-    if (!graphValid) {
-      return { state: 'building', _cliFound: cliAvailable, cliVersion };
-    }
-    const graphMtime = mtimeCheck(graphPath);
-    const lockMtime = mtimeCheck(lockPath);
-    if (graphMtime && lockMtime && lockMtime > graphMtime) {
-      return { state: 'building', _cliFound: cliAvailable, cliVersion };
-    }
-    // Stale lock (or mtimes unavailable) — the valid graph wins
-  }
+  // graphify 0.4.31 writes no .rebuild.lock; graph validity alone determines
+  // ready/absent. The build-in-progress race is handled by the polling loop in
+  // scout/graph-state.ts, not a lockfile.
 
   if (graphValid) {
     return { state: 'ready', graphPath: GRAPH_JSON_REL, _cliFound: cliAvailable, cliVersion };

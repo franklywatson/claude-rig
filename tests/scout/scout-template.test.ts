@@ -41,8 +41,8 @@ describe('scout agent template', () => {
     expect(template).toMatch(/CLI fallback|parse.*graph\.json|graph\.json.*directly/i);
   });
 
-  it('treats .rebuild.lock as the building-state indicator', () => {
-    expect(template).toContain('.rebuild.lock');
+  it('does not reference the removed .rebuild.lock (graphify stopped writing it)', () => {
+    expect(template).not.toContain('.rebuild.lock');
   });
 
   it('requires numeric symbol counts in the output', () => {
