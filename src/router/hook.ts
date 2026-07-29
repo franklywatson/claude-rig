@@ -8,6 +8,7 @@ import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
 import { checkTestScope } from '../enforcement/test-scope.js';
 import { checkBranchDisciplineCommand } from './branch-discipline.js';
+import { checkTypedAgentDispatch } from './typed-agent.js';
 import type { ExecFn } from '../session/worktree.js';
 
 export type ExecRewriteFn = (rtkPath: string, args: string[]) => { command: string; autoAllow: boolean } | null;
@@ -217,6 +218,14 @@ export function handlePreToolUse(
         ].join('\n'),
       };
     }
+  }
+
+  // Step 1.7: Typed-agent dispatch — during sdd+/review+, steer a
+  // general-purpose (or missing) subagent_type to rig's typed agents
+  // (implementer / spec-reviewer / code-reviewer). Fires only for Agent/Task.
+  if (tool === 'Agent' || tool === 'Task') {
+    const typedViolation = checkTypedAgentDispatch(tool, args, config, cache);
+    if (typedViolation) return typedViolation;
   }
 
   // Steps 1.5 + 1.6: pre-rewrite Bash checks, evaluated collect-then-pick:

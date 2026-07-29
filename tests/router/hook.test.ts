@@ -309,6 +309,15 @@ describe('scout_explore advisory', () => {
     expect(msg(result)).toContain('ADVISE');
   });
 
+  it('advises typed-agent enforcement for a general-purpose Agent dispatch during sdd+', () => {
+    cache.setEnvironment(makeEnv());
+    cache.setPhase('sdd+');
+    const result = handlePreToolUse('Agent', { subagent_type: 'general-purpose', prompt: 'do the task' }, cache, config);
+    expect(result).not.toBeNull();
+    expect(msg(result)).toContain('Typed-agent enforcement');
+    expect(msg(result)).toContain('implementer');
+  });
+
   it('suppresses scout advisory for Agent Explore on second call (first-occurrence)', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'find auth files' }, cache, config);
