@@ -56,6 +56,16 @@ describe('agent templates', () => {
     }
     expect(read('agents/scout.md')).toContain('maxTurns: 30');
   });
+
+  it('agent tool lists use get_symbol_source (jcodemunch consolidated get_symbol/get_symbols away in d040bf1)', () => {
+    for (const agent of ['scout', 'code-reviewer', 'spec-reviewer']) {
+      const content = read(`agents/${agent}.md`);
+      expect(content).toContain('mcp__jcodemunch__get_symbol_source');
+      // The exact old pair must be gone; get_symbol_source must not be a
+      // substring of either removed name (it isn't), so this is unambiguous.
+      expect(content).not.toContain('mcp__jcodemunch__get_symbol,mcp__jcodemunch__get_symbols');
+    }
+  });
 });
 
 describe('skill templates — typed dispatch', () => {

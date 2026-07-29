@@ -32,7 +32,7 @@ export function getDefaultRules(cwd?: string): ToolRule[] {
       },
       intent: 'native_read',
       resolutions: {
-        jcodemunch: { action: 'advise', tool: 'jcodemunch get_file_outline or get_symbol', reason: 'For code files, get_file_outline returns structure with signatures (80-85% fewer tokens than full file read)' },
+        jcodemunch: { action: 'advise', tool: 'jcodemunch get_file_outline or get_symbol_source', reason: 'For code files, get_file_outline returns structure with signatures (80-85% fewer tokens than full file read)' },
         fallback: { action: 'allow' },
       },
       enforcement: 'advise',

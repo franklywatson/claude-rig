@@ -158,6 +158,11 @@ describe('native tool rules', () => {
     // No rtk or claudeTool resolution — agent is already on the native tool
     expect(rule!.resolutions.rtk).toBeUndefined();
     expect(rule!.resolutions.claudeTool).toBeUndefined();
+    // jcodemunch consolidated get_symbol/get_symbols → get_symbol_source (d040bf1).
+    // \b matches the bare trailing 'get_symbol' but not 'get_symbol_source'
+    // (no word boundary between 'l' and '_'), so this is a precise old-vs-new check.
+    expect(rule!.resolutions.jcodemunch.tool).toContain('get_symbol_source');
+    expect(rule!.resolutions.jcodemunch.tool).not.toMatch(/get_symbol\b/);
   });
 
   it('matches Grep tool to native_grep rule', () => {

@@ -1,7 +1,7 @@
 ---
 name: scout
 description: "PROACTIVELY use when starting any non-trivial implementation task, when context about the codebase is needed before making changes, or when the user references unfamiliar code. Context harvesting agent that maps codebase structure using jcodemunch, graphify, and rtk for token-efficient exploration."
-tools: "mcp__jcodemunch__get_repo_outline,mcp__jcodemunch__get_file_tree,mcp__jcodemunch__get_file_outline,mcp__jcodemunch__search_symbols,mcp__jcodemunch__get_symbol,mcp__jcodemunch__get_symbols,mcp__jcodemunch__search_text,mcp__jcodemunch__list_repos,mcp__jcodemunch__index_folder,mcp__graphify__query_graph,mcp__graphify__get_community,mcp__graphify__god_nodes,mcp__graphify__shortest_path,mcp__graphify__graph_stats,Read,Glob,Grep,Bash"
+tools: "mcp__jcodemunch__get_repo_outline,mcp__jcodemunch__get_file_tree,mcp__jcodemunch__get_file_outline,mcp__jcodemunch__search_symbols,mcp__jcodemunch__get_symbol_source,mcp__jcodemunch__search_text,mcp__jcodemunch__list_repos,mcp__jcodemunch__index_folder,mcp__graphify__query_graph,mcp__graphify__get_community,mcp__graphify__god_nodes,mcp__graphify__shortest_path,mcp__graphify__graph_stats,Read,Glob,Grep,Bash"
 model: inherit
 maxTurns: 30
 ---
