@@ -5,9 +5,11 @@
 - [Claude Code](https://claude.ai/code) CLI installed and configured
 - Node.js 18+
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework.
-  **Required.** Every skill in the chain (`brain+`, `plan+`, `tdd+`, `sdd+`,
-  `verify+`, `review+`, `debug+`) wraps a `superpowers:*` skill. Without
-  superpowers installed, the skill chain will not function.
+  **Required.** Install via the Claude Code plugin marketplace:
+  `/plugin install superpowers@claude-plugins-official`. Every skill in the
+  chain (`brain+`, `plan+`, `tdd+`, `sdd+`, `verify+`, `review+`, `debug+`)
+  wraps a `superpowers:*` skill — without superpowers the chain won't function.
+  (rig detects it via `~/.claude/plugins/installed_plugins.json`.)
 - A project you want to add guardrails to
 
 Strongly recommended:

@@ -132,7 +132,7 @@ describe('skill templates — loop-aware vocabulary', () => {
     expect(content).toContain('**SK6**');
     expect(content).toContain('**AG8**');
     expect(content).toContain('Agent(subagent_type="code-reviewer")');
-    expect(content).toContain('XX/36');
+    expect(content).toContain('XX/37');
   });
 
   it('tdd+ and sdd+ carry the branch-discipline preflight', () => {
@@ -181,5 +181,11 @@ describe('verify-harness — typed-agent enforcement check', () => {
     const content = read('skills/verify-harness/SKILL.md');
     expect(content).toContain('typed_agent_enforcement');
     expect(content).toContain('general-purpose');
+  });
+
+  it('includes the S6 superpowers detection check', () => {
+    const content = read('skills/verify-harness/SKILL.md');
+    expect(content).toContain('superpowers: installed');
+    expect(content).toContain('claude-plugins-official');
   });
 });
