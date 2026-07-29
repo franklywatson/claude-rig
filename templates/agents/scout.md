@@ -226,8 +226,8 @@ the response), report:
 
 ### graphify build failure
 
-If `graphify update` fails for a directory (e.g., Python recursion limit on large codebases,
-or the resulting graph.json is still under 1KB indicating a placeholder), report:
+If `graphify update` fails for a directory (e.g., the resulting graph.json is
+still under 1KB indicating a placeholder, or the build errored), report:
 
 ```
 [WARNING] graphify build failed for <directory>.

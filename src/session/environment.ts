@@ -155,20 +155,11 @@ function parseGraphifyVersion(output: string): string | undefined {
   return output.match(/(\d+\.\d+\.\d+)/)?.[1];
 }
 
-const defaultMtimeCheck = (path: string): Date | undefined => {
-  try {
-    return statSync(path).mtime;
-  } catch {
-    return undefined;
-  }
-};
-
 export function detectGraphify(
   cwd: string,
   exec: ExecFn,
   existsCheck: (path: string) => boolean = existsSync,
   statCheck: (path: string) => { size: number } | undefined = defaultStatCheck,
-  mtimeCheck: (path: string) => Date | undefined = defaultMtimeCheck,
 ): GraphifyDetectResult {
   // Check for graphify CLI — package installs as 'graphifyy' (double-y)
   let cliBinary: string | null = null;

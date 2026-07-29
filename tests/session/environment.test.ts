@@ -834,25 +834,20 @@ describe('detectGraphify', () => {
     const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
     const existsCheck = (path: string) => path === '/fake/cwd/graphify-out/.rebuild.lock';
 
-    const result = detectGraphify(
-      '/fake/cwd', exec, existsCheck, () => undefined,
-      (path) => (path.endsWith('.rebuild.lock') ? new Date(2000) : undefined),
-    );
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, () => undefined);
     expect(result.state).toBe('absent');
     expect(result._cliFound).toBe(true);
   });
 
-  it('ignores a .rebuild.lock newer than graph.json — a valid graph is ready', () => {
+  it('a valid graph is ready even when a .rebuild.lock is present (lock ignored)', () => {
     const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });
     const existsCheck = (path: string) =>
       path === '/fake/cwd/graphify-out/graph.json' ||
       path === '/fake/cwd/graphify-out/.rebuild.lock';
     const statCheck = (path: string) =>
       path === '/fake/cwd/graphify-out/graph.json' ? { size: 5000 } : undefined;
-    const mtimeCheck = (path: string) =>
-      path.endsWith('graph.json') ? new Date(1000) : new Date(5000);
 
-    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck, mtimeCheck);
+    const result = detectGraphify('/fake/cwd', exec, existsCheck, statCheck);
     expect(result.state).toBe('ready');
     expect(result.graphPath).toBe('graphify-out/graph.json');
   });

@@ -127,13 +127,15 @@ on the Grep tool.
 `rtk rewrite` follows a four-code permission protocol (rtk
 `src/hooks/rewrite_cmd.rs`): exit 0 + stdout = rewrite (safe to auto-allow),
 exit 1 = no RTK equivalent, exit 2 = deny rule matched, exit 3 + stdout =
-"Ask" verdict (rewrite valid, must not be auto-allowed). Rig uses exit-0 and
-exit-3 rewrites identically — the hook emits `updatedInput` paired with
-`permissionDecision: "allow"`, which auto-approves the rewritten command in
-place of the original (Claude Code ignores `updatedInput` unless a
-`permissionDecision` accompanies it). This only takes effect in default
-permission mode; in `bypassPermissions` the `updatedInput` is ignored and the
-original command runs unmodified. Exits 1 and 2 fall through silently to
+"Ask"/Default verdict (rewrite valid, must not be auto-allowed). Rig treats
+the two differently: an exit-0 rewrite is emitted as `updatedInput` paired
+with `permissionDecision: "allow"` (auto-approve); an exit-3 rewrite is
+emitted as `updatedInput` **without** `permissionDecision`, so Claude Code
+prompts the user (matching rtk's own `process_claude_payload`; rtk 0.36+ maps
+unrated commands to Default→exit 3, so exit-3 is the common case — auto-
+allowing it would defeat rtk's least-privilege default). This only takes
+effect in default permission mode; in `bypassPermissions` the `updatedInput`
+is ignored and the original command runs unmodified. Exits 1 and 2 fall through silently to
 rig's own rules by design (stdout is never used on exit 2).
 Anything outside the protocol (exit 3 without output, other exit codes,
 signals, ENOENT) is appended as a JSON line to
