@@ -102,43 +102,47 @@ export interface EvalScenario {
 // Simulates `rtk rewrite <command>` for eval tests.
 // Only rewrites commands that rtk's rules cover.
 
-export function mockRtkRewrite(rtkPath: string, args: string[]): string | null {
+export function mockRtkRewrite(rtkPath: string, args: string[]): { command: string; autoAllow: boolean } | null {
   const command = args[1]; // args = ['rewrite', command]
   if (!command) return null;
 
+  // All simulated rewrites auto-allow (this harness models rtk's Allow path;
+  // exit-3 Ask/Default semantics are unit-tested in tests/router/rewrite.test.ts).
+  const rewrite = (c: string) => ({ command: c, autoAllow: true });
+
   // cat/head/tail → rtk read
   if (/^\s*(cat|head|tail)\s+/.test(command)) {
-    return command.replace(/^\s*(cat|head|tail)\s+/, 'rtk read ');
+    return rewrite(command.replace(/^\s*(cat|head|tail)\s+/, 'rtk read '));
   }
 
   // grep/rg → rtk grep
   if (/^\s*(grep|rg)\s+/.test(command)) {
-    return command.replace(/^\s*(grep|rg)\s+/, 'rtk grep ');
+    return rewrite(command.replace(/^\s*(grep|rg)\s+/, 'rtk grep '));
   }
 
   // find → rtk find
   if (/^\s*find\s+/.test(command)) {
-    return command.replace(/^\s*find\s+/, 'rtk find ');
+    return rewrite(command.replace(/^\s*find\s+/, 'rtk find '));
   }
 
   // fd → rtk find (rtk treats fd as a find synonym)
   if (/^\s*fd\s+/.test(command)) {
-    return command.replace(/^\s*fd\s+/, 'rtk find ');
+    return rewrite(command.replace(/^\s*fd\s+/, 'rtk find '));
   }
 
   // ls → rtk ls
   if (/^\s*ls(\s|$)/.test(command)) {
-    return command.replace(/^\s*ls\s*/, 'rtk ls ');
+    return rewrite(command.replace(/^\s*ls\s*/, 'rtk ls '));
   }
 
   // git → rtk git
   if (/^\s*git\s+/.test(command)) {
-    return command.replace(/^\s*git\s+/, 'rtk git ');
+    return rewrite(command.replace(/^\s*git\s+/, 'rtk git '));
   }
 
   // gh → rtk gh
   if (/^\s*gh\s+/.test(command)) {
-    return command.replace(/^\s*gh\s+/, 'rtk gh ');
+    return rewrite(command.replace(/^\s*gh\s+/, 'rtk gh '));
   }
 
   // No rewrite for everything else (sed, npm, docker, echo, etc.)
