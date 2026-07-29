@@ -14,6 +14,7 @@ import { loadConfig } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
 import { detectHeadroom } from './headroom.js';
+import { detectSuperpowers } from './superpowers.js';
 import { detectRtkGlobalHook } from './rtk-global-hook.js';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 
@@ -84,6 +85,8 @@ export async function handleSessionStart(
   );
   env.headroomAvailable = headroom.available;
   env.headroomInitialized = headroom.initialized;
+  const superpowers = detectSuperpowers(deps.readFile, deps.existsCheck ?? existsSync, deps.homeDir);
+  env.superpowers = superpowers;
   cache.setEnvironment(env);
 
   const pyEnv = await detectPythonEnv(cwd);
@@ -164,6 +167,14 @@ export async function handleSessionStart(
 
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
+  }
+  lines.push(
+    `  superpowers: ${env.superpowers?.installed ? `installed${env.superpowers.version ? ` (v${env.superpowers.version})` : ''}` : 'not found'}`,
+  );
+  if (!env.superpowers?.installed) {
+    lines.push(
+      "[WARNING] superpowers not detected — rig's skill chain wraps superpowers:* skills and requires it. Install: /plugin install superpowers@claude-plugins-official",
+    );
   }
 
   if (env.agentTeamsAvailable) {
