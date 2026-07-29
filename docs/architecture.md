@@ -131,9 +131,9 @@ exit 1 = no RTK equivalent, exit 2 = deny rule matched, exit 3 + stdout =
 the two differently: an exit-0 rewrite is emitted as `updatedInput` paired
 with `permissionDecision: "allow"` (auto-approve); an exit-3 rewrite is
 emitted as `updatedInput` **without** `permissionDecision`, so Claude Code
-prompts the user (matching rtk's own `process_claude_payload`; rtk 0.36+ maps
-unrated commands to Default→exit 3, so exit-3 is the common case — auto-
-allowing it would defeat rtk's least-privilege default). This only takes
+prompts the user (matching rtk's own `process_claude_payload`; unrated commands
+map to Default→exit 3, so exit-3 is the common case — auto-allowing it would
+defeat rtk's least-privilege default). This only takes
 effect in default permission mode; in `bypassPermissions` the `updatedInput`
 is ignored and the original command runs unmodified. Exits 1 and 2 fall through silently to
 rig's own rules by design (stdout is never used on exit 2).

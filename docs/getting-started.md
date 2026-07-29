@@ -84,7 +84,7 @@ This generates:
 
 ## Reducing permission prompts
 
-Claude Code requires agents to use absolute paths (system prompt requirement since v2.1.97).
+Claude Code requires agents to use absolute paths (a system-prompt requirement).
 This means common shell operations like `ls /project/src/` trigger a permission prompt for
 each new path pattern, which can feel like a lot of approvals.
 
