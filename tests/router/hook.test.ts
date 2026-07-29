@@ -318,6 +318,22 @@ describe('scout_explore advisory', () => {
     expect(msg(result)).toContain('implementer');
   });
 
+  it('does not apply typed-agent enforcement to an Explore dispatch during sdd+', () => {
+    cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
+    cache.setPhase('sdd+');
+    const result = handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'map code' }, cache, config);
+    // Explore is a typed dispatch — scout_explore may advise, but the typed-agent gate must not fire.
+    expect(msg(result)).not.toContain('Typed-agent enforcement');
+  });
+
+  it('steers to spec-reviewer/code-reviewer for a general-purpose dispatch during review+', () => {
+    cache.setEnvironment(makeEnv());
+    cache.setPhase('review+');
+    const result = handlePreToolUse('Agent', { subagent_type: 'general-purpose', prompt: 'review it' }, cache, config);
+    expect(msg(result)).toContain('Typed-agent enforcement');
+    expect(msg(result)).toMatch(/spec-reviewer|code-reviewer/);
+  });
+
   it('suppresses scout advisory for Agent Explore on second call (first-occurrence)', () => {
     cache.setEnvironment(makeEnv({ jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
     handlePreToolUse('Agent', { subagent_type: 'Explore', prompt: 'find auth files' }, cache, config);

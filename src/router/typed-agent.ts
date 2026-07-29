@@ -10,7 +10,7 @@ export interface TypedAgentResult {
 // Phases that dispatch rig's typed agents (implementer / spec-reviewer / code-reviewer).
 const ENFORCE_PHASES = new Set(['sdd+', 'review+']);
 // subagent_type values that are NOT rig's typed agents: the general-purpose
-// fallback and the 'claude' catch-all. A missing/empty subagent_type is also unttyped.
+// fallback and the 'claude' catch-all. A missing/empty subagent_type is also untyped.
 const UNTYPED = new Set(['general-purpose', 'claude']);
 
 /**
@@ -35,7 +35,7 @@ export function checkTypedAgentDispatch(
   if (level === 'silent') return null;
   const phase = cache.getCurrentPhase();
   if (!phase || !ENFORCE_PHASES.has(phase)) return null;
-  const subagentType = args.subagent_type as string | undefined;
+  const subagentType = typeof args.subagent_type === 'string' ? args.subagent_type : undefined;
   if (subagentType && !UNTYPED.has(subagentType)) return null; // a typed dispatch — allowed
 
   const typed = phase === 'review+' ? 'spec-reviewer or code-reviewer' : 'implementer';
