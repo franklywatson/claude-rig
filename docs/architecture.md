@@ -84,7 +84,7 @@ Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
 | `native_read` | `Read` tool on code files (no offset/limit) | jcodemunch `get_file_outline` or `get_symbol` |
 | `native_grep` | `Grep` tool | jcodemunch `search_text` |
 | `native_glob` | `Glob` tool on code file patterns | jcodemunch `get_file_tree` |
-| `rtk_cat_code` | `rtk cat` on code files | Block, redirect to jcodemunch |
+| `rtk_cat_code` | rtk code-reading (`rtk read`/`rtk smart`/`rtk cat`) on code files | Block, redirect to jcodemunch |
 | `text_search` | Bash `grep`, `rg` | rtk or jcodemunch `search_text` |
 | `file_discovery` | Bash `find`, `fd` | jcodemunch `get_file_tree` |
 | `file_read` | Bash `cat`, `head`, `tail` | rtk or jcodemunch `get_symbol` |
@@ -716,9 +716,9 @@ Key design decisions:
   in `~/.code-index/config.jsonc`). Session-start emits a `[WARNING]` when files
   are skipped, but search quality may be degraded for large projects until the
   limit is increased.
-- graphify build may fail on very large codebases (6000+ files) due to Python
-  AST recursion limits during tree-sitter traversal. The scout agent falls back
-  to jcodemunch-only analysis and reports the failure.
+- graphify has no file-count or AST-recursion limit; only the HTML
+  visualization is skipped above 5000 nodes (graph.json + GRAPH_REPORT.md
+  are always produced).
 - **Absolute paths and permission prompts**: Claude Code's system prompt (since
   v2.1.97) requires agents to use absolute paths unconditionally. Each new
   absolute path in a Bash command triggers a permission prompt unless pre-authorized.

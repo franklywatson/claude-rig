@@ -175,9 +175,9 @@ in this project, so `graphify-out/graph.json` does not exist or is a placeholder
 graphify update .
 ```
 
-Run this from the project root. For large projects (6000+ files), graphify may
-hit Python AST recursion limits — the scout agent falls back to jcodemunch-only
-analysis in that case and reports the failure.
+Run this from the project root. graphify has no file-count or AST-recursion
+limit; only the HTML visualization is skipped above 5000 nodes (graph.json
+and GRAPH_REPORT.md are always produced).
 
 ### Rig's automatic self-check
 
