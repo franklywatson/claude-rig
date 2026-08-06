@@ -55,6 +55,14 @@ PreToolUse Hook (handlePreToolUse)
   +--------------------------------------+
      |
   +--------------------------------------+
+  | Step 2.5: jcodemunch divert          |
+  |   high-value Bash shape?             |
+  |   (big cat / identifier grep)        |
+  |   jm ready & not silent -> ADVISE jm |
+  |   else -> fall through to Step 3     |
+  +--------------------------------------+
+     |
+  +--------------------------------------+
   | Step 3: rtk transparent rewrite      |
   |   rtk available? -> redirect rtk     |
   +--------------------------------------+
@@ -90,6 +98,19 @@ Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
 | `file_read` | Bash `cat`, `head`, `tail` | rtk or jcodemunch `get_symbol` |
 | `file_modify` | Bash `sed -i`, `awk >` | Block, redirect to Edit tool |
 | `scout_explore` | `Agent` tool dispatching the `Explore` subagent | Advise scout subagent (jcodemunch + graphify) |
+
+**Step 2.5 — jcodemunch divert (pre-rewrite).** Before the rtk rewrite (Step 3),
+a pure heuristic (`src/router/jcodemunch-value.ts`, `scoreJcodemunchValue`)
+scores each non-compound Bash command. A high-value shape diverts to a
+jcodemunch advisory *instead of* the rtk rewrite: a big-file `cat` of a code
+file above `tool_routing.jcodemunch_divert_outline_bytes` (default 8192 B) →
+`get_file_outline`; a single-identifier `grep`/`rg` (lowercase-bearing, no regex
+metacharacters, not multi-`-e`, not `-l`) → `search_symbols`. Level follows
+`tool_routing.jcodemunch_divert` (advise | block | silent); suppressed advise
+turns and silent fall through to rtk so the cheap path still runs. The divert
+advisory cycle is shorter than the generic one (`DIVERT_READVISE_PERIOD = 3`,
+keyed per shape). This is what surfaces jcodemunch in Bash-heavy sessions where
+rtk would otherwise short-circuit every read/search.
 
 Git `commit`/`push` interception is not an intent type — it is handled by the
 branch-discipline step (Step 1.6, see "Branch discipline (commit-time)" below).

@@ -43,7 +43,7 @@ Rig installs the cockpit into a Claude Code project:
 - **Tool Router** -- intercepts shell commands via PreToolUse hooks, transparently rewrites
   `grep`/`find`/`cat`/`git` to rtk when available (via `updatedInput` paired with `permissionDecision: "allow"`,
   default permission mode only — `bypassPermissions` ignores the rewrite);
-  advises on native Read/Grep/Glob when jcodemunch is indexed; blocks `sed -i` and rtk code-reading (`rtk read`/`rtk smart`) on code files
+  advises on native Read/Grep/Glob when jcodemunch is indexed; diverts high-value Bash reads/searches (big-file `cat`, identifier `grep`) to jcodemunch instead of rtk (`tool_routing.jcodemunch_divert`); blocks `sed -i` and rtk code-reading (`rtk read`/`rtk smart`) on code files
 - **Enforcement Pipeline** -- PostToolUse hooks check stale tests, constitutional rules (real dependencies in stack/E2E tests),
   and zero-defect status (with pre-existing failure classification); a PreToolUse test-scope check redirects full-suite runs
   to scoped tests during `tdd+`/`sdd+`, and configurable branch/PR discipline with worktree-aware isolation advice guards
@@ -240,6 +240,7 @@ rules:
     native_grep: advise        # advise jcodemunch for Grep
     native_glob: advise        # advise jcodemunch for Glob on code patterns
     rtk_cat_code: block        # block rtk read/smart on code files
+    jcodemunch_divert: advise  # advise | block | silent — divert high-value Bash shapes (big cat, identifier grep) to jcodemunch instead of rtk
   workflow:
     branch_discipline: advise  # block | advise | silent — git commit/push on a protected branch
     protected_branches: [master, main]
