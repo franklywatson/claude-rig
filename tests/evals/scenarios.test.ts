@@ -4,9 +4,9 @@ import { join } from 'path';
 import { SCENARIOS } from '../../evals/scenarios.js';
 
 describe('scenarios: v1 set', () => {
-  it('defines the three v1 scenarios', () => {
+  it('defines the known v1 scenarios', () => {
     expect(SCENARIOS.map((s) => s.id).sort()).toEqual(
-      ['loop-fit-negative', 'loop-fit-positive', 'loop-optin-sections'],
+      ['divert-jcodemunch-used', 'loop-fit-negative', 'loop-fit-positive', 'loop-optin-sections'],
     );
   });
   it('each scenario resolves a brief file, a prompt, and >=1 invariant', () => {
@@ -14,6 +14,9 @@ describe('scenarios: v1 set', () => {
       expect(existsSync(join(process.cwd(), s.briefFile)), s.briefFile).toBe(true);
       expect(s.prompt.length).toBeGreaterThan(20);
       expect(s.invariants.length).toBeGreaterThanOrEqual(1);
+      for (const f of s.projectFiles ?? []) {
+        expect(existsSync(join(process.cwd(), f.src)), f.src).toBe(true);
+      }
     }
   });
   it('the negative scenario asserts opt-in ABSENCE', () => {

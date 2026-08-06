@@ -24,6 +24,8 @@ export const DEFAULT_CONFIG: HarnessConfig = {
       rtk_cat_code: 'block',
       scout_explore: 'advise',
       read_line_threshold: 100,
+      jcodemunch_divert: 'advise',
+      jcodemunch_divert_outline_bytes: 8192,
     },
     constitutional: {
       no_mocks: 'advise',

@@ -86,6 +86,8 @@ describe('initCommand', () => {
     expect(content).toContain('tool_routing');
     expect(content).toContain('constitutional');
     expect(content).toContain('stale_tests');
+    expect(content).toContain('jcodemunch_divert:');
+    expect(content).toContain('jcodemunch_divert_outline_bytes:');
   });
 
   it('creates graphify-out directory but no placeholder graph.json', async () => {

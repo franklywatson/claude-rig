@@ -47,6 +47,16 @@ Exit code is 0 iff every scenario passed (suitable for a CI gate later).
 | `loop-fit-positive` | headless nightly ATS-scoring service | brain+ **fires** the loop opt-in |
 | `loop-fit-negative` | one-off local CSV-reformatting CLI | brain+ does **not** offer the loop trajectory |
 | `loop-optin-sections` | the positive brief + a scripted "yes" | the design carries the signal-stack, primary/loop-boundary, and autonomy-ceiling sections |
+| `divert-jcodemunch-used` | a fixture TypeScript router the agent is asked to grep | the agent **follows the Step 2.5 divert** and calls an `mcp__jcodemunch__` tool to locate the symbol |
+
+The `divert-jcodemunch-used` scenario is the first to scaffold a fixture
+codebase (`scenario.projectFiles` → materialized into the temp project before
+`claude -p`, so session-start auto-indexes it) and the first to grade **tool-use
+structure** rather than assistant text: the invariant passes only when an
+`mcp__jcodemunch__*` tool call appears in the transcript. It closes the
+model-driven gap the deterministic router tests can't reach — *does the agent
+follow the divert advisory?* Run it with `npm run eval -- --scenario
+divert-jcodemunch-used` (needs local `claude` auth and jcodemunch installed).
 
 ## How grading stays model-robust
 
@@ -56,8 +66,11 @@ Exit code is 0 iff every scenario passed (suitable for a CI gate later).
 - **Loop-specific tokens.** The opt-in is detected via `agent-loop pattern` /
   `maintainer trajectory`, **not** `signal stack` (which brain+ emits in its
   general guidance for *every* project, so it is not a discriminator).
-- **Visible output only.** Grading runs on extracted assistant text, dropping
-  thinking blocks — the user sees the offer in visible output, not in reasoning.
+- **Visible output only (with one structural exception).** Grading runs on
+  extracted assistant text, dropping thinking blocks — the user sees the offer
+  in visible output, not in reasoning. The `divert-jcodemunch-used` scenario is
+  the exception: "followed the advisory" is observable only in the tool calls,
+  so it grades tool-use structure (an `mcp__jcodemunch__*` call) instead.
 - **Confined judge fallback.** Only the negative scenario consults a judge, and
   only for one forced binary fact ("did it propose a loop trajectory?"), to
   minimize the grader's own model-sensitivity.

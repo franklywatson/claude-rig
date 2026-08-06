@@ -41,6 +41,31 @@ describe('runner: gradeTranscript dispatch by invariant', () => {
   });
 });
 
+describe('runner: jcodemunch-tool-used dispatch (divert-followed)', () => {
+  // Canned stream-json: an assistant turn whose tool calls are the grading surface.
+  const JM =
+    '{"type":"assistant","message":{"content":[{"type":"text","text":"Using indexed search."},' +
+    '{"type":"tool_use","name":"mcp__jcodemunch__search_symbols","input":{"query":"routeRequest"}}]}}';
+  const BASH =
+    '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"grep -r routeRequest ."}}]}}';
+
+  it('passes when the agent followed the divert (jcodemunch tool_use present)', async () => {
+    const r = await gradeTranscript(get('divert-jcodemunch-used'), JM, judgeAlways(true));
+    expect(r.pass).toBe(true);
+    expect(r.observed).toContain('search_symbols');
+  });
+  it('fails when the agent ignored the advisory (only raw Bash)', async () => {
+    const r = await gradeTranscript(get('divert-jcodemunch-used'), BASH, judgeAlways(true));
+    expect(r.pass).toBe(false);
+    expect(r.observed).toContain('no mcp__jcodemunch__');
+  });
+  it('the divert scenario is registered with its fixture code file', () => {
+    const s = get('divert-jcodemunch-used');
+    expect(s.invariants[0].kind).toBe('jcodemunch-tool-used');
+    expect(s.projectFiles?.some((f) => f.dest === 'src/router.ts')).toBe(true);
+  });
+});
+
 describe('runner: runScenario with injected driver', () => {
   it('runs N times and reduces by majority', async () => {
     const driveSession = vi.fn(async () => POS);
