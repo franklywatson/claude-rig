@@ -51,21 +51,47 @@ export function matchLoopOptIn(text: string): boolean {
   return LOOP_OPTIN_TOKENS.some((re) => re.test(text));
 }
 
-/**
- * True iff an opted-in design carries all three required sections.
- *
- * Same presence-vs-structure caveat as matchLoopOptIn: this keys on free-text
- * concept presence, so a single shallow sentence naming all three concepts
- * would pass. Lower risk than the negative case (the sections scenario scripts
- * a "YES, include…" answer and asks for headed sections), but a stricter
- * heading-marker match is the tracked refinement.
- */
 export function matchSectionsPresent(text: string): boolean {
   const hasSignalStack = /signal stack/i.test(text);
   const hasBoundary =
     /(loop disabled|primary\/loop|operable with the loop|primary system[^.]{0,60}loop)/i.test(text);
   const hasCeiling = /autonomy ceiling/i.test(text);
   return hasSignalStack && hasBoundary && hasCeiling;
+}
+
+/**
+ * Recover the names of every tool the assistant INVOKED from a stream-json
+ * transcript (assistant content blocks of type `tool_use`). Unlike
+ * extractAssistantText (visible text), this reads tool-call structure — the
+ * surface needed to grade "did the agent follow the divert and actually call a
+ * jcodemunch tool?" rather than merely mention one.
+ */
+export function extractToolUseNames(jsonl: string): string[] {
+  const names: string[] = [];
+  for (const line of jsonl.trim().split('\n').filter(Boolean)) {
+    let o: unknown;
+    try {
+      o = JSON.parse(line);
+    } catch {
+      continue;
+    }
+    const obj = o as { type?: string; message?: { content?: unknown } };
+    if (obj.type === 'assistant' && obj.message && Array.isArray(obj.message.content)) {
+      for (const c of obj.message.content as Array<{ type?: string; name?: unknown }>) {
+        if (c && c.type === 'tool_use' && typeof c.name === 'string') names.push(c.name);
+      }
+    }
+  }
+  return names;
+}
+
+/**
+ * True iff the agent invoked at least one jcodemunch MCP tool. The divert
+ * (Step 2.5) and the native-read/grep/glob advisories all steer here; a hit
+ * means the agent followed the nudge rather than falling back to raw Bash/Read.
+ */
+export function matchJcodemunchUsed(toolNames: string[]): boolean {
+  return toolNames.some((n) => n.startsWith('mcp__jcodemunch__'));
 }
 
 export type JudgeDriver = (prompt: string) => Promise<string>;

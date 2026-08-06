@@ -2,11 +2,11 @@
 // headlessly → capture stream-json → track artifacts for teardown. Not imported
 // by unit tests (only buildClaudeArgs is pure-tested); exercised via `npm run eval`.
 
-import { mkdtempSync, writeFileSync, readFileSync, readdirSync, realpathSync } from 'fs';
+import { mkdtempSync, writeFileSync, readFileSync, readdirSync, realpathSync, mkdirSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { join, dirname } from 'path';
 import { execFileSync } from 'child_process';
-import type { Scenario } from './types.js';
+import type { Scenario, ProjectFile } from './types.js';
 import type { DriveSessionFn, Judge } from './runner.js';
 import { TeardownRegistry } from './runner.js';
 import { judgeNegative } from './grade.js';
@@ -40,6 +40,17 @@ export function sessionFragmentOwnedBy(jsonContent: string, ownedDirs: string[])
     return false;
   }
   return typeof parsed.cwd === 'string' && ownedDirs.includes(parsed.cwd);
+}
+
+/** Copy a scenario's fixture files into the scaffolded project (creating parent
+ *  dirs) so a routing/divert scenario has a real codebase to operate on. Runs
+ *  after `rig init` and before `claude -p`, so session-start auto-indexes them. */
+export function materializeProjectFiles(dir: string, files: ProjectFile[]): void {
+  for (const f of files) {
+    const dest = join(dir, f.dest);
+    mkdirSync(dirname(dest), { recursive: true });
+    writeFileSync(dest, readFileSync(join(process.cwd(), f.src), 'utf-8'));
+  }
 }
 
 /** Track /tmp/rig-session-*.json fragments OWNED BY `dir` (cwd-equality, not a
@@ -81,6 +92,7 @@ export function makeLiveDriver(reg: TeardownRegistry, timeoutMs = 300000): Drive
     const env = { ...process.env, CLAUDE_PROJECT_DIR: dir };
     execFileSync('rig', ['init'], { cwd: dir, stdio: 'ignore', env });
     writeFileSync(join(dir, 'BRIEF.md'), readFileSync(join(process.cwd(), scenario.briefFile), 'utf-8'));
+    if (scenario.projectFiles) materializeProjectFiles(dir, scenario.projectFiles);
     const out = execFileSync('claude', buildClaudeArgs(scenario.prompt, model), {
       cwd: dir,
       env,

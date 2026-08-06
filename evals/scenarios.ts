@@ -55,4 +55,28 @@ export const SCENARIOS: Scenario[] = [
       },
     ],
   },
+  {
+    // Live-model reliability check for the Step 2.5 jcodemunch divert. Scaffolds
+    // a fixture codebase, invites a symbol search (which the router diverts to
+    // mcp__jcodemunch__search_symbols), and asserts the agent FOLLOWED the
+    // advisory — i.e. an mcp__jcodemunch__ tool_use appears in the transcript.
+    // The deterministic logic is covered by tests/router/; this is the
+    // model-driven gap those tests cannot reach. Run: npm run eval -- --scenario
+    // divert-jcodemunch-used (needs local claude auth + jcodemunch installed).
+    id: 'divert-jcodemunch-used',
+    mode: 'positive',
+    briefFile: 'evals/fixtures/divert-positive.md',
+    prompt:
+      'A small TypeScript project is in this directory (see BRIEF.md). Use grep or rg ' +
+      'to find where the function `routeRequest` is defined, then state its parameter list.',
+    invariants: [
+      {
+        kind: 'jcodemunch-tool-used',
+        description: 'the agent follows the Step 2.5 divert and locates the symbol via an mcp__jcodemunch__ tool',
+      },
+    ],
+    projectFiles: [
+      { dest: 'src/router.ts', src: 'evals/fixtures/divert-project/src/router.ts' },
+    ],
+  },
 ];

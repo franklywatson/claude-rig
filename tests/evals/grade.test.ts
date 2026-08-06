@@ -6,6 +6,8 @@ import {
   matchLoopOptIn,
   matchSectionsPresent,
   judgeNegative,
+  extractToolUseNames,
+  matchJcodemunchUsed,
 } from '../../evals/grade.js';
 
 const fx = (name: string) => readFileSync(join(process.cwd(), 'evals/fixtures', name), 'utf-8');
@@ -57,5 +59,32 @@ describe('grade: confined judge fallback (fail-closed)', () => {
   });
   it('accepts the natural "PASSED" wording', async () => {
     expect(await judgeNegative('...', async () => 'PASSED')).toBe(true);
+  });
+});
+
+describe('grade: tool-use extraction (jcodemunch-followed detection)', () => {
+  // Minimal stream-json: an assistant turn with a text block + a jcodemunch tool_use.
+  const jmTranscript = [
+    '{"type":"assistant","message":{"content":[{"type":"text","text":"Looking up the symbol..."},{"type":"tool_use","name":"mcp__jcodemunch__search_symbols","input":{"query":"routeRequest"}}]}}',
+    '{"type":"result","result":"found"}',
+  ].join('\n');
+  // Same shape but the agent fell back to raw Bash instead of following the divert.
+  const bashTranscript =
+    '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"Bash","input":{"command":"grep -r routeRequest src/"}},{"type":"tool_use","name":"Read","input":{"file_path":"src/router.ts"}}]}}';
+
+  it('extracts tool_use names from assistant content blocks', () => {
+    expect(extractToolUseNames(jmTranscript)).toEqual(['mcp__jcodemunch__search_symbols']);
+  });
+  it('ignores text blocks and non-assistant lines', () => {
+    const names = extractToolUseNames(bashTranscript);
+    expect(names).toEqual(['Bash', 'Read']);
+    expect(names).not.toContain('mcp__jcodemunch__search_symbols');
+  });
+  it('matchJcodemunchUsed is true when a jcodemunch tool was invoked', () => {
+    expect(matchJcodemunchUsed(extractToolUseNames(jmTranscript))).toBe(true);
+  });
+  it('matchJcodemunchUsed is false when only non-jcodemunch tools ran', () => {
+    expect(matchJcodemunchUsed(extractToolUseNames(bashTranscript))).toBe(false);
+    expect(matchJcodemunchUsed([])).toBe(false);
   });
 });

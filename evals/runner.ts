@@ -4,7 +4,7 @@
 // canned transcripts.
 
 import { rmSync } from 'fs';
-import { extractAssistantText, matchLoopOptIn, matchSectionsPresent } from './grade.js';
+import { extractAssistantText, matchLoopOptIn, matchSectionsPresent, extractToolUseNames, matchJcodemunchUsed } from './grade.js';
 import { majorityPass, buildReport } from './reduce.js';
 import { SCENARIOS } from './scenarios.js';
 import type { Scenario, RunResult, ScenarioResult, EvalReport } from './types.js';
@@ -63,6 +63,15 @@ export async function gradeTranscript(
     case 'sections-present': {
       const ok = matchSectionsPresent(text);
       return { pass: ok, observed: ok ? 'all required sections present' : 'required sections missing' };
+    }
+    case 'jcodemunch-tool-used': {
+      // Tool-call structure (not visible text) is the grading surface: the
+      // divert/advisory is proven followed only by an actual mcp__jcodemunch__
+      // tool_use in the transcript. Deterministic — no judge needed.
+      const names = extractToolUseNames(transcript);
+      const jm = names.filter((n) => n.startsWith('mcp__jcodemunch__'));
+      const ok = jm.length > 0;
+      return { pass: ok, observed: ok ? `jcodemunch tool used (${jm.join(', ')})` : 'no mcp__jcodemunch__ tool call observed' };
     }
     default:
       return { pass: false, observed: `unknown invariant: ${(inv as { kind: string }).kind}` };
