@@ -9,7 +9,7 @@ const CODE_EXTENSIONS = new Set<string>([
   '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.py', '.go', '.rs', '.java',
   '.kt', '.scala', '.rb', '.php', '.cs', '.c', '.cc', '.cpp', '.h', '.hpp',
   '.swift', '.vue', '.svelte', '.elixir', '.ex', '.exs', '.clj', '.cljs',
-  '.hs', '.ml', '.fs', '.dart', '.lua', '.pl', '.r', '.jl',
+  '.hs', '.ml', '.fs', '.dart', '.lua', '.pl', '.r', '.jl', '.erl',
 ]);
 
 /** A single identifier token (no spaces, no regex metacharacters). */
@@ -90,7 +90,7 @@ export function scoreJcodemunchValue(command: string, opts: DivertOptions): Dive
   // symbol name: identifier-shaped, no regex metacharacters, and containing a
   // lowercase letter (filters all-caps literal-scan markers like TODO/FIXME and
   // constants in favor of CamelCase / snake_case names search_symbols handles).
-  if (binary === 'grep' || binary === 'rg' || binary === 'greprx') {
+  if (binary === 'grep' || binary === 'rg') {
     if (flags.has('-l') || flags.has('--files-with-matches')) return null;
     // One pass collects explicit pattern sources (-e / --regexp, including the
     // `--regexp=PATTERN` form) and the remaining positional args, SKIPPING the

@@ -586,6 +586,17 @@ describe('handlePreToolUse test-scope check', () => {
       expect(result).toMatchObject({ type: 'rewrite' });
     });
 
+    it('diverts an identifier grep to search_symbols and does NOT reach rtk', () => {
+      cache.setEnvironment(jmEnv());
+      const rtkMustNotRun = (): never => { throw new Error('rtk execRewrite must not be called on a divert'); };
+      const result = handlePreToolUse('Bash', { command: 'grep -r calculateScore src/' }, cache, config, undefined, {
+        execRewrite: rtkMustNotRun, existsCheck: bigExists, statCheck: bigStat,
+      });
+      expect(result).toMatchObject({ level: 'advise' });
+      expect(msg(result)).toContain('mcp__jcodemunch__search_symbols');
+      expect(msg(result)).toContain('symbol search');
+    });
+
     it('does not divert a compound command (Step 2.5 skipped → pass-through)', () => {
       cache.setEnvironment(jmEnv());
       const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts && cat /y/big.ts' }, cache, config, undefined, { existsCheck: bigExists, statCheck: bigStat });
