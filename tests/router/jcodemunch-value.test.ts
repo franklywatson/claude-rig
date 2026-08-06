@@ -103,4 +103,13 @@ describe('scoreJcodemunchValue — Shape B (identifier grep symbol search)', () 
   it('does not divert multiple -e patterns (an OR query search_symbols cannot express)', () => {
     expect(scoreJcodemunchValue('grep -e Foo -e Bar baz.ts', opts())).toBeNull();
   });
+
+  it('does not mistake a value-taking flag value for the pattern (rg --type ts "export function")', () => {
+    // `ts` is the --type value, not the search pattern; the real pattern is a phrase.
+    expect(scoreJcodemunchValue('rg --type ts "export function"', opts())).toBeNull();
+  });
+
+  it('still diverts an identifier search that carries a --type/-t filter', () => {
+    expect(scoreJcodemunchValue('rg -t ts calculateScore src/', opts())).toMatchObject({ shape: 'symbol', target: 'calculateScore' });
+  });
 });

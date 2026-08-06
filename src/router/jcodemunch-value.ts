@@ -92,23 +92,34 @@ export function scoreJcodemunchValue(command: string, opts: DivertOptions): Dive
   // constants in favor of CamelCase / snake_case names search_symbols handles).
   if (binary === 'grep' || binary === 'rg' || binary === 'greprx') {
     if (flags.has('-l') || flags.has('--files-with-matches')) return null;
-    // Collect every pattern source: space form (-e P / --regexp P) and the
-    // attached `=` form (--regexp=P). Multiple patterns form an OR query that
-    // search_symbols can't express → stay rtk (no divert).
+    // One pass collects explicit pattern sources (-e / --regexp, including the
+    // `--regexp=PATTERN` form) and the remaining positional args, SKIPPING the
+    // values of value-taking flags (e.g. `rg --type ts PAT` — `ts` is the type,
+    // not the search pattern) so a flag value is never mistaken for the pattern.
+    const VALUE_FLAGS = new Set(['-A', '-B', '-C', '-m', '-M', '-g', '-t', '--type', '--glob', '--max-count', '--max-columns', '--ignore', '--ignore-file', '--before-context', '--after-context', '--context']);
     const tokens = command.trim().split(/\s+/);
     const patterns: string[] = [];
+    const positionalArgs: string[] = [];
     for (let i = 1; i < tokens.length; i++) {
       const t = tokens[i];
       if (t === '-e' || t === '--regexp') {
         const v = tokens[i + 1];
         if (v !== undefined && !v.startsWith('-')) patterns.push(v);
+        i++; // consume the value so it isn't also treated as positional
       } else if (t.startsWith('--regexp=')) {
         patterns.push(t.slice('--regexp='.length));
+      } else if (t.startsWith('--') && t.includes('=')) {
+        // other --flag=value (e.g. --include=*.ts): value is attached, not positional
+      } else if (t.startsWith('-')) {
+        if (VALUE_FLAGS.has(t)) i++; // skip this flag's value token
+      } else {
+        positionalArgs.push(t);
       }
     }
+    // Multiple explicit patterns = an OR query search_symbols can't express → rtk.
     const pattern = patterns.length === 1
       ? patterns[0]
-      : (patterns.length === 0 ? positional[0] : undefined);
+      : (patterns.length === 0 ? positionalArgs[0] : undefined);
     if (!pattern) return null;                        // multi-pattern OR, or none → rtk
     if (REGEX_METACHAR.test(pattern)) return null;    // regex/literal scan → rtk
     if (!IDENT.test(pattern)) return null;            // multi-token / phrase → rtk
