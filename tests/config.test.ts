@@ -27,6 +27,20 @@ describe('config', () => {
       expect(DEFAULT_CONFIG.rules.tool_routing.rtk_cat_code).toBe('block');
       expect(DEFAULT_CONFIG.rules.tool_routing.read_line_threshold).toBe(100);
     });
+
+    it('has jcodemunch divert config keys', () => {
+      expect(DEFAULT_CONFIG.rules.tool_routing.jcodemunch_divert).toBe('advise');
+      expect(DEFAULT_CONFIG.rules.tool_routing.jcodemunch_divert_outline_bytes).toBe(8192);
+    });
+  });
+
+  it('mergeConfigs preserves unspecified tool_routing keys (jcodemunch_divert)', () => {
+    const base = structuredClone(DEFAULT_CONFIG);
+    const override = structuredClone(DEFAULT_CONFIG);
+    override.rules.tool_routing.jcodemunch_divert = 'block';
+    const merged = mergeConfigs(base, override);
+    expect(merged.rules.tool_routing.jcodemunch_divert).toBe('block');
+    expect(merged.rules.tool_routing.jcodemunch_divert_outline_bytes).toBe(8192);
   });
 
   describe('loadConfig', () => {

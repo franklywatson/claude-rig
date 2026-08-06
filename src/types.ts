@@ -214,6 +214,8 @@ export interface ToolRoutingRules {
   rtk_cat_code?: EnforcementLevel;
   scout_explore?: EnforcementLevel;
   read_line_threshold?: number;
+  jcodemunch_divert?: EnforcementLevel;
+  jcodemunch_divert_outline_bytes?: number;
 }
 
 export interface ConstitutionalRules {
