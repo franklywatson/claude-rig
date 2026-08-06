@@ -59,3 +59,48 @@ describe('scoreJcodemunchValue — Shape A (cat outline)', () => {
     expect(scoreJcodemunchValue('cat "src/my file.ts"', opts({ size: 20000 }))).toBeNull();
   });
 });
+
+describe('scoreJcodemunchValue — Shape B (identifier grep symbol search)', () => {
+  it('diverts a single-identifier grep to search_symbols', () => {
+    const d = scoreJcodemunchValue('grep -r calculateScore src/', opts());
+    expect(d).toMatchObject({ shape: 'symbol', jmTool: 'mcp__jcodemunch__search_symbols', target: 'calculateScore' });
+  });
+
+  it('still diverts with --word-regexp (-w)', () => {
+    expect(scoreJcodemunchValue('grep -rw FooBar .', opts())).toMatchObject({ shape: 'symbol' });
+  });
+
+  it('still diverts with rg and case-insensitive (-i)', () => {
+    expect(scoreJcodemunchValue('rg -i MyType src/', opts())).toMatchObject({ shape: 'symbol', target: 'MyType' });
+  });
+
+  it('diverts snake_case identifiers', () => {
+    expect(scoreJcodemunchValue('grep -r parse_header .', opts())).toMatchObject({ shape: 'symbol', target: 'parse_header' });
+  });
+
+  it('does not divert a regex pattern (contains metacharacters)', () => {
+    expect(scoreJcodemunchValue('grep "foo.bar" src/', opts())).toBeNull();
+    expect(scoreJcodemunchValue('grep -r "a|b" .', opts())).toBeNull();
+  });
+
+  it('does not divert a multi-token / quoted phrase pattern', () => {
+    expect(scoreJcodemunchValue('grep "some phrase" .', opts())).toBeNull();
+  });
+
+  it('does not divert all-caps literal-scan markers (TODO/FIXME) — no lowercase letter', () => {
+    expect(scoreJcodemunchValue('grep -r TODO .', opts())).toBeNull();
+    expect(scoreJcodemunchValue('grep -rn FIXME src/', opts())).toBeNull();
+  });
+
+  it('does not divert --files-with-matches (-l)', () => {
+    expect(scoreJcodemunchValue('grep -rl FooBar .', opts())).toBeNull();
+  });
+
+  it('diverts --regexp=PATTERN (the = form)', () => {
+    expect(scoreJcodemunchValue('grep --regexp=FooBar src/', opts())).toMatchObject({ shape: 'symbol', target: 'FooBar' });
+  });
+
+  it('does not divert multiple -e patterns (an OR query search_symbols cannot express)', () => {
+    expect(scoreJcodemunchValue('grep -e Foo -e Bar baz.ts', opts())).toBeNull();
+  });
+});

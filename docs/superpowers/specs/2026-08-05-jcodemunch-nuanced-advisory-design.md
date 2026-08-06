@@ -141,8 +141,11 @@ Diverts to `mcp__jcodemunch__search_symbols` when **all** hold:
 
 1. The command is a non-compound `grep` or `rg` (the `text_search` intent).
 2. The search pattern is a **single identifier token**: matches
-   `^[A-Za-z_][A-Za-z0-9_]*$`. No spaces, no regex metacharacters
-   (`. * [ ] ( ) | \ + ? { } $ ^ /`). The `-w` / `--word-regexp` flag
+   `^[A-Za-z_][A-Za-z0-9_]*$`, with no spaces and no regex metacharacters
+   (`. * [ ] ( ) | \ + ? { } $ ^ /`), **and contains at least one lowercase
+   letter**. The lowercase requirement filters all-caps literal-scan markers
+   (TODO/FIXME/HACK) and constants in favor of CamelCase / snake_case symbol
+   names `search_symbols` actually indexes. The `-w` / `--word-regexp` flag
    reinforces symbol intent (still divert).
 3. The pattern is **not** the `--files-with-matches` case: neither `-l` nor
    `--files-with-matches` is present (that wants a file list — low value; rtk /
@@ -153,7 +156,9 @@ positional argument, the value of `-e` / `--regexp` (space form), and the
 attached `--regexp=PATTERN` (`=`) form. **Exactly one** pattern must be
 specified: multiple `-e` / `--regexp` flags form a multi-pattern OR query that
 `search_symbols` cannot express, so those do not divert. Other flags (`-r`,
-`-i`, `--color`, `-n`, etc.) do not block the divert.
+`-i`, `--color`, `-n`, etc.) do not block the divert. Short-flag clusters
+(`-rn`, `-rl`) are decomposed into individual flags, so `-l` hidden inside
+`-rl` still suppresses the divert.
 
 Why it is a clear win: the agent is looking for a symbol definition/references;
 `search_symbols` (BM25 + embeddings + AST) ranks and locates it, versus rtk

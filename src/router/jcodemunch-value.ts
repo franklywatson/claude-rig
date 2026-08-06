@@ -12,6 +12,11 @@ const CODE_EXTENSIONS = new Set<string>([
   '.hs', '.ml', '.fs', '.dart', '.lua', '.pl', '.r', '.jl',
 ]);
 
+/** A single identifier token (no spaces, no regex metacharacters). */
+const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
+/** Regex metacharacters — their presence means a literal/regex scan, not a symbol lookup. */
+const REGEX_METACHAR = /[.*+?^${}()|[\]\\/]/;
+
 export interface DivertDecision {
   /** 'outline' = big-file structural read; 'symbol' = identifier search. */
   shape: 'outline' | 'symbol';
@@ -40,7 +45,13 @@ function parse(command: string): { binary: string; positional: string[]; flags: 
   return {
     binary: tokens[0] ?? '',
     positional: tokens.slice(1).filter(t => !t.startsWith('-')),
-    flags: new Set(tokens.slice(1).filter(t => t.startsWith('-')).map(t => t.replace(/=.*$/, ''))),
+    // Long options keep their name (--foo, --foo=bar); short-option clusters
+    // like `-rl` decompose into `-r` and `-l` so individual flags are detectable.
+    flags: new Set(tokens.slice(1).flatMap(t => {
+      if (!t.startsWith('-')) return [];
+      if (t.startsWith('--')) return [t.replace(/=.*$/, '')];
+      return t.slice(1).split('').map(ch => '-' + ch);
+    })),
   };
 }
 
@@ -49,11 +60,11 @@ function parse(command: string): { binary: string; positional: string[]; flags: 
  * Returns a DivertDecision for a recognized high-value shape, or null to let
  * the caller fall through to rtk (Step 3 of the router).
  *
- * Shape A (big-file `cat` outline) is implemented here; Shape B (identifier
- * grep/rg symbol search) is added alongside in a later task.
+ * Shape A: big-file `cat` → get_file_outline.
+ * Shape B: single-identifier `grep`/`rg` → search_symbols.
  */
 export function scoreJcodemunchValue(command: string, opts: DivertOptions): DivertDecision | null {
-  const { binary, positional } = parse(command);
+  const { binary, positional, flags } = parse(command);
 
   // Shape A — big-file structural read (`cat` only).
   // `head`/`tail` are excluded: they imply the agent wants a slice (top/bottom),
@@ -71,6 +82,42 @@ export function scoreJcodemunchValue(command: string, opts: DivertOptions): Dive
       jmTool: 'mcp__jcodemunch__get_file_outline',
       target,
       reason: `${target} is large; the outline gives its structure for far fewer tokens than reading the whole file (rtk would still return every line).`,
+    };
+  }
+
+  // Shape B — symbol-shaped search (grep / rg, single identifier token).
+  // Diverts only when exactly one pattern is given and it looks like a real
+  // symbol name: identifier-shaped, no regex metacharacters, and containing a
+  // lowercase letter (filters all-caps literal-scan markers like TODO/FIXME and
+  // constants in favor of CamelCase / snake_case names search_symbols handles).
+  if (binary === 'grep' || binary === 'rg' || binary === 'greprx') {
+    if (flags.has('-l') || flags.has('--files-with-matches')) return null;
+    // Collect every pattern source: space form (-e P / --regexp P) and the
+    // attached `=` form (--regexp=P). Multiple patterns form an OR query that
+    // search_symbols can't express → stay rtk (no divert).
+    const tokens = command.trim().split(/\s+/);
+    const patterns: string[] = [];
+    for (let i = 1; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t === '-e' || t === '--regexp') {
+        const v = tokens[i + 1];
+        if (v !== undefined && !v.startsWith('-')) patterns.push(v);
+      } else if (t.startsWith('--regexp=')) {
+        patterns.push(t.slice('--regexp='.length));
+      }
+    }
+    const pattern = patterns.length === 1
+      ? patterns[0]
+      : (patterns.length === 0 ? positional[0] : undefined);
+    if (!pattern) return null;                        // multi-pattern OR, or none → rtk
+    if (REGEX_METACHAR.test(pattern)) return null;    // regex/literal scan → rtk
+    if (!IDENT.test(pattern)) return null;            // multi-token / phrase → rtk
+    if (!/[a-z]/.test(pattern)) return null;          // all-caps (TODO/FIXME/CONST) → rtk
+    return {
+      shape: 'symbol',
+      jmTool: 'mcp__jcodemunch__search_symbols',
+      target: pattern,
+      reason: `${pattern} looks like a symbol; mcp__jcodemunch__search_symbols ranks definitions/references better than a text grep.`,
     };
   }
 
