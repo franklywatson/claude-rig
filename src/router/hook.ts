@@ -1,9 +1,10 @@
 import { execFileSync, execSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, statSync, existsSync } from 'node:fs';
 import type { EnforcementViolation, HarnessConfig, RewriteResult } from '../types.js';
-import { SessionCache } from '../session/cache.js';
+import { SessionCache, DIVERT_READVISE_PERIOD } from '../session/cache.js';
 import { findMatchingRule, getDefaultRules } from './rules.js';
 import { resolve } from './resolver.js';
+import { scoreJcodemunchValue } from './jcodemunch-value.js';
 import { tryPythonRewrite } from './python-rewrite.js';
 import { isCompoundCommand } from './intent.js';
 import { checkTestScope } from '../enforcement/test-scope.js';
@@ -17,6 +18,8 @@ export type ExistsCheckFn = (path: string) => boolean;
 export interface HookOptions {
   execRewrite?: ExecRewriteFn;
   existsCheck?: ExistsCheckFn;
+  /** Injectable stat for the jcodemunch-divert file-size check (testability). */
+  statCheck?: (p: string) => { size: number; isFile: boolean };
   /** Injectable exec for branch-discipline git probes (testability). */
   branchExec?: ExecFn;
 }
@@ -275,6 +278,41 @@ export function handlePreToolUse(
       const rewritten = tryPythonRewrite(args.command, effectiveCwd, pythonEnv, resolvedOptions.existsCheck);
       if (rewritten) {
         return { type: 'rewrite', command: rewritten, original: args.command, autoAllow: true };
+      }
+    }
+  }
+
+  // Step 2.5: jcodemunch divert — for high-value Bash read/search shapes,
+  // advise jcodemunch INSTEAD of rewriting to rtk (Step 3). Suppressed turns
+  // (advise level) and silent level fall through to Step 3 so rtk still
+  // optimizes them; block level always fires (never suppressed, never calls
+  // shouldAdvise). Compound commands skip this step (same guard as Step 3).
+  if (tool === 'Bash' && typeof args.command === 'string' && !isCompoundCommand(args.command)) {
+    if (env.jcodemunchAvailable && env.jcodemunchCwdIndexed) {
+      const outlineBytes = config.rules.tool_routing?.jcodemunch_divert_outline_bytes ?? 8192;
+      const exists = resolvedOptions.existsCheck ?? ((p: string) => { try { return existsSync(p); } catch { return false; } });
+      const stat = resolvedOptions.statCheck ?? ((p: string) => { try { const s = statSync(p); return { size: s.size, isFile: s.isFile() }; } catch { return { size: 0, isFile: false }; } });
+      const decision = scoreJcodemunchValue(args.command, { existsCheck: exists, statCheck: stat, outlineBytes });
+      if (decision) {
+        const level = config.rules.tool_routing?.jcodemunch_divert ?? 'advise';
+        if (level !== 'silent') {
+          // Block always fires; advise respects the per-shape divert cycle.
+          const fire = level === 'block' || cache.shouldAdvise(`jm_divert:${decision.shape}`, DIVERT_READVISE_PERIOD);
+          if (fire) {
+            const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
+            const label = decision.shape === 'outline' ? 'big-file outline' : 'symbol search';
+            return {
+              level,
+              message: [
+                `${prefix} Tool Router: high-value jcodemunch opportunity (${label})`,
+                `advise: use ${decision.jmTool} — ${decision.reason}`,
+                level === 'block'
+                  ? 'This operation is blocked by .harness.yaml. Use the recommended tool instead.'
+                  : 'Consider using the recommended tool for better efficiency.',
+              ].join('\n'),
+            };
+          }
+        }
       }
     }
   }

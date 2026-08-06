@@ -518,4 +518,78 @@ describe('handlePreToolUse test-scope check', () => {
     expect(msg(first)).toContain('TEST SCOPE');
     expect(msg(second)).toContain('TEST SCOPE');
   });
+
+  describe('jcodemunch divert (Step 2.5)', () => {
+    const bigExists = (p: string) => p === '/x/big.ts';
+    const bigStat = () => ({ size: 20000, isFile: true });
+    const jmEnv = () => makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk', jcodemunchAvailable: true, jcodemunchCwdIndexed: true });
+
+    it('diverts a big cat to a jcodemunch advisory and does NOT reach rtk', () => {
+      cache.setEnvironment(jmEnv());
+      const rtkMustNotRun = (): never => { throw new Error('rtk execRewrite must not be called on a divert'); };
+      const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, {
+        execRewrite: rtkMustNotRun, existsCheck: bigExists, statCheck: bigStat,
+      });
+      expect(result).toMatchObject({ level: 'advise' });
+      expect(msg(result)).toContain('mcp__jcodemunch__get_file_outline');
+      expect(msg(result)).toContain('big-file outline');
+    });
+
+    it('falls through to rtk on a suppressed divert turn', () => {
+      cache.setEnvironment(jmEnv());
+      const opts = { execRewrite: () => ({ command: 'rtk cat /x/big.ts', autoAllow: true }), existsCheck: bigExists, statCheck: bigStat };
+      expect(handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, opts)).toMatchObject({ level: 'advise' }); // 1st: divert
+      // 2nd + 3rd suppressed → rtk rewrite returned
+      for (let i = 0; i < 2; i++) {
+        expect(handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, opts)).toMatchObject({ type: 'rewrite' });
+      }
+    });
+
+    it('blocks at jcodemunch_divert: block', () => {
+      cache.setEnvironment(jmEnv());
+      config.rules.tool_routing.jcodemunch_divert = 'block';
+      const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, { existsCheck: bigExists, statCheck: bigStat });
+      expect(result).toMatchObject({ level: 'block' });
+    });
+
+    it('block level is never suppressed (blocks on every call)', () => {
+      cache.setEnvironment(jmEnv());
+      config.rules.tool_routing.jcodemunch_divert = 'block';
+      const first = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, { existsCheck: bigExists, statCheck: bigStat });
+      const second = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, { existsCheck: bigExists, statCheck: bigStat });
+      expect(first).toMatchObject({ level: 'block' });
+      expect(second).toMatchObject({ level: 'block' });
+    });
+
+    it('falls through to rtk when jcodemunch_divert is silent', () => {
+      cache.setEnvironment(jmEnv());
+      config.rules.tool_routing.jcodemunch_divert = 'silent';
+      const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, {
+        execRewrite: () => ({ command: 'rtk cat /x/big.ts', autoAllow: true }), existsCheck: bigExists, statCheck: bigStat,
+      });
+      expect(result).toMatchObject({ type: 'rewrite' });
+    });
+
+    it('does not divert when jcodemunch is not ready (rtk runs)', () => {
+      cache.setEnvironment(makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk', jcodemunchAvailable: true, jcodemunchCwdIndexed: false }));
+      const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, config, undefined, {
+        execRewrite: () => ({ command: 'rtk cat /x/big.ts', autoAllow: true }), existsCheck: bigExists, statCheck: bigStat,
+      });
+      expect(result).toMatchObject({ type: 'rewrite' });
+    });
+
+    it('does not divert a low-value grep (rtk runs)', () => {
+      cache.setEnvironment(jmEnv());
+      const result = handlePreToolUse('Bash', { command: 'grep -r TODO .' }, cache, config, undefined, {
+        execRewrite: () => ({ command: 'rtk grep TODO .', autoAllow: true }),
+      });
+      expect(result).toMatchObject({ type: 'rewrite' });
+    });
+
+    it('does not divert a compound command (Step 2.5 skipped → pass-through)', () => {
+      cache.setEnvironment(jmEnv());
+      const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts && cat /y/big.ts' }, cache, config, undefined, { existsCheck: bigExists, statCheck: bigStat });
+      expect(result).toBeNull();
+    });
+  });
 });
