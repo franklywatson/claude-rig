@@ -198,6 +198,29 @@ describe('SessionCache', () => {
     });
   });
 
+  describe('shouldAdvise (divert period)', () => {
+    it('advises on the 1st call, suppresses 2-3, re-advises on the 4th when period=3', () => {
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(true);   // 1
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(false);  // 2
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(false);  // 3
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(true);   // 4 (re-advise)
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(false);  // 5
+    });
+
+    it('keeps the default period at 10 when no period is passed', () => {
+      expect(cache.shouldAdvise('native_grep')).toBe(true);            // 1
+      for (let i = 0; i < 9; i++) expect(cache.shouldAdvise('native_grep')).toBe(false);
+      expect(cache.shouldAdvise('native_grep')).toBe(true);            // 11
+    });
+
+    it('tracks divert shape keys independently', () => {
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(true);
+      expect(cache.shouldAdvise('jm_divert:symbol', 3)).toBe(true);    // independent first call
+      expect(cache.shouldAdvise('jm_divert:outline', 3)).toBe(false);
+      expect(cache.shouldAdvise('jm_divert:symbol', 3)).toBe(false);
+    });
+  });
+
   describe('updateStaleKey (stale-test advisory dedup)', () => {
     it('returns true on the first set and when the set changes, false when unchanged', () => {
       expect(cache.updateStaleKey('a')).toBe(true);   // first non-empty set

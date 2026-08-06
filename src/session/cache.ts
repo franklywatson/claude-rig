@@ -12,6 +12,14 @@ const ENV_TTL_MS = 4 * 60 * 60 * 1000; // 4 hours
  */
 export const ADVISORY_READVISE_PERIOD = 10;
 
+/**
+ * Divert advisory re-advisory cycle length. Divert advisories surface more
+ * often than generic ones (every 3rd suppressed vs every 10th) because a
+ * high-value jcodemunch opportunity is worth re-surfacing through a session.
+ * Callers pass this as the second arg to shouldAdvise().
+ */
+export const DIVERT_READVISE_PERIOD = 3;
+
 export function sessionCachePath(cwd: string, sessionId?: string): string {
   // Canonicalize the cwd so callers that pass an unresolved path (e.g. macOS
   // /var/folders/... which resolves to /private/var/folders/...) hash to the
@@ -244,7 +252,7 @@ export class SessionCache {
    * is already marked, whereas calling shouldAdvise() first would advance
    * the cycle on paths that never advise.
    */
-  shouldAdvise(intent: string): boolean {
+  shouldAdvise(intent: string, period: number = ADVISORY_READVISE_PERIOD): boolean {
     if (!this.advisedIntents.has(intent)) {
       // No counter seed needed: a missing key reads as 0 via `?? 0` below,
       // which is also the state markAdvised() leaves behind.
@@ -253,7 +261,7 @@ export class SessionCache {
       return true;
     }
     const suppressed = (this.advisorySuppressCounts.get(intent) ?? 0) + 1;
-    if (suppressed >= ADVISORY_READVISE_PERIOD) {
+    if (suppressed >= period) {
       // Final suppressed occurrence of the cycle — re-advise and restart.
       this.advisorySuppressCounts.set(intent, 0);
       this.save();
