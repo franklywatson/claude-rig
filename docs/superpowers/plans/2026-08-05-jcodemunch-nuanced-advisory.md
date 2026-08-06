@@ -288,6 +288,22 @@ describe('scoreJcodemunchValue — Shape A (cat outline)', () => {
     expect(scoreJcodemunchValue('find . -name "*.ts"', opts())).toBeNull();
     expect(scoreJcodemunchValue('git status', opts())).toBeNull();
   });
+
+  it('diverts cat -n (line-number flag does not change whole-file semantics)', () => {
+    expect(scoreJcodemunchValue('cat -n /x/big.ts', opts({ size: 20000 }))).toMatchObject({ shape: 'outline' });
+  });
+
+  it('does not divert at exactly the byte threshold (strict >)', () => {
+    expect(scoreJcodemunchValue('cat /x/big.ts', opts({ size: 8192 }))).toBeNull();
+  });
+
+  it('diverts one byte above the threshold', () => {
+    expect(scoreJcodemunchValue('cat /x/big.ts', opts({ size: 8193 }))).toMatchObject({ shape: 'outline' });
+  });
+
+  it('does not divert a quoted path with spaces (quote-naive parse — known v1 limitation)', () => {
+    expect(scoreJcodemunchValue('cat "src/my file.ts"', opts({ size: 20000 }))).toBeNull();
+  });
 });
 ```
 
@@ -419,6 +435,14 @@ describe('scoreJcodemunchValue — Shape B (identifier grep symbol search)', () 
   it('does not divert --files-with-matches (-l)', () => {
     expect(scoreJcodemunchValue('grep -rl FooBar .', opts())).toBeNull();
   });
+
+  it('diverts --regexp=PATTERN (the = form)', () => {
+    expect(scoreJcodemunchValue('grep --regexp=FooBar src/', opts())).toMatchObject({ shape: 'symbol', target: 'FooBar' });
+  });
+
+  it('does not divert multiple -e patterns (an OR query search_symbols cannot express)', () => {
+    expect(scoreJcodemunchValue('grep -e Foo -e Bar baz.ts', opts())).toBeNull();
+  });
 });
 ```
 
@@ -443,14 +467,25 @@ export function scoreJcodemunchValue(command: string, opts: DivertOptions): Dive
   // Shape B — symbol-shaped search (grep / rg, single identifier token)
   if (binary === 'grep' || binary === 'rg' || binary === 'greprx') {
     if (flags.has('-l') || flags.has('--files-with-matches')) return null;
-    // Pattern is the value of -e/--regexp if present, else the first positional.
-    let pattern: string | undefined;
+    // Collect every pattern source: space form (-e P / --regexp P) and the
+    // attached `=` form (--regexp=P). Multiple patterns form an OR query that
+    // search_symbols can't express → stay rtk (no divert).
     const tokens = command.trim().split(/\s+/);
-    const eIdx = tokens.findIndex(t => t === '-e' || t === '--regexp');
-    if (eIdx >= 0) pattern = tokens[eIdx + 1];
-    if (!pattern) pattern = positional[0];
-    if (!pattern) return null;
-    if (REGEX_METACHAR.test(pattern)) return null;   // regex/literal scan → rtk
+    const patterns: string[] = [];
+    for (let i = 1; i < tokens.length; i++) {
+      const t = tokens[i];
+      if (t === '-e' || t === '--regexp') {
+        const v = tokens[i + 1];
+        if (v !== undefined && !v.startsWith('-')) patterns.push(v);
+      } else if (t.startsWith('--regexp=')) {
+        patterns.push(t.slice('--regexp='.length));
+      }
+    }
+    const pattern = patterns.length === 1
+      ? patterns[0]
+      : (patterns.length === 0 ? positional[0] : undefined);
+    if (!pattern) return null;                        // multi-pattern OR, or none → rtk
+    if (REGEX_METACHAR.test(pattern)) return null;    // regex/literal scan → rtk
     if (!IDENT.test(pattern)) return null;            // multi-token / phrase → rtk
     return {
       shape: 'symbol',
@@ -562,6 +597,23 @@ describe('handlePreToolUse — jcodemunch divert (Step 2.5)', () => {
     }) as { type?: string };
     expect(result?.type).toBe('rewrite');
   });
+
+  it('does not divert a compound command (Step 2.5 skipped → pass-through)', () => {
+    const cache = new SessionCache();
+    cache.setEnvironment(makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk', jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
+    const result = handlePreToolUse('Bash', { command: 'cat /x/big.ts && cat /y/big.ts' }, cache, config, undefined, { existsCheck: bigExists, statCheck: bigStat });
+    expect(result).toBeNull();
+  });
+
+  it('block level is never suppressed (blocks on every call)', () => {
+    const cache = new SessionCache();
+    cache.setEnvironment(makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk', jcodemunchAvailable: true, jcodemunchCwdIndexed: true }));
+    const blockConfig = { ...config, rules: { ...config.rules, tool_routing: { ...config.rules.tool_routing, jcodemunch_divert: 'block' as const } } };
+    const first = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, blockConfig, undefined, { existsCheck: bigExists, statCheck: bigStat });
+    const second = handlePreToolUse('Bash', { command: 'cat /x/big.ts' }, cache, blockConfig, undefined, { existsCheck: bigExists, statCheck: bigStat });
+    expect(first).toMatchObject({ level: 'block' });
+    expect(second).toMatchObject({ level: 'block' });
+  });
 });
 ```
 
@@ -598,8 +650,8 @@ export interface HookOptions {
   if (tool === 'Bash' && typeof args.command === 'string' && !isCompoundCommand(args.command)) {
     if (env.jcodemunchAvailable && env.jcodemunchCwdIndexed) {
       const outlineBytes = config.rules.tool_routing?.jcodemunch_divert_outline_bytes ?? 8192;
-      const exists = resolvedOptions.existsCheck ?? ((p) => { try { return statSync(p).isFile(); return true; } catch { return false; } });
-      const stat = resolvedOptions.statCheck ?? ((p) => { const s = statSync(p); return { size: s.size, isFile: s.isFile() }; });
+      const exists = resolvedOptions.existsCheck ?? ((p) => { try { return existsSync(p); } catch { return false; } });
+      const stat = resolvedOptions.statCheck ?? ((p) => { try { const s = statSync(p); return { size: s.size, isFile: s.isFile() }; } catch { return { size: 0, isFile: false }; } });
       const decision = scoreJcodemunchValue(args.command, { existsCheck: exists, statCheck: stat, outlineBytes });
       if (decision) {
         const level = config.rules.tool_routing?.jcodemunch_divert ?? 'advise';
@@ -612,7 +664,7 @@ export interface HookOptions {
             return {
               level,
               message: [
-                `${prefix} Tool Router: high-value jcodemunch opportunity (${decision.shape})`,
+                `${prefix} Tool Router: high-value jcodemunch opportunity (${decision.shape === 'outline' ? 'big-file outline' : 'symbol search'})`,
                 `advise: use ${decision.jmTool} — ${decision.reason}`,
                 level === 'block'
                   ? 'This operation is blocked by .harness.yaml. Use the recommended tool instead.'
@@ -626,7 +678,7 @@ export interface HookOptions {
   }
 ```
 
-(Use the existing `statSync` import at the top of `hook.ts`; if absent, add `import { statSync } from 'node:fs';`. The `exists`/`stat` defaults must not throw for non-existent paths — guard with try/catch as shown; refine so `exists` is a plain existence check, e.g. `existsSync(p)`, importing `existsSync` too.)
+(Add `import { appendFileSync, statSync, existsSync } from 'node:fs';` to `hook.ts` (only `appendFileSync` is imported today). The default `exists`/`stat` closures must not throw on missing paths — both are wrapped in try/catch; `stat` returns `{ size: 0, isFile: false }` on failure so a missing file reads as "not a code file / below threshold" rather than throwing.)
 
 - [ ] **Step 4: Run tests to verify they pass**
 

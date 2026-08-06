@@ -18,7 +18,8 @@ across many sessions despite the tool being installed and indexed. Root cause:
   strict priority over jcodemunch for the Bash intents
   (`src/router/resolver.ts:27-35`).
 - jcodemunch advisories are therefore reachable **only** through the native
-  Read/Grep/Glob tools, and those are first-occurrence suppressed
+  Read/Grep/Glob tools (or through Bash intents when rtk declines a rewrite,
+  which it normally doesn't), and those are first-occurrence suppressed
   (`ADVISORY_READVISE_PERIOD = 10`, `src/session/cache.ts:13`, `:247-265`).
 - In Bash-heavy sessions (which rtk actively rewards by auto-allowing and
   token-optimizing), the agent rarely uses native tools, so no
@@ -147,9 +148,12 @@ Diverts to `mcp__jcodemunch__search_symbols` when **all** hold:
    `--files-with-matches` is present (that wants a file list — low value; rtk /
    `get_file_tree` territory).
 
-The pattern is identified as the first non-flag positional argument (or the
-value of `-e` / `--regexp` when present). Other flags (`-r`, `-i`, `--color`,
-etc.) do not block the divert.
+The pattern is identified from every pattern source — the first non-flag
+positional argument, the value of `-e` / `--regexp` (space form), and the
+attached `--regexp=PATTERN` (`=`) form. **Exactly one** pattern must be
+specified: multiple `-e` / `--regexp` flags form a multi-pattern OR query that
+`search_symbols` cannot express, so those do not divert. Other flags (`-r`,
+`-i`, `--color`, `-n`, etc.) do not block the divert.
 
 Why it is a clear win: the agent is looking for a symbol definition/references;
 `search_symbols` (BM25 + embeddings + AST) ranks and locates it, versus rtk
@@ -289,6 +293,11 @@ ExecFn").
   avoid false-positive diversions.
 - **File-size proxy for "large".** Bytes, not lines; threshold tunable via
   `jcodemunch_divert_outline_bytes`.
+- **Quote-naive command parsing.** `scoreJcodemunchValue` tokenizes on
+  whitespace, so quoted paths with spaces (`cat "src/my file.ts"`) are not
+  recognized as a single target and do not divert — a safe miss (no false
+  positive), accepted as a v1 limitation. Multi-pattern OR queries (`grep -e Foo
+  -e Bar`) and the `--regexp=PATTERN` form are handled.
 
 ## Future (deferred)
 
