@@ -91,6 +91,10 @@ structural instead of persuasive, and projects that fit can graduate from
   symbol search)
 
 > **Tested against:** rtk 0.44.1 · jcodemunch-mcp ~1.108.x · graphify 0.4.31 · headroom 0.32.0 · superpowers 6.2.0
+>
+> This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
+> (the machine-checkable source of truth, including each tool's repo coordinates).
+> To bump a tested version, edit the manifest and run `npm run sync:versions` — don't edit the line by hand.
 
 ### Using rig with Headroom
 
