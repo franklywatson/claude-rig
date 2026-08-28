@@ -32,8 +32,8 @@
       "name": "superpowers",
       "readmeLabel": "superpowers",
       "repo": "obra/superpowers",
-      "testedVersion": "6.2.0",
-      "notes": "Base skills framework (required). Detected via ~/.claude/plugins/installed_plugins.json; every chain skill wraps a superpowers:* skill."
+      "testedVersion": "6.3.0",
+      "notes": "Base skills framework (required). Detected via ~/.claude/plugins/installed_plugins.json; every chain skill wraps a superpowers:* skill. 6.3.0 SDD task-batching (#2078) is deliberately declined in sdd+ (per-task dispatch is load-bearing); the Spec: pointer (#2086) is emitted by plan+; brainstorming ceremony scaling (#2063) does not scale down the brain+ overlay."
     }
   ]
 }
