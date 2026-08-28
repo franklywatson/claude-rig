@@ -5,7 +5,20 @@ on:
 permissions:
   contents: read
   issues: read
-engine: claude
+# Custom Anthropic-compatible endpoint: when ANTHROPIC_BASE_URL is set,
+# gh-aw passes the model id through to the provider verbatim and routes
+# engine API traffic through its apiProxy. The host MUST also appear in
+# network.allowed — engine defaults only cover api.anthropic.com.
+model: REPLACE-WITH-PROVIDER-MODEL-ID
+engine:
+  id: claude
+  env:
+    ANTHROPIC_BASE_URL: "https://REPLACE-WITH-PROXY-HOST"
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+network:
+  allowed:
+    - defaults
+    - REPLACE-WITH-PROXY-HOST
 max-ai-credits: 500
 safe-outputs:
   create-issue:
