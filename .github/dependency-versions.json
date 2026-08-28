@@ -1,0 +1,39 @@
+{
+  "tools": [
+    {
+      "name": "rtk",
+      "readmeLabel": "rtk",
+      "repo": "rtk-ai/rtk",
+      "testedVersion": "0.44.1",
+      "notes": "Token-optimized command proxy. Router rewrites grep/find/cat through rtk; rtk rewrite exit-code protocol (0/1/2/3) is version-coupled."
+    },
+    {
+      "name": "jcodemunch",
+      "readmeLabel": "jcodemunch-mcp",
+      "repo": "jgravelle/jcodemunch-mcp",
+      "testedVersion": "~1.108.x",
+      "notes": "Indexed code search MCP server. Powers scout agent, router fallback, and Step 2.5 divert; wheel-URL uvx installs are supported transports."
+    },
+    {
+      "name": "graphify",
+      "readmeLabel": "graphify",
+      "repo": "safishamsi/graphify",
+      "testedVersion": "0.4.31",
+      "notes": "Knowledge graph builder. PyPI package name is graphifyy; version-warns outside tested range. 0.4.31 writes no .rebuild.lock."
+    },
+    {
+      "name": "headroom",
+      "readmeLabel": "headroom",
+      "repo": "chopratejas/headroom",
+      "testedVersion": "0.32.0",
+      "notes": "Context-compression proxy. Detected via headroom-init-claude hook marker or localhost ANTHROPIC_BASE_URL; /savings reads `headroom perf --format json`."
+    },
+    {
+      "name": "superpowers",
+      "readmeLabel": "superpowers",
+      "repo": "obra/superpowers",
+      "testedVersion": "6.2.0",
+      "notes": "Base skills framework (required). Detected via ~/.claude/plugins/installed_plugins.json; every chain skill wraps a superpowers:* skill."
+    }
+  ]
+}
