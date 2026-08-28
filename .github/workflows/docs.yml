@@ -28,7 +28,7 @@ jobs:
     name: Markdown Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: actions/setup-node@v4
         with:
@@ -44,7 +44,7 @@ jobs:
     name: CLAUDE.md Line Limit
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check CLAUDE.md is under 150 lines
         run: |
@@ -60,7 +60,7 @@ jobs:
     name: Link Integrity
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check internal markdown links resolve
         run: |
@@ -99,7 +99,7 @@ jobs:
     name: Doc Reachability from CLAUDE.md
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check all docs are reachable from CLAUDE.md
         run: |
@@ -126,7 +126,7 @@ jobs:
     name: Writing Conventions
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Check for filler words in docs
         run: |
