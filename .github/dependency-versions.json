@@ -24,9 +24,9 @@
     {
       "name": "headroom",
       "readmeLabel": "headroom",
-      "repo": "chopratejas/headroom",
-      "testedVersion": "0.32.0",
-      "notes": "Context-compression proxy. Detected via headroom-init-claude hook marker or localhost ANTHROPIC_BASE_URL; /savings reads `headroom perf --format json`."
+      "repo": "headroomlabs-ai/headroom",
+      "testedVersion": "0.37.0",
+      "notes": "Context-compression proxy. Repo moved to headroomlabs-ai (chopratejas redirects); detected via headroom-init-claude hook marker or localhost ANTHROPIC_BASE_URL; /savings reads `headroom perf --format json`."
     },
     {
       "name": "superpowers",
