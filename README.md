@@ -90,7 +90,7 @@ structural instead of persuasive, and projects that fit can graduate from
   module communities, and dependency path queries that complement jcodemunch's
   symbol search)
 
-> **Tested against:** rtk 0.46.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.51 · headroom 0.32.0 · superpowers 6.2.0
+> **Tested against:** rtk 0.46.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.51 · headroom 0.37.0 · superpowers 6.2.0
 >
 > This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
 > (the machine-checkable source of truth, including each tool's repo coordinates).
@@ -119,6 +119,10 @@ compression seam:
 
 - Trial per-invocation with `headroom wrap claude` (rtk stays off unless you pass `--rtk`), or
 - Install durably with `headroom init claude`, which configures only the proxy and does not touch rtk.
+
+Since headroom 0.37.0, concurrent `wrap` sessions no longer clobber each other's
+`.claude/settings.local.json` ([headroom#3232](https://github.com/headroomlabs-ai/headroom/issues/3232)),
+so trialing `wrap claude` alongside another session is safe.
 
 Rig detects Headroom automatically: when the proxy is configured for a project
 (`headroom init claude` hook marker or a localhost `ANTHROPIC_BASE_URL` in any
