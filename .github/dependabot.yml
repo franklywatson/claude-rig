@@ -32,3 +32,9 @@ updates:
       interval: weekly
     commit-message:
       prefix: chore
+    ignore:
+      # gh-aw's setup action is sha-pinned in .github/aw/actions-lock.json;
+      # Dependabot bumps the compiled lock artifacts, which the next
+      # `gh aw compile` silently reverts to the pin. Manage this one via
+      # `gh aw upgrade` (container + action pin refresh), not Dependabot.
+      - dependency-name: github/gh-aw-actions/*
