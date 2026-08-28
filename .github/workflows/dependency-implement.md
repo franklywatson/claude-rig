@@ -26,11 +26,15 @@ safe-outputs:
     # This workflow's whole job is the manifest bump + README regeneration;
     # gh-aw's default protected_files (README.md, top-level dot folders)
     # otherwise refuse the signed push and fall back to an issue instead
-    # of a PR (observed in run 33135380508 -> issue #79). Exempt exactly
-    # the two files the sync touches — nothing else.
-    allowed-files:
-      - README.md
-      - .github/dependency-versions.json
+    # of a PR (observed in runs 33135380508 -> #79, 33136233088 -> #82).
+    # `exclude` removes just these paths from the protected set; every
+    # other protected file keeps request_review. (allowed-files was the
+    # wrong knob — it's an exclusive patch allowlist, not an exemption.)
+    protected-files:
+      policy: request_review
+      exclude:
+        - README.md
+        - .github/dependency-versions.json
   add-comment:
 ---
 
