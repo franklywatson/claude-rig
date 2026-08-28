@@ -197,7 +197,7 @@ export function detectGraphify(
     // Placeholder or tiny file — treat as absent
   }
 
-  // graphify 0.4.31 writes no .rebuild.lock; graph validity alone determines
+  // graphify 0.9.51 writes no .rebuild.lock; graph validity alone determines
   // ready/absent. The build-in-progress race is handled by the polling loop in
   // scout/graph-state.ts, not a lockfile.
 

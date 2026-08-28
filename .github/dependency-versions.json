@@ -17,9 +17,9 @@
     {
       "name": "graphify",
       "readmeLabel": "graphify",
-      "repo": "safishamsi/graphify",
-      "testedVersion": "0.4.31",
-      "notes": "Knowledge graph builder. PyPI package name is graphifyy; version-warns outside tested range. 0.4.31 writes no .rebuild.lock."
+      "repo": "Graphify-Labs/graphify",
+      "testedVersion": "0.9.51",
+      "notes": "Knowledge graph builder. PyPI package name is graphifyy; repo moved to Graphify-Labs (safishamsi redirects); version-warns outside tested range. 0.9.51 writes no .rebuild.lock, and its shrink guard keeps a partial build from overwriting graph.json."
     },
     {
       "name": "headroom",

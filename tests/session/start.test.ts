@@ -462,6 +462,43 @@ describe('handleSessionStart', () => {
       rmSync(tmpDir, { recursive: true });
     });
 
+    it('reports ready when a triggered build lands, using the default fs fallbacks', async () => {
+      const { mkdirSync, writeFileSync, rmSync, existsSync } = await import('node:fs');
+      const { join } = await import('node:path');
+      const tmpDir = '/tmp/rig-test-graphify-poll-' + process.pid;
+      rmSync(tmpDir, { recursive: true, force: true });
+      // No graphify-out yet — detection must report absent and trigger a build.
+      // The build "completes" during the mocked `graphify update`, like a real
+      // update that writes graph.json before returning. existsCheck/statCheck
+      // are NOT injected: the production defaults (execSync test -f + statSync)
+      // must observe the file. Regression guard: the default statCheck once
+      // used require('node:fs'), a ReferenceError in rig's ESM dist that the
+      // catch swallowed, so the poll always reported failed.
+      vi.mocked(execSync).mockImplementation((cmd: string) => {
+        if (cmd === 'which rtk') throw new Error('not found');
+        if (cmd === 'which jcodemunch') throw new Error('not found');
+        if (cmd === 'which graphify') return '/usr/bin/graphify';
+        if (cmd === 'graphify --version') return 'graphify 0.9.51';
+        if (cmd === 'git branch --show-current') return 'feat/test';
+        if (cmd.startsWith('graphify update')) {
+          mkdirSync(join(tmpDir, 'graphify-out'), { recursive: true });
+          writeFileSync(join(tmpDir, 'graphify-out', 'graph.json'), 'x'.repeat(1100));
+          return '';
+        }
+        if (cmd.startsWith('test -f')) {
+          const path = cmd.match(/"(.+)"/)?.[1] ?? '';
+          if (existsSync(path)) return '';
+          throw new Error('not found');
+        }
+        return '';
+      });
+
+      const output = await startSession(tmpDir, cache);
+      expect(output).toContain('graphify: available');
+      expect(output).not.toContain('build failed');
+      rmSync(tmpDir, { recursive: true, force: true });
+    });
+
     it('omits graphify line when graphify not installed', async () => {
       vi.mocked(execSync).mockImplementation((cmd: string) => {
         if (cmd === 'which rtk') throw new Error('not found');
@@ -999,7 +1036,7 @@ describe('handleSessionStart', () => {
         if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
         if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
         if (cmd === 'which graphify') return '/usr/local/bin/graphify';
-        if (cmd === 'graphify --version') return 'graphify 0.7.18';
+        if (cmd === 'graphify --version') return 'graphify 0.9.51';
         return '';
       });
 

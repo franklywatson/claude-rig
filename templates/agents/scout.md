@@ -75,7 +75,7 @@ Determine each directory's state from its `graphify-out/`:
 | ----- | --------------------------------- |
 | ready | `<dir>/graphify-out/graph.json` exists and is >1KB |
 | absent | no valid `graph.json` (>1KB) exists |
-| building | a `graphify update` is in progress this session (tracked in session state — graphify 0.4.31 writes no lockfile) |
+| building | a `graphify update` is in progress this session (tracked in session state — graphify 0.9.51 writes no lockfile) |
 | failed | a previous `graphify update` attempt errored this session for this directory |
 
 Then act based on state AND the capability check from Step 0:
