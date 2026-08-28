@@ -63,5 +63,6 @@ All types in `src/types.ts`. Important ones:
 - @docs/extending.md -- Custom enforcement checks, skills, and agents
 - @docs/skill-wrapping.md -- Wrapping superpowers skills with project-specific enforcement
 - @docs/agent-loops.md -- Loop-centric development: signal stack, opt-in trajectory, maintainer pattern
+- @docs/dependency-watch.md -- Agentic dependency watch/implement workflows, version manifest, gh-aw runbook
 - @docs/troubleshooting.md -- Diagnosing permission prompts, cache, and detection issues
 - @docs/design-process.md -- How rig was built (historical reference)
