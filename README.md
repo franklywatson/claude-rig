@@ -90,7 +90,7 @@ structural instead of persuasive, and projects that fit can graduate from
   module communities, and dependency path queries that complement jcodemunch's
   symbol search)
 
-> **Tested against:** rtk 0.46.0 · jcodemunch-mcp ~1.108.x · graphify 0.4.31 · headroom 0.32.0 · superpowers 6.2.0
+> **Tested against:** rtk 0.46.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.51 · headroom 0.32.0 · superpowers 6.2.0
 >
 > This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
 > (the machine-checkable source of truth, including each tool's repo coordinates).

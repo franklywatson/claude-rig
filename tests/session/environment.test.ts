@@ -828,7 +828,7 @@ describe('detectGraphify', () => {
     expect(env.graphifyGraphPath).toBe('graphify-out/graph.json');
   });
 
-  // graphify 0.4.31 writes no .rebuild.lock — a leftover lock must not affect
+  // graphify 0.9.51 writes no .rebuild.lock — a leftover lock must not affect
   // state. Graph validity alone determines ready/absent.
   it('ignores a stray .rebuild.lock when no valid graph exists (→ absent)', () => {
     const exec = makeExec({ 'which graphify': '/usr/local/bin/graphify' });

@@ -16,7 +16,7 @@ import { checkPermissionsReadiness } from './permissions-self-check.js';
 import { detectHeadroom } from './headroom.js';
 import { detectSuperpowers } from './superpowers.js';
 import { detectRtkGlobalHook } from './rtk-global-hook.js';
-import { readFileSync, existsSync, readdirSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
 
 interface FileCapWarning {
   indexed: number;
@@ -26,8 +26,8 @@ interface FileCapWarning {
 export type AutoIndexOutcome = 'succeeded' | 'failed' | 'not_needed';
 
 // graphify versions rig's stats parsing and state handling are tested against
-const GRAPHIFY_TESTED_MIN = '0.7.0';
-const GRAPHIFY_TESTED_MAX_EXCLUSIVE = '0.8.0';
+const GRAPHIFY_TESTED_MIN = '0.9.0';
+const GRAPHIFY_TESTED_MAX_EXCLUSIVE = '0.10.0';
 
 function versionInRange(version: string, min: string, maxExclusive: string): boolean {
   const segments = (v: string): number[] => v.split('.').map(Number);
@@ -111,7 +111,8 @@ export async function handleSessionStart(
       // Poll briefly — graphify update can return before graph.json lands
       const checkResult = waitForBuild(buildResult, cwd,
         deps.existsCheck ?? ((p) => { try { execSync(`test -f "${p}"`, { encoding: 'utf-8' }); return true; } catch { return false; } }),
-        deps.statCheck ?? ((p) => { try { return require('node:fs').statSync(p); } catch { return undefined; } }),
+        deps.statCheck ?? ((p) => { try { return statSync(p); } catch { return undefined; } }),
+        // (direct import, not require() — dist is ESM, where require is a ReferenceError)
         deps.graphWait ?? GRAPH_WAIT_DEFAULT,
       );
       if (checkResult.state === 'ready') {
