@@ -35,6 +35,10 @@ safe-outputs:
       exclude:
         - README.md
         - .github/dependency-versions.json
+        # Path-prefix exclude also opts .github/ out of the
+        # top-level-dot-folder rule (which is what actually catches the
+        # manifest — it is not in the protected_files list itself).
+        - .github/
   add-comment:
 ---
 
