@@ -20,6 +20,9 @@ network:
     - defaults
     - https://api.z.ai
 max-ai-credits: 500
+# Headroom over the default 20-minute engine-step timeout: a busy week
+# (five releases, each with notes + rig source analysis) could approach it.
+timeout-minutes: 40
 safe-outputs:
   create-issue:
     title-prefix: "[dep-watch] "

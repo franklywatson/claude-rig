@@ -20,6 +20,10 @@ network:
     - node
     - https://api.z.ai
 max-ai-credits: 1500
+# The graphify integration (run 33138626865) finished its engine work in
+# 19m44s — under the default 20-minute engine-step timeout, but the step
+# clock expired during teardown and marked a successful run failed.
+timeout-minutes: 60
 safe-outputs:
   create-pull-request:
     allowed-labels: [dependency-update]
