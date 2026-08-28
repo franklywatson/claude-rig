@@ -1,22 +1,26 @@
 # Dependency Watch & Implement
 
-rig's dependency automation: two GitHub Agentic Workflows (gh-aw) that
-detect upstream releases of the panel tools, analyze the integration
-impact, and implement approved integrations as proposed PRs — with a
-human at the two gates that matter (run approval and PR merge).
+rig's dependency automation: Dependabot as the rule-based baseline, plus
+two GitHub Agentic Workflows (gh-aw) that detect upstream releases of the
+panel tools and open Dependabot-alert gaps, analyze the integration or
+fix impact, and implement approved changes as proposed PRs — with a human
+at the two gates that matter (run approval and PR merge).
 
 This is the maintainer-agent trajectory from [agent-loops.md](agent-loops.md),
-materialized: the L1 external-contract signal (upstream releases) is
-watched continuously, and a graduated-autonomy agent acts on it.
+materialized: the L1 external-contract signal (upstream releases,
+vulnerability advisories) is watched continuously, and a
+graduated-autonomy agent acts on it.
 
 ## The pieces
 
 | Piece | What it is |
 | ----- | ---------- |
+| `.github/dependabot.yml` | Layer 0 baseline: weekly grouped npm version-update PRs (minor/patch grouped, majors individual) plus github-actions updates. Routine vulnerable-dep bumps are covered by Dependabot's own security-update PRs — no agent involved |
 | `.github/dependency-versions.json` | Machine-checkable source of truth: one entry per panel tool (rtk, jcodemunch, graphify, headroom, superpowers) with `repo` coordinates, `testedVersion`, and integration `notes` |
 | `npm run sync:versions` | Regenerates the README "Tested against" line from the manifest (`scripts/sync-tested-versions.ts` over the pure module `src/dependency-versions.ts`). Never hand-edit the README line |
 | `.github/workflows/dependency-watch.md` | Weekly agentic workflow: probes upstream releases, files structured analysis issues |
-| `.github/workflows/dependency-implement.md` | Slash-command agentic workflow: `/implement` on an issue builds the change and proposes a PR |
+| `.github/workflows/vuln-watch.md` | Weekly agentic workflow: escalates Dependabot alerts that no open Dependabot PR covers, filing structured `security-update` issues |
+| `.github/workflows/dependency-implement.md` | Slash-command agentic workflow: `/implement` on an issue builds the change and proposes a PR (serves both `dependency-update` and `security-update` labels) |
 | `dependency-implement` GitHub environment | Required-reviewer approval gate every implement run passes before the agent starts |
 
 ## dependency-watch (analysis -> issues)
@@ -42,23 +46,73 @@ are skipped; quiet weeks emit `noop`, never placeholder issues.
 [admin, maintainer]`), then approves the run when the
 `dependency-implement` environment pings them.
 **Writes:** `create-pull-request` (label-gated to `dependency-update`
-issues) + `add-comment` back on the issue. Never merges, never closes
-issues, never pushes outside the safe-output pipeline.
+and `security-update` issues) + `add-comment` back on the issue. Never
+merges, never closes issues, never pushes outside the safe-output
+pipeline.
 
 The agent executes the issue's checklist in the sandbox: `npm install` +
-build, manifest bump, `npm run sync:versions`, fixture updates. Zero-defect
-gate: the full suite must pass and the verbatim test summary goes in the
-PR body; two fix iterations max — a red suite produces a diagnosis comment
-on the issue, never a PR. `npm run eval` is deliberately not run
-(operator-gated, live model spend) and its checklist box stays unchecked.
+build, manifest bump, `npm run sync:versions`, fixture updates. For
+`security-update` issues the manifest/README steps apply only when the
+vulnerable package is one of the five panel tools — otherwise it is a
+plain `package.json`/lockfile fix on a `security/<package>-<version>`
+branch, and the agent must also verify the advisory no longer reproduces
+(`npm audit` / re-check the alert). `package.json` and
+`package-lock.json` deliberately stay in the protected-files set: the
+`request_review` flag on a security PR is the human gate, not friction.
+Zero-defect gate: the full suite must pass and the verbatim test summary
+goes in the PR body; two fix iterations max — a red suite produces a
+diagnosis comment on the issue, never a PR. `npm run eval` is
+deliberately not run (operator-gated, live model spend) and its checklist
+box stays unchecked.
+
+## vuln-watch (alerts -> gap issues)
+
+**Trigger:** fuzzy weekly schedule (`weekly on thursday`, offset from
+dependency-watch's Monday so Dependabot's own PRs exist to check against)
+plus manual dispatch. **Engine:** same Anthropic-compatible endpoint as
+dependency-watch. **Writes:** `create-issue` safe-output only, labeled
+`security-update`, dedup by exact title, max 5 per run.
+
+The agent lists open Dependabot alerts (GitHub MCP `list_dependabot_alerts`
+read-only tooling — no firewall additions), and **escalates the gap
+only**: an alert whose remediation is already covered by an open
+Dependabot bump PR is skipped silently. For each uncovered alert it
+triages the fix shape (plain bump / breaking major / package replacement)
+against rig's actual usage and files one issue with a fixed template —
+Advisory / Vulnerable dependency / Why no Dependabot PR covers it /
+Proposed fix path / Verification checklist. Quiet weeks emit `noop`. The
+agent may note a vuln is dev-only or unreachable, but deferring is a
+maintainer decision — it files the issue either way.
 
 ## Runbook
+
+### One-time setup (vuln-watch + Layer 0)
+
+1. **Enable Dependabot alerts**: repo Settings -> Code security ->
+   Dependabot alerts. `dependabot.yml` covers version updates; alerts
+   are a separate settings toggle and are the signal vuln-watch reads.
+2. **Create the label**: `gh label create security-update --color D93F0B
+   --description "npm vulnerability fix, filed by vuln-watch"` (the
+   `create-issue` safe output auto-adds the label but does not create
+   it with a description/color).
+3. First run: `gh workflow run vuln-watch` (manual dispatch) and watch
+   `gh run watch` — an empty backlog should emit `noop`.
 
 ### After a watch issue appears
 
 Review the analysis (especially the Breaking vs additive verdict and the
 affected-modules citations). Then either implement it yourself, or comment
 `/implement` and approve the environment ping.
+
+### After a vuln-watch issue appears
+
+Review the gap analysis first — confirm the agent is right that no open
+Dependabot PR covers the alert (the issue cites what it checked). If the
+fix is a plain bump, `/implement` and the environment approval are the
+whole loop. For breaking majors or package replacements, decide whether
+the "Proposed fix path" is the plan you want before approving the run;
+the implement agent adjusts where reality disagrees but is scoped to the
+issue's plan.
 
 ### If a run files a fallback issue instead of a PR
 
@@ -114,6 +168,10 @@ new tool version on PATH — e.g.
 - Fix cycle (#80, #83): protected-files push refusal -> fallback issues
   (#79, #82) -> correct `protected-files.exclude` knob. First successful
   loop: rtk 0.46.0 -> #73 -> PR #85.
+- Vulnerability layer: Dependabot baseline (`dependabot.yml`) + vuln-watch
+  gap escalation + implement label-gate widening. Modeled on the same
+  watch -> issue -> `/implement` -> gated-PR loop; the agent escalates
+  only alerts Dependabot's own PRs do not cover.
 
 ## Related
 
