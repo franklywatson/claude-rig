@@ -22,6 +22,6 @@ jobs:
       # publishes the GitHub Release with generated notes. Config + manifest are
       # auto-detected at the repo root (release-please-config.json,
       # .release-please-manifest.json).
-      - uses: googleapis/release-please-action@v4
+      - uses: googleapis/release-please-action@v5
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
