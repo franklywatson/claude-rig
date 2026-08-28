@@ -23,6 +23,14 @@ max-ai-credits: 1500
 safe-outputs:
   create-pull-request:
     allowed-labels: [dependency-update]
+    # This workflow's whole job is the manifest bump + README regeneration;
+    # gh-aw's default protected_files (README.md, top-level dot folders)
+    # otherwise refuse the signed push and fall back to an issue instead
+    # of a PR (observed in run 33135380508 -> issue #79). Exempt exactly
+    # the two files the sync touches — nothing else.
+    allowed-files:
+      - README.md
+      - .github/dependency-versions.json
   add-comment:
 ---
 
