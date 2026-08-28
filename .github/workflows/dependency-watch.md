@@ -9,16 +9,16 @@ permissions:
 # gh-aw passes the model id through to the provider verbatim and routes
 # engine API traffic through its apiProxy. The host MUST also appear in
 # network.allowed — engine defaults only cover api.anthropic.com.
-model: REPLACE-WITH-PROVIDER-MODEL-ID
+model: glm-5.3
 engine:
   id: claude
   env:
-    ANTHROPIC_BASE_URL: "https://REPLACE-WITH-PROXY-HOST"
+    ANTHROPIC_BASE_URL: "https://api.z.ai/api/anthropic"
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 network:
   allowed:
     - defaults
-    - REPLACE-WITH-PROXY-HOST
+    - https://api.z.ai
 max-ai-credits: 500
 safe-outputs:
   create-issue:
