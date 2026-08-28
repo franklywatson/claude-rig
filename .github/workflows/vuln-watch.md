@@ -9,6 +9,7 @@ permissions:
   contents: read
   issues: read
   pull-requests: read
+  security-events: read # required by the code_security toolset
 # Custom Anthropic-compatible endpoint: when ANTHROPIC_BASE_URL is set,
 # gh-aw passes the model id through to the provider verbatim and routes
 # engine API traffic through its apiProxy. The host MUST also appear in
@@ -23,6 +24,14 @@ network:
   allowed:
     - defaults
     - https://api.z.ai
+# The Dependabot alert tools (list_dependabot_alerts, get_dependabot_alert)
+# live in the code_security toolset — not in the default context/repos/
+# issues/pull_requests set. Without this block the first run had to fall
+# back to `npm audit` (which worked, but is the secondary signal).
+tools:
+  github:
+    mode: gh-proxy
+    toolsets: [repos, issues, pull_requests, code_security]
 max-ai-credits: 500
 timeout-minutes: 40
 safe-outputs:
