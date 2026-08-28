@@ -325,7 +325,21 @@ npm test         # vitest, 1100+ tests (deterministic, model-independent)
 npm run build    # TypeScript compile
 npm run lint     # type-check only
 npm run eval     # behavioral evals — live claude -p runs (see below)
+npm run sync:versions  # regenerate README "Tested against" line from .github/dependency-versions.json
 ```
+
+### Dependency automation
+
+rig's own panel-tool dependencies (rtk, jcodemunch, graphify, headroom,
+superpowers) are watched by two [GitHub Agentic Workflows](https://github.github.com/gh-aw/):
+`dependency-watch` (weekly — probes upstream releases against the
+[version manifest](.github/dependency-versions.json) and files structured
+integration-analysis issues) and `dependency-implement` (`/implement` on
+such an issue — an approved agent run implements it and proposes a PR
+through gh-aw's validated safe-outputs pipeline). Humans keep the two
+gates that matter: run approval and PR merge. See
+[docs/dependency-watch.md](docs/dependency-watch.md) for the design and
+the runbook.
 
 ### Behavioral evals
 
