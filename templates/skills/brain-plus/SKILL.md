@@ -71,6 +71,18 @@ Invoke this skill BEFORE starting any design work. It adds three capabilities on
    primary/loop boundary sits, the autonomy ceiling, and the maintainer
    cadence — capture all of it in the design.
 
+5. **Ceremony scales; this overlay does not.** superpowers 6.3.0 classifies the
+   request as spike, bounded, or architectural and skips its two-document
+   ritual on the small paths
+   ([#2063](https://github.com/obra/superpowers/issues/2063)). Whichever path
+   the wrapped skill takes, apply the overlay above in full — scout context
+   (Phase A), the signal-first considerations, the loop-fit assessment, and the
+   Phase C checklist. On a spike or bounded request the deliverable may be a
+   short answer or a single paragraph rather than a design document, but the
+   opt-in question is still asked when fit signals are present and the Phase C
+   items are still confirmed. Never skip the overlay because the base skill
+   skipped its ceremony.
+
 ### Phase C: Validate
 
 1. Confirm the design addresses:

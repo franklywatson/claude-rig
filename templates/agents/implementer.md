@@ -38,6 +38,16 @@ Read `.harness.yaml` in the project root for active enforcement rules and
 honor them: real dependencies in stack/E2E tests (mocks appropriate in unit
 tests), no conditional assertions, no empty tests, evidence before claims.
 
+## No Nested Subagents
+
+Do not dispatch subagents of your own — no `Agent`/`Task` calls, even though
+your tool list permits them. You are the leaf of the dispatch tree: the
+orchestrator runs the two-stage review on your work, and a subagent you spawn
+duplicates your work or reviews it in your place, which is how duplicate
+reviews happen. Do the task yourself. If it genuinely needs another agent
+(a long read-only sweep, say), report BLOCKED with the reason and let the
+orchestrator dispatch it.
+
 ## Code Organization
 
 You reason best about code you can hold in context at once, and your edits are

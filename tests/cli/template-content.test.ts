@@ -92,6 +92,38 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('exhaustive');
   });
 
+  it('plan-plus emits the Spec: pointer for superpowers 6.3.0 SDD setup', () => {
+    const content = read('skills/plan-plus/SKILL.md');
+    expect(content).toContain('`Spec:`');
+    // Absent spec must be stated, not omitted, so SDD asks instead of inferring.
+    expect(content).toContain('**Spec:** none');
+  });
+
+  it('sdd-plus keeps per-task dispatch and declines superpowers 6.3.0 batching', () => {
+    const content = read('skills/sdd-plus/SKILL.md');
+    expect(content).toContain('do not batch');
+    // The rationale must sit with the serialization rule it overrides.
+    expect(content).toContain('load-bearing');
+    expect(content).toContain('fresh implementer subagent per task');
+  });
+
+  it('brain-plus overlay survives the superpowers 6.3.0 small-task path', () => {
+    const content = read('skills/brain-plus/SKILL.md');
+    expect(content).toContain('Ceremony scales; this overlay does not');
+    // The opt-in question must not be skipped on the spike/bounded paths.
+    expect(content).toContain('still asked when fit signals are present');
+  });
+
+  it('typed agents state the no-nested-subagent rule explicitly', () => {
+    for (const agent of ['implementer', 'code-reviewer', 'spec-reviewer']) {
+      const content = read(`agents/${agent}.md`);
+      expect(content).toContain('No Nested Subagents');
+    }
+    // implementer has no tools restriction, so the rule is the only guard.
+    expect(read('agents/implementer.md')).not.toMatch(/^tools:/m);
+    expect(read('agents/implementer.md')).toContain('no `Agent`/`Task` calls');
+  });
+
   it('sdd-plus offers team mode behind detection and config', () => {
     const content = read('skills/sdd-plus/SKILL.md');
     expect(content).toContain('agent-teams');

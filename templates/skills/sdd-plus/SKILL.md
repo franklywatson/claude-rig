@@ -33,7 +33,13 @@ subagent using the superpowers prompt template for that role.
 ### Phase A: Load Plan
 
 1. Load the plan from `docs/plans/` or `docs/superpowers/plans/` (or the path
-   given in arguments).
+   given in arguments). If it carries a `Spec:` pointer, load the design it
+   names — superpowers 6.3.0's SDD setup reads that pointer to resolve plan
+   conflicts and ambiguities against the approved design
+   ([#2086](https://github.com/obra/superpowers/issues/2086)), and the design
+   is also the reference the spec-reviewer reviews against. If the pointer is
+   absent, do not infer a spec: treat a genuine conflict as ambiguity and stop
+   to ask.
 2. Load active enforcement rules from session context (see session-start
    output) — include them in every implementer dispatch prompt.
 3. If the plan defines a signal stack, note each task's named gating signal:
@@ -69,6 +75,20 @@ subagent using the superpowers prompt template for that role.
    *outside* this plan (a different branch, disjoint files, no merge-order
    dependency) may proceed concurrently in its own worktree; reviewers are
    read-only and always safe to run in parallel.
+6. **Dispatch one implementer per task — do not batch.** superpowers 6.3.0
+   lets its controller batch small same-shape tasks into a single dispatch
+   ([#2078](https://github.com/obra/superpowers/issues/2078)). Decline that
+   here: the per-task dispatch is load-bearing for this overlay, not ceremony.
+   One dispatch = one task = one branch = one two-stage review = one merge in
+   dependency order. A batched dispatch collapses that chain into a single
+   multi-task branch, so the lead can no longer review and merge tasks
+   independently, a worktree-isolated implementer no longer maps onto
+   `<plan-branch>-task-N`, and one task's spec finding re-runs the whole
+   batch. In sequential mode every task already shares this plan's worktree,
+   so "batch only tasks that share a worktree" would enable batching on
+   nearly every run — the token saving is not worth losing per-task review
+   granularity. (Team mode needs no ruling: its tasks are dispatched to
+   separate worktrees by construction.)
 
 ### Phase B-team: Team execution (when team mode is on)
 

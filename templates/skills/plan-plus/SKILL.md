@@ -69,7 +69,22 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - [ ] Step 5: Commit
    ```
 
-4. **If the design includes a loop/signal-stack section** (see
+4. **`Spec:` pointer.** The plan's header carries a `Spec:` line naming the
+   design `brain+` produced — the document path plus a one-line scope summary:
+
+   ```
+   **Spec:** docs/designs/<slug>.md — <one line: what was approved and when>
+   ```
+
+   superpowers 6.3.0's subagent-driven-development reads this pointer at setup
+   to resolve plan conflicts and ambiguities against the approved design
+   instead of guessing ([#2086](https://github.com/obra/superpowers/issues/2086)),
+   and `sdd+` hands it to the spec-reviewer as the compliance reference. If
+   there is no design document (a spike, or `plan+` invoked directly on a small
+   change), write `**Spec:** none — no design document; ask on conflict` rather
+   than omitting the line, so the controller stops to ask instead of inferring.
+
+5. **If the design includes a loop/signal-stack section** (see
    `references/agent-loops.md`): order the plan signal-stack-first — harness
    tasks (golden tests, contract probes, calibration harness, dry-run rig,
    telemetry store) come before or alongside the features they gate, because
@@ -80,7 +95,7 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - Rollout gates (credentials, schedule enablement, live writes) are
      explicitly reserved to the user — never automated in any task
 
-5. **Independence contract** (consumed by sdd+ team mode): every task's
+6. **Independence contract** (consumed by sdd+ team mode): every task's
    `**Files:**` list must be exhaustive — include shared test files a task
    extends (a tests file touched by several tasks makes them dependent).
    Where ordering matters even without file overlap, add an explicit
@@ -95,6 +110,7 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - [ ] No task mocks a protected component
    - [ ] Plan references exact file paths (no TBDs)
    - [ ] Evidence criteria defined for each task
+   - [ ] `Spec:` pointer present (or explicitly `none`)
    - [ ] Active enforcement rules section present (if rules are configured)
 
 ## Output
