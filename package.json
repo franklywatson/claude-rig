@@ -36,7 +36,7 @@
   },
   "dependencies": {
     "commander": "^14.0.3",
-    "yaml": "^2.7.0"
+    "yaml": "^2.9.0"
   },
   "allowScripts": {
     "fsevents@2.3.3": true,
