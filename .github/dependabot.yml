@@ -1,0 +1,34 @@
+# Layer 0 of rig's dependency automation: routine version bumps and
+# security-update PRs come straight from Dependabot. The vuln-watch
+# agentic workflow only escalates the gap — alerts whose fix needs
+# judgment beyond a rule-based bump. See docs/dependency-watch.md.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: chore
+      prefix-development: chore
+    # Minor/patch bumps grouped into two PRs; majors stay individual —
+    # they carry breaking-change risk and deserve isolated review.
+    groups:
+      production-dependencies:
+        dependency-type: production
+        update-types:
+          - minor
+          - patch
+      development-dependencies:
+        dependency-type: development
+        update-types:
+          - minor
+          - patch
+  # Actions supply chain: keep the workflow actions pinned fresh too.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    commit-message:
+      prefix: chore

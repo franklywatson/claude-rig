@@ -341,9 +341,15 @@ superpowers) are watched by two [GitHub Agentic Workflows](https://github.github
 integration-analysis issues) and `dependency-implement` (`/implement` on
 such an issue — an approved agent run implements it and proposes a PR
 through gh-aw's validated safe-outputs pipeline). Humans keep the two
-gates that matter: run approval and PR merge. See
-[docs/dependency-watch.md](docs/dependency-watch.md) for the design and
-the runbook.
+gates that matter: run approval and PR merge.
+
+npm vulnerabilities are layered on top: Dependabot
+(`.github/dependabot.yml`) opens routine bump PRs itself, and `vuln-watch`
+(weekly) escalates only the gap — open Dependabot alerts whose fix needs
+judgment beyond a rule-based bump (breaking majors, package replacements)
+become `security-update` issues that the same `/implement` path fixes.
+See [docs/dependency-watch.md](docs/dependency-watch.md) for the design
+and the runbook.
 
 ### Behavioral evals
 
