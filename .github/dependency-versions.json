@@ -4,7 +4,7 @@
       "name": "rtk",
       "readmeLabel": "rtk",
       "repo": "rtk-ai/rtk",
-      "testedVersion": "0.44.1",
+      "testedVersion": "0.46.0",
       "notes": "Token-optimized command proxy. Router rewrites grep/find/cat through rtk; rtk rewrite exit-code protocol (0/1/2/3) is version-coupled."
     },
     {
