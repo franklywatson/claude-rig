@@ -32,7 +32,7 @@
     "markdownlint-cli2": "^0.23.2",
     "tsx": "^4.23.12",
     "typescript": "^5.7.0",
-    "vitest": "^3.0.0"
+    "vitest": "^4.1.11"
   },
   "dependencies": {
     "commander": "^15.0.0",
