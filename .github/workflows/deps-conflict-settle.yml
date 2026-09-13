@@ -1,0 +1,261 @@
+name: Deps conflict settle
+
+# Deterministic bookkeeping only, no AI engine. Keeps open deps/* and
+# security/* PRs mergeable against master: on every push to such a branch,
+# merge master in. Clean -> push the merge commit. Conflicted, and every
+# conflicted file is the known mechanical shape (README.md "Tested against"
+# line + .github/dependency-versions.json) -> recompute instead of picking
+# a side: the manifest merges by higher testedVersion per tool
+# (scripts/settle-deps-conflict.ts), the README regenerates from the merged
+# manifest (npm run sync:versions), and lint + the full suite gate the
+# result before it is pushed. Any other conflicted file -> abort the merge
+# and comment naming the files, leaving resolution to a human.
+#
+# workflow_dispatch exists because pull_request triggers have been observed
+# to silently not fire (claude-kb PR #195 incident); point it at any open
+# same-repo deps/* or security/* PR and it runs identical logic.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: >-
+          Open PR number to settle. Must be a same-repo PR on a deps/* or
+          security/* branch -- anything else is refused.
+        required: true
+        type: number
+
+concurrency:
+  group: deps-conflict-settle-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  settle:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.pull_request.head.repo.full_name == github.repository &&
+       (startsWith(github.event.pull_request.head.ref, 'deps/') ||
+        startsWith(github.event.pull_request.head.ref, 'security/')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR context
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            data=$(gh pr view "$DISPATCH_PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json number,headRefName,baseRefName,isCrossRepository)
+            is_cross=$(echo "$data" | jq -r .isCrossRepository)
+            head_ref=$(echo "$data" | jq -r .headRefName)
+            base_ref=$(echo "$data" | jq -r .baseRefName)
+            pr_number=$(echo "$data" | jq -r .number)
+            if [ "$is_cross" = "true" ]; then
+              echo "::error::PR #$pr_number is from a fork -- refusing (same-repo only)."
+              exit 1
+            fi
+            case "$head_ref" in
+              deps/*|security/*) ;;
+              *)
+                echo "::error::PR #$pr_number's branch ($head_ref) doesn't match deps/* or security/* -- refusing."
+                exit 1
+                ;;
+            esac
+          else
+            pr_number="$EVENT_PR_NUMBER"
+            head_ref="$EVENT_HEAD_REF"
+            base_ref="$EVENT_BASE_REF"
+          fi
+          # actionlint: never interpolate github.event.pull_request.*.ref
+          # directly into a run: script (branch names are attacker-
+          # influenceable text) -- these are plain shell vars from here on.
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          {
+            echo "PR_NUMBER=$pr_number"
+            echo "HEAD_REF=$head_ref"
+            echo "BASE_REF=$base_ref"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HEAD_REF }}
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        run: git fetch origin "$BASE_REF"
+
+      - name: Attempt merge
+        id: merge
+        run: |
+          if git merge --no-edit "origin/$BASE_REF"; then
+            echo "conflicted=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "conflicted=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check conflict shape
+        id: shape
+        if: steps.merge.outputs.conflicted == 'true'
+        run: |
+          mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
+          printf 'Conflicted file: %s\n' "${conflicted[@]}"
+          bad=0
+          for f in "${conflicted[@]}"; do
+            case "$f" in
+              README.md|.github/dependency-versions.json) ;;
+              *) bad=1 ;;
+            esac
+          done
+          # The README is only mechanically settleable when its two merge
+          # stages differ ONLY on the generated "Tested against" line --
+          # otherwise restoring one side would silently drop the other
+          # side's real prose, and the run must abort for a human.
+          readme_ok=1
+          if printf '%s\n' "${conflicted[@]}" | grep -qx 'README.md'; then
+            if ! diff <(git show :2:README.md | grep -vF '> **Tested against:**') \
+                      <(git show :3:README.md | grep -vF '> **Tested against:**') >/dev/null; then
+              readme_ok=0
+            fi
+          fi
+          if [ "$bad" -eq 0 ] && [ "$readme_ok" -eq 1 ]; then
+            echo "mechanical=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mechanical=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install dependencies
+        if: steps.merge.outputs.conflicted == 'true' && steps.shape.outputs.mechanical == 'true'
+        run: npm ci
+
+      - name: Settle manifest conflict
+        id: settle
+        if: steps.merge.outputs.conflicted == 'true' && steps.shape.outputs.mechanical == 'true'
+        run: |
+          set +e
+          npm run settle:deps
+          echo "settle_exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate README and validate
+        id: validate
+        if: steps.settle.outputs.settle_exit == '0'
+        run: |
+          set +e
+          # Restore a marker-free README side first: the worktree README
+          # still carries conflict markers here, and `npm run
+          # sync:versions` replaces only the FIRST "Tested against" line
+          # match -- regenerating straight over markers would commit the
+          # conflict syntax. The shape check proved the stages differ only
+          # on that line, so either side + regeneration is the recompute.
+          if git ls-files -u -- README.md | grep -q .; then
+            git checkout --ours -- README.md
+          fi
+          npm run sync:versions
+          sync_exit=$?
+          npm run lint
+          lint_exit=$?
+          npm test
+          test_exit=$?
+          if [ "$sync_exit" -ne 0 ] || [ "$lint_exit" -ne 0 ] || [ "$test_exit" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Finish merge commit
+        if: >
+          steps.merge.outputs.conflicted == 'true' &&
+          steps.settle.outputs.settle_exit == '0' &&
+          steps.validate.outcome == 'success'
+        run: |
+          git add README.md .github/dependency-versions.json
+          git commit --no-edit
+
+      - name: Abort merge if unresolved or invalid
+        if: >
+          steps.merge.outputs.conflicted == 'true' &&
+          (steps.shape.outputs.mechanical == 'false' ||
+           steps.settle.outputs.settle_exit != '0' ||
+           steps.validate.outcome != 'success')
+        run: git merge --abort
+
+      - name: Push resolution
+        if: >
+          steps.merge.outputs.conflicted == 'false' ||
+          (steps.settle.outputs.settle_exit == '0' && steps.validate.outcome == 'success')
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$HEAD_REF")" ]; then
+            git push origin "HEAD:$HEAD_REF"
+          fi
+
+      - name: Comment on outcome
+        if: always() && steps.pr.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        env:
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          BASE_REF: ${{ env.BASE_REF }}
+        with:
+          script: |
+            const conflicted = '${{ steps.merge.outputs.conflicted }}' === 'true';
+            const mechanical = '${{ steps.shape.outputs.mechanical }}';
+            const settleExit = '${{ steps.settle.outputs.settle_exit }}';
+            const validated = '${{ steps.validate.outcome }}';
+            const prNumber = Number(process.env.PR_NUMBER);
+            const baseRef = process.env.BASE_REF;
+            const dispatched = context.eventName === 'workflow_dispatch';
+
+            if (!conflicted && !dispatched) {
+              // Already mergeable -- no comment on every push (noise).
+              return;
+            }
+
+            let body;
+            if (!conflicted) {
+              body = '**Deps conflict settle** (manually triggered): this branch was already mergeable against `' + baseRef + '` -- nothing to do.';
+            } else if (mechanical === 'true' && settleExit === '0' && validated === 'success') {
+              body = [
+                '**Deps conflict settle:** this branch had fallen behind `' + baseRef + '`',
+                'and conflicted on the manifest/README generated line. Auto-resolved by',
+                'keeping the higher `testedVersion` per tool, regenerating the README via',
+                '`npm run sync:versions`, and passing lint + the full test suite before pushing.',
+              ].join(' ');
+            } else if (mechanical === 'false') {
+              body = [
+                '**Deps conflict settle:** this branch conflicts with `' + baseRef + '` in files',
+                'beyond the mechanical manifest/README shape. The merge attempt was aborted --',
+                'resolve by hand and push.',
+              ].join(' ');
+            } else {
+              body = [
+                '**Deps conflict settle:** mechanical resolution failed validation',
+                '(settle exit ' + settleExit + ', validate ' + validated + '). The merge attempt',
+                'was aborted -- resolve by hand and push.',
+              ].join(' ');
+            }
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
