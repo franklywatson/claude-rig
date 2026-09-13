@@ -17,6 +17,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sync:versions": "tsx scripts/sync-tested-versions.ts",
+    "settle:deps": "tsx scripts/settle-deps-conflict.ts",
     "lint": "tsc --noEmit",
     "lint:md": "markdownlint-cli2 '**/*.md'"
   },
