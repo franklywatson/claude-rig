@@ -532,6 +532,15 @@ jobs:
           fi
           npm run sync:versions
           sync_exit=$?
+          # Clean path only: sync modifying README means the merged tree
+          # carries pre-existing manifest/README divergence (Finish does
+          # not run on this path, so the fix would be validated but never
+          # pushed). Refuse to push divergence; the rollback + comment
+          # tell a human.
+          if [ "${{ steps.merge.outputs.conflicted }}" = 'false' ] && [ -n "$(git status --porcelain -- README.md)" ]; then
+            echo "clean-path sync modified README -- branch or master carries manifest/README divergence; refusing to push it" >&2
+            exit 1
+          fi
           npm run lint
           lint_exit=$?
           npm test
@@ -614,8 +623,12 @@ jobs:
               return;
             }
 
-            if (!conflicted && !dispatched) {
-              // Already mergeable -- no comment on every push (noise).
+            if (!conflicted && !dispatched && validateOutcome === 'success') {
+              // Already mergeable and validated -- no comment on every
+              // push (noise). A clean-path validation failure falls
+              // through to the rollback message below, which is exactly
+              // the audience that needs to see it (PR events, not just
+              // manual dispatch).
               return;
             }
 
@@ -629,7 +642,7 @@ jobs:
             } else if (mechanical === 'false') {
               body = '**Deps conflict settle:** this branch conflicts with `' + baseRef + '` in files beyond the mechanical manifest/README shape (`' + conflictedFiles + '`). The merge attempt was aborted -- resolve by hand and push.';
             } else {
-              body = '**Deps conflict settle:** resolution failed validation (settle exit ' + settleExit + ', validate ' + validateOutcome + '). The merge attempt was aborted -- resolve by hand and push.';
+              body = '**Deps conflict settle:** resolution failed validation (settle exit ' + (settleExit || 'not run') + ', validate ' + validateOutcome + '). The merge attempt was aborted -- resolve by hand and push.';
             }
 
             await post(body);
@@ -1121,4 +1134,4 @@ Surfaced to the maintainer at plan completion:
 1. **Controller copy drift (Task 2):** the dispatch prompt for Task 2 dropped one `JSON.parse` relative to this plan file (the plan was correct). The spec review's empirical check caught it before merge. Lesson applied: Task 3+ dispatches paste from this file and name it as the authoritative source to diff against.
 2. **README conflict markers (Task 3, corrected above):** `npm run sync:versions` replaces only the *first* `> **Tested against:**` line — regenerating straight over a conflicted README leaves `<<<<<<<`/`>>>>>>>` markers in the committed file. The Regenerate step now restores a marker-free README side (`git checkout --ours`) first, gated by a new shape-check guard proving the two README stages differ only on the generated line (so a side-pick can never silently drop master's prose).
 3. **Index-staging semantics (Task 2/3 boundary):** writing the settled manifest to the worktree does not clear `git ls-files -u` stages — staging is deliberately the workflow's job (`git add` in the Finish-merge step), keeping the script single-responsibility.
-4. **Quality-review hardening (Task 3, applied to the plan before the fix commit):** the clean-merge path now installs + validates before pushing (GITHUB_TOKEN suppression means CI would not run on this workflow's own push, so the gate travels with the run; a failed clean-merge validation rolls back via `git reset --hard` to the pushed tip — `git merge --abort` cannot run once the merge commit exists); the dispatch path refuses non-OPEN PRs; the abort comment names the conflicted files; all comment inputs pass via env (never `${{ }}` into the JS body); an infra-failure-before-merge message was added; and the header records the accepted risk of running PR-branch code (`npm ci`/`npm test`) with the job's persisted contents:write credential — confined to branch-push-capable actors, split the job if collaborators are ever added.
+4. **Quality-review hardening (Task 3, applied to the plan before the fix commit):** the clean-merge path now installs + validates before pushing (GITHUB_TOKEN suppression means CI would not run on this workflow's own push, so the gate travels with the run; a failed clean-merge validation rolls back via `git reset --hard` to the pushed tip — `git merge --abort` cannot run once the merge commit exists); the dispatch path refuses non-OPEN PRs; the abort comment names the conflicted files; all comment inputs pass via env (never `${{ }}` into the JS body); an infra-failure-before-merge message was added; and the header records the accepted risk of running PR-branch code (`npm ci`/`npm test`) with the job's persisted contents:write credential — confined to branch-push-capable actors, split the job if collaborators are ever added. Re-review fold-ins: the silent-early-return is gated on `validateOutcome === 'success'` so clean-path validation failures comment on PR events (their main audience); clean-path validation fails if `sync:versions` modified the README (pre-existing divergence would otherwise be validated-but-never-pushed); unset `settleExit` renders as `not run`. Deferred (accepted): no-op runs (master unmoved) still install + validate — 1-2 runs per deps PR, not worth the merge-step HEAD-moved plumbing.
