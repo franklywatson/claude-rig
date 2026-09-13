@@ -14,6 +14,20 @@ name: Deps conflict settle
 # workflow_dispatch exists because pull_request triggers have been observed
 # to silently not fire (claude-kb PR #195 incident); point it at any open
 # same-repo deps/* or security/* PR and it runs identical logic.
+#
+# Both merge outcomes validate before pushing: the mechanical path runs
+# lint + the full suite on the recomputed tree, and the clean-merge path
+# runs the same gate on the merge commit (GITHUB_TOKEN event suppression
+# means CI would not run on this workflow's own push, so the gate travels
+# with the run).
+#
+# Security note (accepted risk): the job carries contents:write (needed to
+# push the merge) and the persisted checkout credential survives into
+# npm ci / npm test, which execute this PR branch's own code -- the
+# documented untrusted-code-with-write-permissions shape. Confined to
+# actors who can already push branches (same-repo + prefix gates, and this
+# repo's collaborator set is maintainers + bots); if collaborators are
+# ever added, split validation (contents:read) from the push/comment job.
 
 on:
   pull_request:
@@ -57,13 +71,18 @@ jobs:
         run: |
           if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
             data=$(gh pr view "$DISPATCH_PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
-              --json number,headRefName,baseRefName,isCrossRepository)
+              --json number,headRefName,baseRefName,isCrossRepository,state)
             is_cross=$(echo "$data" | jq -r .isCrossRepository)
             head_ref=$(echo "$data" | jq -r .headRefName)
             base_ref=$(echo "$data" | jq -r .baseRefName)
             pr_number=$(echo "$data" | jq -r .number)
+            pr_state=$(echo "$data" | jq -r .state)
             if [ "$is_cross" = "true" ]; then
               echo "::error::PR #$pr_number is from a fork -- refusing (same-repo only)."
+              exit 1
+            fi
+            if [ "$pr_state" != "OPEN" ]; then
+              echo "::error::PR #$pr_number is $pr_state -- refusing (open PRs only; a merged PR's branch is dead)."
               exit 1
             fi
             case "$head_ref" in
@@ -145,9 +164,16 @@ jobs:
           else
             echo "mechanical=false" >> "$GITHUB_OUTPUT"
           fi
+          # Comma-joined list for the abort comment (env-passed, never
+          # interpolated into the JS script body).
+          printf -v files '%s, ' "${conflicted[@]}"
+          echo "conflicted_files=${files%, }" >> "$GITHUB_OUTPUT"
 
       - name: Install dependencies
-        if: steps.merge.outputs.conflicted == 'true' && steps.shape.outputs.mechanical == 'true'
+        # Both pushable paths install + validate: the mechanical settle and
+        # the clean merge (whose merge commit must also pass the gate before
+        # it is pushed).
+        if: steps.merge.outputs.conflicted == 'false' || steps.shape.outputs.mechanical == 'true'
         run: npm ci
 
       - name: Settle manifest conflict
@@ -160,7 +186,10 @@ jobs:
 
       - name: Regenerate README and validate
         id: validate
-        if: steps.settle.outputs.settle_exit == '0'
+        # Runs on both pushable paths: mechanical settle (settle exited 0)
+        # and clean merge (README restore self-skips; sync:versions is a
+        # no-op when the auto-merged line already matches the manifest).
+        if: steps.merge.outputs.conflicted == 'false' || steps.settle.outputs.settle_exit == '0'
         run: |
           set +e
           # Restore a marker-free README side first: the worktree README
@@ -191,18 +220,28 @@ jobs:
           git add README.md .github/dependency-versions.json
           git commit --no-edit
 
-      - name: Abort merge if unresolved or invalid
+      - name: Abort or roll back failed resolution
+        # Fires on every merge attempt whose tree did not validate. Mid-merge
+        # (uncommitted conflict): abort restores the pre-merge state. Clean
+        # path (the merge commit already exists): reset to the pushed branch
+        # tip. Nothing was pushed in either case, so both are local to this
+        # runner.
         if: >
-          steps.merge.outputs.conflicted == 'true' &&
-          (steps.shape.outputs.mechanical == 'false' ||
-           steps.settle.outputs.settle_exit != '0' ||
-           steps.validate.outcome != 'success')
-        run: git merge --abort
+          steps.merge.outcome == 'success' &&
+          steps.validate.outcome != 'success'
+        run: |
+          if [ "${{ steps.merge.outputs.conflicted }}" = 'true' ]; then
+            git merge --abort
+          else
+            git reset --hard "origin/$HEAD_REF"
+          fi
 
       - name: Push resolution
         if: >
-          steps.merge.outputs.conflicted == 'false' ||
-          (steps.settle.outputs.settle_exit == '0' && steps.validate.outcome == 'success')
+          (steps.merge.outputs.conflicted == 'false' ||
+           (steps.shape.outputs.mechanical == 'true' &&
+            steps.settle.outputs.settle_exit == '0')) &&
+          steps.validate.outcome == 'success'
         run: |
           if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$HEAD_REF")" ]; then
             git push origin "HEAD:$HEAD_REF"
@@ -212,17 +251,39 @@ jobs:
         if: always() && steps.pr.outputs.pr_number != ''
         uses: actions/github-script@v7
         env:
+          # Values pass via env, never ${{ }} into the JS body -- env vars
+          # are inert strings in JavaScript source.
           PR_NUMBER: ${{ env.PR_NUMBER }}
           BASE_REF: ${{ env.BASE_REF }}
+          MERGE_OUTCOME: ${{ steps.merge.outcome }}
+          CONFLICTED: ${{ steps.merge.outputs.conflicted }}
+          MECHANICAL: ${{ steps.shape.outputs.mechanical }}
+          CONFLICTED_FILES: ${{ steps.shape.outputs.conflicted_files }}
+          SETTLE_EXIT: ${{ steps.settle.outputs.settle_exit }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
         with:
           script: |
-            const conflicted = '${{ steps.merge.outputs.conflicted }}' === 'true';
-            const mechanical = '${{ steps.shape.outputs.mechanical }}';
-            const settleExit = '${{ steps.settle.outputs.settle_exit }}';
-            const validated = '${{ steps.validate.outcome }}';
+            const mergeOutcome = process.env.MERGE_OUTCOME;
+            const conflicted = process.env.CONFLICTED === 'true';
+            const mechanical = process.env.MECHANICAL;
+            const conflictedFiles = process.env.CONFLICTED_FILES || '';
+            const settleExit = process.env.SETTLE_EXIT;
+            const validateOutcome = process.env.VALIDATE_OUTCOME;
             const prNumber = Number(process.env.PR_NUMBER);
             const baseRef = process.env.BASE_REF;
             const dispatched = context.eventName === 'workflow_dispatch';
+
+            const post = (body) => github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
+
+            if (mergeOutcome !== 'success') {
+              await post('**Deps conflict settle:** failed before the merge attempt (infrastructure -- see the run log). Nothing was pushed.');
+              return;
+            }
 
             if (!conflicted && !dispatched) {
               // Already mergeable -- no comment on every push (noise).
@@ -230,32 +291,16 @@ jobs:
             }
 
             let body;
-            if (!conflicted) {
+            if (!conflicted && validateOutcome !== 'success') {
+              body = '**Deps conflict settle:** merging `' + baseRef + '` produced a commit that failed validation (' + validateOutcome + '). The merge was rolled back locally -- nothing was pushed. Resolve by hand and push.';
+            } else if (!conflicted) {
               body = '**Deps conflict settle** (manually triggered): this branch was already mergeable against `' + baseRef + '` -- nothing to do.';
-            } else if (mechanical === 'true' && settleExit === '0' && validated === 'success') {
-              body = [
-                '**Deps conflict settle:** this branch had fallen behind `' + baseRef + '`',
-                'and conflicted on the manifest/README generated line. Auto-resolved by',
-                'keeping the higher `testedVersion` per tool, regenerating the README via',
-                '`npm run sync:versions`, and passing lint + the full test suite before pushing.',
-              ].join(' ');
+            } else if (mechanical === 'true' && settleExit === '0' && validateOutcome === 'success') {
+              body = '**Deps conflict settle:** this branch had fallen behind `' + baseRef + '` and conflicted on the manifest/README generated line. Auto-resolved by keeping the higher `testedVersion` per tool, regenerating the README via `npm run sync:versions`, and passing lint + the full test suite before pushing.';
             } else if (mechanical === 'false') {
-              body = [
-                '**Deps conflict settle:** this branch conflicts with `' + baseRef + '` in files',
-                'beyond the mechanical manifest/README shape. The merge attempt was aborted --',
-                'resolve by hand and push.',
-              ].join(' ');
+              body = '**Deps conflict settle:** this branch conflicts with `' + baseRef + '` in files beyond the mechanical manifest/README shape (`' + conflictedFiles + '`). The merge attempt was aborted -- resolve by hand and push.';
             } else {
-              body = [
-                '**Deps conflict settle:** mechanical resolution failed validation',
-                '(settle exit ' + settleExit + ', validate ' + validated + '). The merge attempt',
-                'was aborted -- resolve by hand and push.',
-              ].join(' ');
+              body = '**Deps conflict settle:** resolution failed validation (settle exit ' + settleExit + ', validate ' + validateOutcome + '). The merge attempt was aborted -- resolve by hand and push.';
             }
 
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: prNumber,
-              body,
-            });
+            await post(body);
