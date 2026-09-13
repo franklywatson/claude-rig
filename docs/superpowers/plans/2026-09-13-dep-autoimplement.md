@@ -458,7 +458,18 @@ jobs:
               *) bad=1 ;;
             esac
           done
-          if [ "$bad" -eq 0 ]; then
+          # The README is only mechanically settleable when its two merge
+          # stages differ ONLY on the generated "Tested against" line --
+          # otherwise restoring one side would silently drop the other
+          # side's real prose, and the run must abort for a human.
+          readme_ok=1
+          if printf '%s\n' "${conflicted[@]}" | grep -qx 'README.md'; then
+            if ! diff <(git show :2:README.md | grep -vF '> **Tested against:**') \
+                      <(git show :3:README.md | grep -vF '> **Tested against:**') >/dev/null; then
+              readme_ok=0
+            fi
+          fi
+          if [ "$bad" -eq 0 ] && [ "$readme_ok" -eq 1 ]; then
             echo "mechanical=true" >> "$GITHUB_OUTPUT"
           else
             echo "mechanical=false" >> "$GITHUB_OUTPUT"
@@ -481,6 +492,15 @@ jobs:
         if: steps.settle.outputs.settle_exit == '0'
         run: |
           set +e
+          # Restore a marker-free README side first: the worktree README
+          # still carries conflict markers here, and `npm run
+          # sync:versions` replaces only the FIRST "Tested against" line
+          # match -- regenerating straight over markers would commit the
+          # conflict syntax. The shape check proved the stages differ only
+          # on that line, so either side + regeneration is the recompute.
+          if git ls-files -u -- README.md | grep -q .; then
+            git checkout --ours -- README.md
+          fi
           npm run sync:versions
           sync_exit=$?
           npm run lint
@@ -1050,3 +1070,9 @@ Surfaced to the maintainer at plan completion:
 - **Spec coverage:** sweep workflow (Task 4), conflict settle + script + pure merge (Tasks 1-3), watcher dedup + threat-detection (Task 5), docs (Task 6), prerequisites/rollout (Task 7 step 4). Spec's "verify at implementation" items are wired into Task 4 step 2 and Task 5 step 5.
 - **Deviations from spec, both intentional:** (1) `allowed-labels` omitted on the sweep's `create-pull-request` — it validates the *triggering* issue, which a scheduled run lacks; (2) the settle validate step runs `npm test` in addition to the spec's `lint`, because GITHUB_TOKEN event suppression makes CI-on-settle-push unreliable — the settle run carries the full gate itself.
 - **Type consistency:** `DependencyVersion[]` signatures match across test helpers, `mergeDependencyManifests`, and the settle script; npm script name `settle:deps` used consistently in Task 2 and Task 3.
+
+## Execution-Time Discoveries (plan corrected in-flight)
+
+1. **Controller copy drift (Task 2):** the dispatch prompt for Task 2 dropped one `JSON.parse` relative to this plan file (the plan was correct). The spec review's empirical check caught it before merge. Lesson applied: Task 3+ dispatches paste from this file and name it as the authoritative source to diff against.
+2. **README conflict markers (Task 3, corrected above):** `npm run sync:versions` replaces only the *first* `> **Tested against:**` line — regenerating straight over a conflicted README leaves `<<<<<<<`/`>>>>>>>` markers in the committed file. The Regenerate step now restores a marker-free README side (`git checkout --ours`) first, gated by a new shape-check guard proving the two README stages differ only on the generated line (so a side-pick can never silently drop master's prose).
+3. **Index-staging semantics (Task 2/3 boundary):** writing the settled manifest to the worktree does not clear `git ls-files -u` stages — staging is deliberately the workflow's job (`git add` in the Finish-merge step), keeping the script single-responsibility.
