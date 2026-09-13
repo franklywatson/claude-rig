@@ -203,6 +203,15 @@ jobs:
           fi
           npm run sync:versions
           sync_exit=$?
+          # Clean path only: sync modifying README means the merged tree
+          # carries pre-existing manifest/README divergence (Finish does
+          # not run on this path, so the fix would be validated but never
+          # pushed). Refuse to push divergence; the rollback + comment
+          # tell a human.
+          if [ "${{ steps.merge.outputs.conflicted }}" = 'false' ] && [ -n "$(git status --porcelain -- README.md)" ]; then
+            echo "clean-path sync modified README -- branch or master carries manifest/README divergence; refusing to push it" >&2
+            exit 1
+          fi
           npm run lint
           lint_exit=$?
           npm test
@@ -285,8 +294,12 @@ jobs:
               return;
             }
 
-            if (!conflicted && !dispatched) {
-              // Already mergeable -- no comment on every push (noise).
+            if (!conflicted && !dispatched && validateOutcome === 'success') {
+              // Already mergeable and validated -- no comment on every
+              // push (noise). A clean-path validation failure falls
+              // through to the rollback message below, which is exactly
+              // the audience that needs to see it (PR events, not just
+              // manual dispatch).
               return;
             }
 
@@ -300,7 +313,7 @@ jobs:
             } else if (mechanical === 'false') {
               body = '**Deps conflict settle:** this branch conflicts with `' + baseRef + '` in files beyond the mechanical manifest/README shape (`' + conflictedFiles + '`). The merge attempt was aborted -- resolve by hand and push.';
             } else {
-              body = '**Deps conflict settle:** resolution failed validation (settle exit ' + settleExit + ', validate ' + validateOutcome + '). The merge attempt was aborted -- resolve by hand and push.';
+              body = '**Deps conflict settle:** resolution failed validation (settle exit ' + (settleExit || 'not run') + ', validate ' + validateOutcome + '). The merge attempt was aborted -- resolve by hand and push.';
             }
 
             await post(body);
