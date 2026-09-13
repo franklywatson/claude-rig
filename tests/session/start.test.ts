@@ -478,7 +478,7 @@ describe('handleSessionStart', () => {
         if (cmd === 'which rtk') throw new Error('not found');
         if (cmd === 'which jcodemunch') throw new Error('not found');
         if (cmd === 'which graphify') return '/usr/bin/graphify';
-        if (cmd === 'graphify --version') return 'graphify 0.9.51';
+        if (cmd === 'graphify --version') return 'graphify 0.9.53';
         if (cmd === 'git branch --show-current') return 'feat/test';
         if (cmd.startsWith('graphify update')) {
           mkdirSync(join(tmpDir, 'graphify-out'), { recursive: true });
@@ -1036,7 +1036,7 @@ describe('handleSessionStart', () => {
         if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
         if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
         if (cmd === 'which graphify') return '/usr/local/bin/graphify';
-        if (cmd === 'graphify --version') return 'graphify 0.9.51';
+        if (cmd === 'graphify --version') return 'graphify 0.9.53';
         return '';
       });
 
