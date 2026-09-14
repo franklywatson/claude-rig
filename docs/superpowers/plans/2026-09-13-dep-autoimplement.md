@@ -360,7 +360,9 @@ name: Deps conflict settle
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # `closed` feeds only the dispatch-siblings job (merge -> settle the
+    # surviving siblings); the settle job itself excludes closed events.
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -378,12 +380,14 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write # dispatch-siblings runs `gh workflow run` (self-dispatch)
 
 jobs:
   settle:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'closed' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
        (startsWith(github.event.pull_request.head.ref, 'deps/') ||
         startsWith(github.event.pull_request.head.ref, 'security/')))
     runs-on: ubuntu-latest
@@ -646,6 +650,39 @@ jobs:
             }
 
             await post(body);
+
+  dispatch-siblings:
+    # When a deps/* or security/* PR MERGES, the surviving sibling PRs get
+    # no opened/synchronize/reopened event of their own -- yet a merge is
+    # exactly the change that can newly conflict them (the sweep's 2-PR
+    # runs both regenerate the README "Tested against" line). Dispatch
+    # settle for every other still-open sibling; workflow_dispatch is the
+    # one trigger GITHUB_TOKEN may fire (claude-kb's merged-PR dispatcher
+    # pattern). The dispatched runs re-validate same-repo + OPEN + branch
+    # prefix on their own.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'deps/') ||
+       startsWith(github.event.pull_request.head.ref, 'security/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch settle for open sibling PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # `set -o pipefail`: a failing `gh pr list` must fail the step,
+          # not silently feed the loop nothing (kb's PR #226 lesson).
+          set -o pipefail
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,headRefName \
+            --jq '.[] | select((.headRefName | startswith("deps/")) or (.headRefName | startswith("security/"))) | .number' |
+          while read -r pr; do
+            echo "Dispatching deps-conflict-settle for sibling PR #$pr"
+            gh workflow run deps-conflict-settle.yml --repo "$GITHUB_REPOSITORY" -f pr_number="$pr"
+          done
 ```
 
 - [ ] **Step 2: Validate the YAML parses**
@@ -1131,6 +1168,28 @@ mergeable. Humans keep the one gate that matters: PR merge.
 (`/implement` on an issue remains as the manual override.)
 ```
 
+- [ ] **Step 5b: Quality-review doc fixes** (from Task 6's quality review):
+
+`docs/dependency-watch.md` intro paragraph (the first paragraph after the title) — replace:
+```markdown
+rig's dependency automation: Dependabot as the rule-based baseline, plus
+two GitHub Agentic Workflows (gh-aw) that detect upstream releases of the
+panel tools and open Dependabot-alert gaps, analyze the integration or
+fix impact, and implement approved changes as proposed PRs — with a human
+at the two gates that matter (run approval and PR merge).
+```
+with (match the file's actual wrapping if it differs):
+```markdown
+rig's dependency automation: Dependabot as the rule-based baseline, plus
+GitHub Agentic Workflows (gh-aw) that detect upstream releases of the
+panel tools and open Dependabot-alert gaps, analyze the integration or
+fix impact, and turn those issues into PRs automatically — a daily sweep
+implements them, with a human at the one gate that matters (PR merge;
+`/implement` remains the manual override).
+```
+
+`README.md` second dependency-automation paragraph — replace the sentence ending `...become `security-update` issues that the same `/implement` path fixes.` with `...become `security-update` issues that the daily sweep fixes automatically (`/implement` remains the manual override).`
+
 - [ ] **Step 6: Markdown lint + commit**
 
 Run: `npm run lint:md`
@@ -1188,3 +1247,4 @@ Surfaced to the maintainer at plan completion:
 4. **Quality-review hardening (Task 3, applied to the plan before the fix commit):** the clean-merge path now installs + validates before pushing (GITHUB_TOKEN suppression means CI would not run on this workflow's own push, so the gate travels with the run; a failed clean-merge validation rolls back via `git reset --hard` to the pushed tip — `git merge --abort` cannot run once the merge commit exists); the dispatch path refuses non-OPEN PRs; the abort comment names the conflicted files; all comment inputs pass via env (never `${{ }}` into the JS body); an infra-failure-before-merge message was added; and the header records the accepted risk of running PR-branch code (`npm ci`/`npm test`) with the job's persisted contents:write credential — confined to branch-push-capable actors, split the job if collaborators are ever added. Re-review fold-ins: the silent-early-return is gated on `validateOutcome === 'success'` so clean-path validation failures comment on PR events (their main audience); clean-path validation fails if `sync:versions` modified the README (pre-existing divergence would otherwise be validated-but-never-pushed); unset `settleExit` renders as `not run`. Deferred (accepted): no-op runs (master unmoved) still install + validate — 1-2 runs per deps PR, not worth the merge-step HEAD-moved plumbing.
 5. **Quality-review fixes (Task 4, applied to the plan before the fix commit):** the supersession-collapse step's stated title grammar omitted the `[dep-watch] `/`[vuln-watch] ` prefixes the watchers' `title-prefix` adds — a literal reading could key groups on the constant prefix and collapse every dep issue into one group, closing unimplemented issues; the step now states the real shapes and instructs stripping the prefix first. Also folded: supersession comments move to PR-creation time (a survivor left for a later run gets no premature comment); every `add-comment` carries an explicit issue number (scheduled runs have no triggering issue) and respects the max-4 budget (notes skipped, never the `Closes` lines); the open-PR guard matches `Closes|Fixes|Resolves`; the discipline section regains the sibling's "the issue already did the analysis" economy line; threat-detection covers issue comments as well as bodies. Rollout note: the live backlog moved during execution (graphify #117/#122/#128 implemented and closed completed; #127 rtk 0.49.0 now supersedes #121; #130 is an `[agentic-workflows]`-labeled fallback issue outside the sweep's label filters) — Task 7's checklist updated accordingly.
 6. **Quality-review fixes (Task 5, applied to the plan before the fix commit):** vuln-watch's dedup key (GHSA/CVE + package) lives in issue *bodies*, so the instructed command now passes `--json number,title,body`; a stale-deferral escape hatch was added (same GHSA but severity/range/first-patched changed → file citing the delta instead of silently skipping forever); dep-watch's match is pinned to titles ("whose title mentions that exact version"); both noop conditions say "an issue, open or closed" instead of "an open issue"; vuln-watch's threat prompt says "in advisory data" (the advisory text arrives in Dependabot alert JSON, not fetched pages). Known bounded residual (accepted): two distinct same-package GHSAs with near-identical agent-written summaries can collide on gh-aw's `deduplicate-by-title` backstop — bounded by `max: 5` and human review. Also for Task 6: `docs/dependency-watch.md` History should record that closed-as-COMPLETED with an unbumped manifest (live example: graphify #122/#128 closed while testedVersion stayed 0.9.51) is intended suppression.
+7. **Sibling-settle auto-dispatch (Task 6 quality review, maintainer-approved):** the runbook's "automatically merges master into the sibling" claim was unfounded — merging PR A fires no opened/synchronize/reopened event on sibling PR B, so settle never ran automatically in exactly the scenario it exists for. Fixed by making the behavior real rather than degrading the doc (kb's merged-PR dispatcher pattern): `deps-conflict-settle.yml` now also listens on `pull_request: closed` (settle job excludes closed events; a new `dispatch-siblings` job, gated on merged+same-repo+prefix, self-dispatches settle for every still-open sibling via `gh workflow run` — `workflow_dispatch` being the one trigger GITHUB_TOKEN may fire; `actions: write` added). Doc-intro and README second-paragraph stale "/implement fixes them" phrasing corrected in Task 6 Step 5b. Also fixed in this cycle: `gh workflow run` targets `dependency-autoimplement.lock.yml`, not the `.md`; README keeps its gh-aw and version-manifest hyperlinks.
