@@ -1089,7 +1089,9 @@ comment naming non-mechanical files means a human resolves by hand. If a
 settle run seems to have silently not fired (a known pull_request-trigger
 failure mode), re-run it: `gh workflow run deps-conflict-settle.yml -f
 pr_number=<N>`. To drain the backlog immediately instead of waiting for
-the daily schedule: `gh workflow run dependency-autoimplement.md`.
+the daily schedule: `gh workflow run dependency-autoimplement.lock.yml`
+(gh-aw registers the compiled lock file as the workflow, not the `.md`;
+its display name is "Dependency autoimplement").
 ```
 
 - [ ] **Step 4: docs/dependency-watch.md — history entry**
@@ -1115,15 +1117,17 @@ Replace the paragraph beginning `rig's own panel-tool dependencies (rtk, jcodemu
 
 ```markdown
 rig's own panel-tool dependencies (rtk, jcodemunch, graphify, headroom,
-superpowers) are watched by two GitHub Agentic Workflows (gh-aw):
+superpowers) are watched by two [GitHub Agentic
+Workflows](https://github.github.com/gh-aw/) (gh-aw):
 `dependency-watch` (weekly — probes upstream releases against the
-version manifest and files structured integration-analysis issues) and
-`vuln-watch` (weekly — escalates Dependabot alerts whose fix needs
-judgment). A daily sweep, `dependency-autoimplement`, then turns those
-issues into PRs automatically through gh-aw's validated safe-outputs
-pipeline — supersession-aware, suite-gated, at most two PRs per run —
-with `deps-conflict-settle` (deterministic, no AI) keeping concurrent
-dep PRs mergeable. Humans keep the one gate that matters: PR merge.
+[version manifest](.github/dependency-versions.json) and files structured
+integration-analysis issues) and `vuln-watch` (weekly — escalates
+Dependabot alerts whose fix needs judgment). A daily sweep,
+`dependency-autoimplement`, then turns those issues into PRs
+automatically through gh-aw's validated safe-outputs pipeline —
+supersession-aware, suite-gated, at most two PRs per run — with
+`deps-conflict-settle` (deterministic, no AI) keeping concurrent dep PRs
+mergeable. Humans keep the one gate that matters: PR merge.
 (`/implement` on an issue remains as the manual override.)
 ```
 
@@ -1164,7 +1168,7 @@ Expected: empty (all tasks committed).
 
 Surfaced to the maintainer at plan completion:
 1. Confirm Settings → Actions → General → "Allow GitHub Actions to create and approve pull requests" is enabled (PR #85 is evidence it already is).
-2. First live validation once merged to master: `gh workflow run dependency-autoimplement.md` against the real backlog — at 2026-09-14 that is #127 rtk 0.49.0 **superseding #121** (same-tool collapse + dual-close) plus #123 vitest and #124 smol-toml (mechanical security bumps). (The original graphify pair #117/#122 was implemented and closed completed before rollout; the mixed-tool collapse case will occur naturally on a busy week.)
+2. First live validation once merged to master: `gh workflow run dependency-autoimplement.lock.yml` against the real backlog — at 2026-09-14 that is #127 rtk 0.49.0 **superseding #121** (same-tool collapse + dual-close) plus #123 vitest and #124 smol-toml (mechanical security bumps). (The original graphify pair #117/#122 was implemented and closed completed before rollout; the mixed-tool collapse case will occur naturally on a busy week.)
 3. Once two auto-PRs coexist, `gh workflow run deps-conflict-settle.yml -f pr_number=<N>` to exercise the mechanical resolution.
 4. Watch the first week: sweep credit spend, supersession comments, settle behavior after the first merge.
 
