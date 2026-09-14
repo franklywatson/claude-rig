@@ -1101,6 +1101,12 @@ Append to `## History`:
   (merge-only human gate), deterministic deps-conflict-settle for sibling
   PRs, all-state watcher dedup, threat-detection hardening. Design:
   docs/superpowers/specs/2026-09-13-dep-autoimplement-design.md
+- Note (2026-09): the watchers dedupe against issues in ALL states. A
+  release whose issue is closed-as-COMPLETED while the manifest still
+  pins the older version (live example: graphify — #122/#128 closed,
+  `testedVersion` still 0.9.51) is intended suppression: the watcher is
+  silent because triage happened, not because it broke. A newer release
+  files fresh.
 ```
 
 - [ ] **Step 5: README.md — dependency automation paragraph**
