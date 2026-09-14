@@ -18,8 +18,8 @@
       "name": "graphify",
       "readmeLabel": "graphify",
       "repo": "Graphify-Labs/graphify",
-      "testedVersion": "0.9.51",
-      "notes": "Knowledge graph builder. PyPI package name is graphifyy; repo moved to Graphify-Labs (safishamsi redirects); version-warns outside tested range. 0.9.51 writes no .rebuild.lock, and its shrink guard keeps a partial build from overwriting graph.json."
+      "testedVersion": "0.9.53",
+      "notes": "Knowledge graph builder. PyPI package name is graphifyy; repo moved to Graphify-Labs (safishamsi redirects); version-warns outside tested range. 0.9.53 writes no .rebuild.lock; its shrink guard keeps a partial build from overwriting graph.json, and since 0.9.53 (#3203) an unverified per-source shrink arms the guard and re-queues the source on the next run — a first run can legitimately return a smaller graph that a later run completes."
     },
     {
       "name": "headroom",
