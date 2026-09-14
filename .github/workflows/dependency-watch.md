@@ -69,12 +69,12 @@ files.
    and skip it. A release outside the range is new.
 4. Before writing an issue, check
    `gh issue list --label dependency-update --state all --limit 200` —
-   skip any release that already has an issue, open **or closed**,
-   mentioning that exact version number. A closed issue means the release
-   was already triaged (implemented, or rejected as not-planned) — either
-   way it must not be re-filed; a *newer* release still files, because its
-   version string is new. The workflow's `deduplicate-by-title` is a second
-   net; your check is the first.
+   skip any release that already has an issue, open **or closed**, whose
+   title mentions that exact version number. A closed issue means the
+   release was already triaged (implemented, or rejected as
+   not-planned) — either way it must not be re-filed; a *newer* release
+   still files, because its version string is new. The workflow's
+   `deduplicate-by-title` is a second net; your check is the first.
 5. For each genuinely new release, gather evidence before writing:
    - Read the full release notes body (the `body` field of the release).
    - If the notes reference a changelog or migration guide, fetch it via
@@ -120,7 +120,7 @@ files.
    ```
 
 7. If every tool's latest release is inside its tested range (or already
-   has an open issue), invoke `noop` — do not create placeholder issues.
+   has an issue, open or closed), invoke `noop` — do not create placeholder issues.
 
 ## Discipline
 
