@@ -21,6 +21,8 @@ graduated-autonomy agent acts on it.
 | `.github/workflows/dependency-watch.md` | Weekly agentic workflow: probes upstream releases, files structured analysis issues |
 | `.github/workflows/vuln-watch.md` | Weekly agentic workflow: escalates Dependabot alerts that no open Dependabot PR covers, filing structured `security-update` issues |
 | `.github/workflows/dependency-implement.md` | Slash-command agentic workflow: `/implement` on an issue builds the change and proposes a PR (serves both `dependency-update` and `security-update` labels) |
+| `.github/workflows/dependency-autoimplement.md` | Daily agentic sweep: turns open `dependency-update`/`security-update` issues into PRs automatically (merge-only human gate; at most 2 PRs per run) |
+| `.github/workflows/deps-conflict-settle.yml` | Deterministic (no AI) PR-branch maintenance: merges master into open `deps/*`/`security/*` PRs, recomputing the manifest + README line on the known conflict shape |
 | `dependency-implement` GitHub environment | Required-reviewer approval gate every implement run passes before the agent starts |
 
 ## dependency-watch (analysis -> issues)
@@ -64,6 +66,25 @@ goes in the PR body; two fix iterations max — a red suite produces a
 diagnosis comment on the issue, never a PR. `npm run eval` is
 deliberately not run (operator-gated, live model spend) and its checklist
 box stays unchecked.
+
+## dependency-autoimplement (issues -> PRs, automatic)
+
+**Trigger:** daily (fuzzy `around 09:00`) + manual dispatch. A
+deterministic pre-activation step skips the whole run when no open
+`dependency-update`/`security-update` issue exists — empty days cost no
+agent credits.
+
+The sweep drains the watcher backlog into PRs with **no human trigger**
+(the `/implement` slash command remains as the manual retry/override).
+Per run it: collapses supersessions (per tool/package, newest release or
+advisory wins; superseded issues close with the surviving PR via extra
+`Closes #N` lines), skips issues already served by an open PR, and
+implements at most 2 issues oldest-first through the same procedure as
+`/implement` (manifest bump + `sync:versions` + fixtures, or plain
+package fix + audit re-check; `npm run lint` + `npm test` green with the
+verbatim summary in the PR body; two fix iterations max). The human gate
+is **PR merge only**. Budget: 2500 AI-credits per sweep; leftover backlog
+rolls to the next day.
 
 ## vuln-watch (alerts -> gap issues)
 
@@ -113,6 +134,19 @@ whole loop. For breaking majors or package replacements, decide whether
 the "Proposed fix path" is the plan you want before approving the run;
 the implement agent adjusts where reality disagrees but is scoped to the
 issue's plan.
+
+### After the sweep opens PRs
+
+Review and merge (or close) — that is the only gate. If two dep PRs are
+open at once and one merges, `deps-conflict-settle.yml` automatically
+merges master into the sibling and, when the conflict is the mechanical
+manifest/README-line shape, recomputes it (higher `testedVersion` per
+tool, README regenerated) after passing lint + the full suite. A settle
+comment naming non-mechanical files means a human resolves by hand. If a
+settle run seems to have silently not fired (a known pull_request-trigger
+failure mode), re-run it: `gh workflow run deps-conflict-settle.yml -f
+pr_number=<N>`. To drain the backlog immediately instead of waiting for
+the daily schedule: `gh workflow run dependency-autoimplement.md`.
 
 ### If a run files a fallback issue instead of a PR
 
@@ -172,6 +206,16 @@ new tool version on PATH — e.g.
   gap escalation + implement label-gate widening. Modeled on the same
   watch -> issue -> `/implement` -> gated-PR loop; the agent escalates
   only alerts Dependabot's own PRs do not cover.
+- Phase 3 (2026-09): automatic PR creation. Daily autoimplement sweep
+  (merge-only human gate), deterministic deps-conflict-settle for sibling
+  PRs, all-state watcher dedup, threat-detection hardening. Design:
+  docs/superpowers/specs/2026-09-13-dep-autoimplement-design.md
+- Note (2026-09): the watchers dedupe against issues in ALL states. A
+  release whose issue is closed-as-COMPLETED while the manifest still
+  pins the older version (live example: graphify — #122/#128 closed,
+  `testedVersion` still 0.9.51) is intended suppression: the watcher is
+  silent because triage happened, not because it broke. A newer release
+  files fresh.
 
 ## Related
 
