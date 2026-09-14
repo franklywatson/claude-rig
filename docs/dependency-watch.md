@@ -146,7 +146,9 @@ comment naming non-mechanical files means a human resolves by hand. If a
 settle run seems to have silently not fired (a known pull_request-trigger
 failure mode), re-run it: `gh workflow run deps-conflict-settle.yml -f
 pr_number=<N>`. To drain the backlog immediately instead of waiting for
-the daily schedule: `gh workflow run dependency-autoimplement.md`.
+the daily schedule: `gh workflow run dependency-autoimplement.lock.yml`
+(gh-aw registers the compiled lock file as the workflow, not the `.md`;
+its display name is "Dependency autoimplement").
 
 ### If a run files a fallback issue instead of a PR
 
