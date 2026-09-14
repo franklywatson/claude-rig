@@ -31,7 +31,9 @@ name: Deps conflict settle
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened]
+    # `closed` feeds only the dispatch-siblings job (merge -> settle the
+    # surviving siblings); the settle job itself excludes closed events.
+    types: [opened, synchronize, reopened, closed]
   workflow_dispatch:
     inputs:
       pr_number:
@@ -49,12 +51,14 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  actions: write # dispatch-siblings runs `gh workflow run` (self-dispatch)
 
 jobs:
   settle:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      (github.event.pull_request.head.repo.full_name == github.repository &&
+      (github.event.action != 'closed' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
        (startsWith(github.event.pull_request.head.ref, 'deps/') ||
         startsWith(github.event.pull_request.head.ref, 'security/')))
     runs-on: ubuntu-latest
@@ -317,3 +321,36 @@ jobs:
             }
 
             await post(body);
+
+  dispatch-siblings:
+    # When a deps/* or security/* PR MERGES, the surviving sibling PRs get
+    # no opened/synchronize/reopened event of their own -- yet a merge is
+    # exactly the change that can newly conflict them (the sweep's 2-PR
+    # runs both regenerate the README "Tested against" line). Dispatch
+    # settle for every other still-open sibling; workflow_dispatch is the
+    # one trigger GITHUB_TOKEN may fire (claude-kb's merged-PR dispatcher
+    # pattern). The dispatched runs re-validate same-repo + OPEN + branch
+    # prefix on their own.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'deps/') ||
+       startsWith(github.event.pull_request.head.ref, 'security/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch settle for open sibling PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # `set -o pipefail`: a failing `gh pr list` must fail the step,
+          # not silently feed the loop nothing (kb's PR #226 lesson).
+          set -o pipefail
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,headRefName \
+            --jq '.[] | select((.headRefName | startswith("deps/")) or (.headRefName | startswith("security/"))) | .number' |
+          while read -r pr; do
+            echo "Dispatching deps-conflict-settle for sibling PR #$pr"
+            gh workflow run deps-conflict-settle.yml --repo "$GITHUB_REPOSITORY" -f pr_number="$pr"
+          done
