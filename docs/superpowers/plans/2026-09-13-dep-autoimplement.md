@@ -920,12 +920,12 @@ with:
 ```markdown
 4. Before writing an issue, check
    `gh issue list --label dependency-update --state all --limit 200` —
-   skip any release that already has an issue, open **or closed**,
-   mentioning that exact version number. A closed issue means the release
-   was already triaged (implemented, or rejected as not-planned) — either
-   way it must not be re-filed; a *newer* release still files, because its
-   version string is new. The workflow's `deduplicate-by-title` is a second
-   net; your check is the first.
+   skip any release that already has an issue, open **or closed**, whose
+   title mentions that exact version number. A closed issue means the
+   release was already triaged (implemented, or rejected as
+   not-planned) — either way it must not be re-filed; a *newer* release
+   still files, because its version string is new. The workflow's
+   `deduplicate-by-title` is a second net; your check is the first.
 ```
 
 - [ ] **Step 2: Add threat-detection to dependency-watch.md safe-outputs**
@@ -960,13 +960,17 @@ with:
 
 ```markdown
 3. Before writing an issue, check
-   `gh issue list --label security-update --state all --limit 200` — skip
-   any alert that already has an issue, open **or closed**, naming the same
-   GHSA/CVE and package. A closed issue means the alert was already
-   triaged (fixed, or deliberately deferred as not-planned by a
-   maintainer — to revisit a deferral, reopen the closed issue rather than
-   expecting a new one). The workflow's `deduplicate-by-title` is a second
-   net; your check is the first.
+   `gh issue list --label security-update --state all --limit 200 --json
+   number,title,body` — skip any alert that already has an issue, open
+   **or closed**, naming the same GHSA/CVE and package (the identifiers
+   live in issue bodies, not titles). A closed issue means the alert was
+   already triaged (fixed, or deliberately deferred as not-planned by a
+   maintainer — to revisit a deferral, reopen the closed issue rather
+   than expecting a new one). But if the alert's severity, vulnerable
+   range, or first-patched version differs from what the closed issue
+   recorded, the deferral may be stale — file the issue citing the delta
+   and the closed issue number rather than skipping. The workflow's
+   `deduplicate-by-title` is a second net; your check is the first.
 ```
 
 - [ ] **Step 4: Add threat-detection to vuln-watch.md safe-outputs**
@@ -984,6 +988,32 @@ In the frontmatter `safe-outputs:` block, after the `create-issue` entries, add:
       from the Dependabot alert data and the lockfile, or deviates from the
       mandated issue template (labels, section order, one-issue-per-alert).
 ```
+
+- [ ] **Step 4b: Quality-review follow-up edits** (from Task 5's quality review — exact old → new pairs against the current files):
+
+`dependency-watch.md` step 7 (noop condition):
+```markdown
+(or already has
+   an open issue)
+```
+→
+```markdown
+(or already has
+   an issue, open or closed)
+```
+
+`vuln-watch.md` step 6 (noop condition):
+```markdown
+(or already has
+   an open issue)
+```
+→
+```markdown
+(or already has
+   an issue, open or closed)
+```
+
+`vuln-watch.md` threat-detection prompt: `from an advisory page` → `in advisory data`.
 
 - [ ] **Step 5: Recompile and commit**
 
@@ -1147,3 +1177,4 @@ Surfaced to the maintainer at plan completion:
 3. **Index-staging semantics (Task 2/3 boundary):** writing the settled manifest to the worktree does not clear `git ls-files -u` stages — staging is deliberately the workflow's job (`git add` in the Finish-merge step), keeping the script single-responsibility.
 4. **Quality-review hardening (Task 3, applied to the plan before the fix commit):** the clean-merge path now installs + validates before pushing (GITHUB_TOKEN suppression means CI would not run on this workflow's own push, so the gate travels with the run; a failed clean-merge validation rolls back via `git reset --hard` to the pushed tip — `git merge --abort` cannot run once the merge commit exists); the dispatch path refuses non-OPEN PRs; the abort comment names the conflicted files; all comment inputs pass via env (never `${{ }}` into the JS body); an infra-failure-before-merge message was added; and the header records the accepted risk of running PR-branch code (`npm ci`/`npm test`) with the job's persisted contents:write credential — confined to branch-push-capable actors, split the job if collaborators are ever added. Re-review fold-ins: the silent-early-return is gated on `validateOutcome === 'success'` so clean-path validation failures comment on PR events (their main audience); clean-path validation fails if `sync:versions` modified the README (pre-existing divergence would otherwise be validated-but-never-pushed); unset `settleExit` renders as `not run`. Deferred (accepted): no-op runs (master unmoved) still install + validate — 1-2 runs per deps PR, not worth the merge-step HEAD-moved plumbing.
 5. **Quality-review fixes (Task 4, applied to the plan before the fix commit):** the supersession-collapse step's stated title grammar omitted the `[dep-watch] `/`[vuln-watch] ` prefixes the watchers' `title-prefix` adds — a literal reading could key groups on the constant prefix and collapse every dep issue into one group, closing unimplemented issues; the step now states the real shapes and instructs stripping the prefix first. Also folded: supersession comments move to PR-creation time (a survivor left for a later run gets no premature comment); every `add-comment` carries an explicit issue number (scheduled runs have no triggering issue) and respects the max-4 budget (notes skipped, never the `Closes` lines); the open-PR guard matches `Closes|Fixes|Resolves`; the discipline section regains the sibling's "the issue already did the analysis" economy line; threat-detection covers issue comments as well as bodies. Rollout note: the live backlog moved during execution (graphify #117/#122/#128 implemented and closed completed; #127 rtk 0.49.0 now supersedes #121; #130 is an `[agentic-workflows]`-labeled fallback issue outside the sweep's label filters) — Task 7's checklist updated accordingly.
+6. **Quality-review fixes (Task 5, applied to the plan before the fix commit):** vuln-watch's dedup key (GHSA/CVE + package) lives in issue *bodies*, so the instructed command now passes `--json number,title,body`; a stale-deferral escape hatch was added (same GHSA but severity/range/first-patched changed → file citing the delta instead of silently skipping forever); dep-watch's match is pinned to titles ("whose title mentions that exact version"); both noop conditions say "an issue, open or closed" instead of "an open issue"; vuln-watch's threat prompt says "in advisory data" (the advisory text arrives in Dependabot alert JSON, not fetched pages). Known bounded residual (accepted): two distinct same-package GHSAs with near-identical agent-written summaries can collide on gh-aw's `deduplicate-by-title` backstop — bounded by `max: 5` and human review. Also for Task 6: `docs/dependency-watch.md` History should record that closed-as-COMPLETED with an unbumped manifest (live example: graphify #122/#128 closed while testedVersion stayed 0.9.51) is intended suppression.
