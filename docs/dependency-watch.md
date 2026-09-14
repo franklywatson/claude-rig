@@ -1,10 +1,11 @@
 # Dependency Watch & Implement
 
 rig's dependency automation: Dependabot as the rule-based baseline, plus
-two GitHub Agentic Workflows (gh-aw) that detect upstream releases of the
+GitHub Agentic Workflows (gh-aw) that detect upstream releases of the
 panel tools and open Dependabot-alert gaps, analyze the integration or
-fix impact, and implement approved changes as proposed PRs — with a human
-at the two gates that matter (run approval and PR merge).
+fix impact, and turn those issues into PRs automatically — a daily sweep
+implements them, with a human at the one gate that matters (PR merge;
+`/implement` remains the manual override).
 
 This is the maintainer-agent trajectory from [agent-loops.md](agent-loops.md),
 materialized: the L1 external-contract signal (upstream releases,

@@ -352,7 +352,8 @@ npm vulnerabilities are layered on top: Dependabot
 (`.github/dependabot.yml`) opens routine bump PRs itself, and `vuln-watch`
 (weekly) escalates only the gap — open Dependabot alerts whose fix needs
 judgment beyond a rule-based bump (breaking majors, package replacements)
-become `security-update` issues that the same `/implement` path fixes.
+become `security-update` issues that the daily sweep fixes automatically
+(`/implement` remains the manual override).
 See [docs/dependency-watch.md](docs/dependency-watch.md) for the design
 and the runbook.
 
