@@ -335,19 +335,25 @@ npm run sync:versions  # regenerate README "Tested against" line from .github/de
 ### Dependency automation
 
 rig's own panel-tool dependencies (rtk, jcodemunch, graphify, headroom,
-superpowers) are watched by two [GitHub Agentic Workflows](https://github.github.com/gh-aw/):
+superpowers) are watched by two [GitHub Agentic
+Workflows](https://github.github.com/gh-aw/) (gh-aw):
 `dependency-watch` (weekly — probes upstream releases against the
 [version manifest](.github/dependency-versions.json) and files structured
-integration-analysis issues) and `dependency-implement` (`/implement` on
-such an issue — an approved agent run implements it and proposes a PR
-through gh-aw's validated safe-outputs pipeline). Humans keep the two
-gates that matter: run approval and PR merge.
+integration-analysis issues) and `vuln-watch` (weekly — escalates
+Dependabot alerts whose fix needs judgment). A daily sweep,
+`dependency-autoimplement`, then turns those issues into PRs
+automatically through gh-aw's validated safe-outputs pipeline —
+supersession-aware, suite-gated, at most two PRs per run — with
+`deps-conflict-settle` (deterministic, no AI) keeping concurrent dep PRs
+mergeable. Humans keep the one gate that matters: PR merge.
+(`/implement` on an issue remains as the manual override.)
 
 npm vulnerabilities are layered on top: Dependabot
 (`.github/dependabot.yml`) opens routine bump PRs itself, and `vuln-watch`
 (weekly) escalates only the gap — open Dependabot alerts whose fix needs
 judgment beyond a rule-based bump (breaking majors, package replacements)
-become `security-update` issues that the same `/implement` path fixes.
+become `security-update` issues that the daily sweep fixes automatically
+(`/implement` remains the manual override).
 See [docs/dependency-watch.md](docs/dependency-watch.md) for the design
 and the runbook.
 

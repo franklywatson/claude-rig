@@ -1,0 +1,356 @@
+name: Deps conflict settle
+
+# Deterministic bookkeeping only, no AI engine. Keeps open deps/* and
+# security/* PRs mergeable against master: on every push to such a branch,
+# merge master in. Clean -> push the merge commit. Conflicted, and every
+# conflicted file is the known mechanical shape (README.md "Tested against"
+# line + .github/dependency-versions.json) -> recompute instead of picking
+# a side: the manifest merges by higher testedVersion per tool
+# (scripts/settle-deps-conflict.ts), the README regenerates from the merged
+# manifest (npm run sync:versions), and lint + the full suite gate the
+# result before it is pushed. Any other conflicted file -> abort the merge
+# and comment naming the files, leaving resolution to a human.
+#
+# workflow_dispatch exists because pull_request triggers have been observed
+# to silently not fire (claude-kb PR #195 incident); point it at any open
+# same-repo deps/* or security/* PR and it runs identical logic.
+#
+# Both merge outcomes validate before pushing: the mechanical path runs
+# lint + the full suite on the recomputed tree, and the clean-merge path
+# runs the same gate on the merge commit (GITHUB_TOKEN event suppression
+# means CI would not run on this workflow's own push, so the gate travels
+# with the run).
+#
+# Security note (accepted risk): the job carries contents:write (needed to
+# push the merge) and the persisted checkout credential survives into
+# npm ci / npm test, which execute this PR branch's own code -- the
+# documented untrusted-code-with-write-permissions shape. Confined to
+# actors who can already push branches (same-repo + prefix gates, and this
+# repo's collaborator set is maintainers + bots); if collaborators are
+# ever added, split validation (contents:read) from the push/comment job.
+
+on:
+  pull_request:
+    # `closed` feeds only the dispatch-siblings job (merge -> settle the
+    # surviving siblings); the settle job itself excludes closed events.
+    types: [opened, synchronize, reopened, closed]
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: >-
+          Open PR number to settle. Must be a same-repo PR on a deps/* or
+          security/* branch -- anything else is refused.
+        required: true
+        type: number
+
+concurrency:
+  group: deps-conflict-settle-${{ github.event.pull_request.number || inputs.pr_number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: write # dispatch-siblings runs `gh workflow run` (self-dispatch)
+
+jobs:
+  settle:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.action != 'closed' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       (startsWith(github.event.pull_request.head.ref, 'deps/') ||
+        startsWith(github.event.pull_request.head.ref, 'security/')))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve PR context
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_PR_NUMBER: ${{ inputs.pr_number }}
+          EVENT_PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          EVENT_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            data=$(gh pr view "$DISPATCH_PR_NUMBER" --repo "$GITHUB_REPOSITORY" \
+              --json number,headRefName,baseRefName,isCrossRepository,state)
+            is_cross=$(echo "$data" | jq -r .isCrossRepository)
+            head_ref=$(echo "$data" | jq -r .headRefName)
+            base_ref=$(echo "$data" | jq -r .baseRefName)
+            pr_number=$(echo "$data" | jq -r .number)
+            pr_state=$(echo "$data" | jq -r .state)
+            if [ "$is_cross" = "true" ]; then
+              echo "::error::PR #$pr_number is from a fork -- refusing (same-repo only)."
+              exit 1
+            fi
+            if [ "$pr_state" != "OPEN" ]; then
+              echo "::error::PR #$pr_number is $pr_state -- refusing (open PRs only; a merged PR's branch is dead)."
+              exit 1
+            fi
+            case "$head_ref" in
+              deps/*|security/*) ;;
+              *)
+                echo "::error::PR #$pr_number's branch ($head_ref) doesn't match deps/* or security/* -- refusing."
+                exit 1
+                ;;
+            esac
+          else
+            pr_number="$EVENT_PR_NUMBER"
+            head_ref="$EVENT_HEAD_REF"
+            base_ref="$EVENT_BASE_REF"
+          fi
+          # actionlint: never interpolate github.event.pull_request.*.ref
+          # directly into a run: script (branch names are attacker-
+          # influenceable text) -- these are plain shell vars from here on.
+          echo "pr_number=$pr_number" >> "$GITHUB_OUTPUT"
+          {
+            echo "PR_NUMBER=$pr_number"
+            echo "HEAD_REF=$head_ref"
+            echo "BASE_REF=$base_ref"
+          } >> "$GITHUB_ENV"
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.HEAD_REF }}
+          fetch-depth: 0
+          token: ${{ github.token }}
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Fetch base branch
+        run: git fetch origin "$BASE_REF"
+
+      - name: Attempt merge
+        id: merge
+        run: |
+          if git merge --no-edit "origin/$BASE_REF"; then
+            echo "conflicted=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "conflicted=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Check conflict shape
+        id: shape
+        if: steps.merge.outputs.conflicted == 'true'
+        run: |
+          mapfile -t conflicted < <(git diff --name-only --diff-filter=U)
+          printf 'Conflicted file: %s\n' "${conflicted[@]}"
+          bad=0
+          for f in "${conflicted[@]}"; do
+            case "$f" in
+              README.md|.github/dependency-versions.json) ;;
+              *) bad=1 ;;
+            esac
+          done
+          # The README is only mechanically settleable when its two merge
+          # stages differ ONLY on the generated "Tested against" line --
+          # otherwise restoring one side would silently drop the other
+          # side's real prose, and the run must abort for a human.
+          readme_ok=1
+          if printf '%s\n' "${conflicted[@]}" | grep -qx 'README.md'; then
+            if ! diff <(git show :2:README.md | grep -vF '> **Tested against:**') \
+                      <(git show :3:README.md | grep -vF '> **Tested against:**') >/dev/null; then
+              readme_ok=0
+            fi
+          fi
+          if [ "$bad" -eq 0 ] && [ "$readme_ok" -eq 1 ]; then
+            echo "mechanical=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "mechanical=false" >> "$GITHUB_OUTPUT"
+          fi
+          # Comma-joined list for the abort comment (env-passed, never
+          # interpolated into the JS script body).
+          printf -v files '%s, ' "${conflicted[@]}"
+          echo "conflicted_files=${files%, }" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        # Both pushable paths install + validate: the mechanical settle and
+        # the clean merge (whose merge commit must also pass the gate before
+        # it is pushed).
+        if: steps.merge.outputs.conflicted == 'false' || steps.shape.outputs.mechanical == 'true'
+        run: npm ci
+
+      - name: Settle manifest conflict
+        id: settle
+        if: steps.merge.outputs.conflicted == 'true' && steps.shape.outputs.mechanical == 'true'
+        run: |
+          set +e
+          npm run settle:deps
+          echo "settle_exit=$?" >> "$GITHUB_OUTPUT"
+
+      - name: Regenerate README and validate
+        id: validate
+        # Runs on both pushable paths: mechanical settle (settle exited 0)
+        # and clean merge (README restore self-skips; sync:versions is a
+        # no-op when the auto-merged line already matches the manifest).
+        if: steps.merge.outputs.conflicted == 'false' || steps.settle.outputs.settle_exit == '0'
+        run: |
+          set +e
+          # Restore a marker-free README side first: the worktree README
+          # still carries conflict markers here, and `npm run
+          # sync:versions` replaces only the FIRST "Tested against" line
+          # match -- regenerating straight over markers would commit the
+          # conflict syntax. The shape check proved the stages differ only
+          # on that line, so either side + regeneration is the recompute.
+          if git ls-files -u -- README.md | grep -q .; then
+            git checkout --ours -- README.md
+          fi
+          npm run sync:versions
+          sync_exit=$?
+          # Clean path only: sync modifying README means the merged tree
+          # carries pre-existing manifest/README divergence (Finish does
+          # not run on this path, so the fix would be validated but never
+          # pushed). Refuse to push divergence; the rollback + comment
+          # tell a human.
+          if [ "${{ steps.merge.outputs.conflicted }}" = 'false' ] && [ -n "$(git status --porcelain -- README.md)" ]; then
+            echo "clean-path sync modified README -- branch or master carries manifest/README divergence; refusing to push it" >&2
+            exit 1
+          fi
+          npm run lint
+          lint_exit=$?
+          npm test
+          test_exit=$?
+          if [ "$sync_exit" -ne 0 ] || [ "$lint_exit" -ne 0 ] || [ "$test_exit" -ne 0 ]; then
+            exit 1
+          fi
+
+      - name: Finish merge commit
+        if: >
+          steps.merge.outputs.conflicted == 'true' &&
+          steps.settle.outputs.settle_exit == '0' &&
+          steps.validate.outcome == 'success'
+        run: |
+          git add README.md .github/dependency-versions.json
+          git commit --no-edit
+
+      - name: Abort or roll back failed resolution
+        # Fires on every merge attempt whose tree did not validate. Mid-merge
+        # (uncommitted conflict): abort restores the pre-merge state. Clean
+        # path (the merge commit already exists): reset to the pushed branch
+        # tip. Nothing was pushed in either case, so both are local to this
+        # runner.
+        if: >
+          steps.merge.outcome == 'success' &&
+          steps.validate.outcome != 'success'
+        run: |
+          if [ "${{ steps.merge.outputs.conflicted }}" = 'true' ]; then
+            git merge --abort
+          else
+            git reset --hard "origin/$HEAD_REF"
+          fi
+
+      - name: Push resolution
+        if: >
+          (steps.merge.outputs.conflicted == 'false' ||
+           (steps.shape.outputs.mechanical == 'true' &&
+            steps.settle.outputs.settle_exit == '0')) &&
+          steps.validate.outcome == 'success'
+        run: |
+          if [ "$(git rev-parse HEAD)" != "$(git rev-parse "origin/$HEAD_REF")" ]; then
+            git push origin "HEAD:$HEAD_REF"
+          fi
+
+      - name: Comment on outcome
+        if: always() && steps.pr.outputs.pr_number != ''
+        uses: actions/github-script@v7
+        env:
+          # Values pass via env, never ${{ }} into the JS body -- env vars
+          # are inert strings in JavaScript source.
+          PR_NUMBER: ${{ env.PR_NUMBER }}
+          BASE_REF: ${{ env.BASE_REF }}
+          MERGE_OUTCOME: ${{ steps.merge.outcome }}
+          CONFLICTED: ${{ steps.merge.outputs.conflicted }}
+          MECHANICAL: ${{ steps.shape.outputs.mechanical }}
+          CONFLICTED_FILES: ${{ steps.shape.outputs.conflicted_files }}
+          SETTLE_EXIT: ${{ steps.settle.outputs.settle_exit }}
+          VALIDATE_OUTCOME: ${{ steps.validate.outcome }}
+        with:
+          script: |
+            const mergeOutcome = process.env.MERGE_OUTCOME;
+            const conflicted = process.env.CONFLICTED === 'true';
+            const mechanical = process.env.MECHANICAL;
+            const conflictedFiles = process.env.CONFLICTED_FILES || '';
+            const settleExit = process.env.SETTLE_EXIT;
+            const validateOutcome = process.env.VALIDATE_OUTCOME;
+            const prNumber = Number(process.env.PR_NUMBER);
+            const baseRef = process.env.BASE_REF;
+            const dispatched = context.eventName === 'workflow_dispatch';
+
+            const post = (body) => github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: prNumber,
+              body,
+            });
+
+            if (mergeOutcome !== 'success') {
+              await post('**Deps conflict settle:** failed before the merge attempt (infrastructure -- see the run log). Nothing was pushed.');
+              return;
+            }
+
+            if (!conflicted && !dispatched && validateOutcome === 'success') {
+              // Already mergeable and validated -- no comment on every
+              // push (noise). A clean-path validation failure falls
+              // through to the rollback message below, which is exactly
+              // the audience that needs to see it (PR events, not just
+              // manual dispatch).
+              return;
+            }
+
+            let body;
+            if (!conflicted && validateOutcome !== 'success') {
+              body = '**Deps conflict settle:** merging `' + baseRef + '` produced a commit that failed validation (' + validateOutcome + '). The merge was rolled back locally -- nothing was pushed. Resolve by hand and push.';
+            } else if (!conflicted) {
+              body = '**Deps conflict settle** (manually triggered): this branch was already mergeable against `' + baseRef + '` -- nothing to do.';
+            } else if (mechanical === 'true' && settleExit === '0' && validateOutcome === 'success') {
+              body = '**Deps conflict settle:** this branch had fallen behind `' + baseRef + '` and conflicted on the manifest/README generated line. Auto-resolved by keeping the higher `testedVersion` per tool, regenerating the README via `npm run sync:versions`, and passing lint + the full test suite before pushing.';
+            } else if (mechanical === 'false') {
+              body = '**Deps conflict settle:** this branch conflicts with `' + baseRef + '` in files beyond the mechanical manifest/README shape (`' + conflictedFiles + '`). The merge attempt was aborted -- resolve by hand and push.';
+            } else {
+              body = '**Deps conflict settle:** resolution failed validation (settle exit ' + (settleExit || 'not run') + ', validate ' + validateOutcome + '). The merge attempt was aborted -- resolve by hand and push.';
+            }
+
+            await post(body);
+
+  dispatch-siblings:
+    # When a deps/* or security/* PR MERGES, the surviving sibling PRs get
+    # no opened/synchronize/reopened event of their own -- yet a merge is
+    # exactly the change that can newly conflict them (the sweep's 2-PR
+    # runs both regenerate the README "Tested against" line). Dispatch
+    # settle for every other still-open sibling; workflow_dispatch is the
+    # one trigger GITHUB_TOKEN may fire (claude-kb's merged-PR dispatcher
+    # pattern). The dispatched runs re-validate same-repo + OPEN + branch
+    # prefix on their own.
+    if: >
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (startsWith(github.event.pull_request.head.ref, 'deps/') ||
+       startsWith(github.event.pull_request.head.ref, 'security/'))
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dispatch settle for open sibling PRs
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # `set -o pipefail`: a failing `gh pr list` must fail the step,
+          # not silently feed the loop nothing (kb's PR #226 lesson).
+          set -o pipefail
+          gh pr list --repo "$GITHUB_REPOSITORY" --state open \
+            --json number,headRefName \
+            --jq '.[] | select((.headRefName | startswith("deps/")) or (.headRefName | startswith("security/"))) | .number' |
+          while read -r pr; do
+            echo "Dispatching deps-conflict-settle for sibling PR #$pr"
+            gh workflow run deps-conflict-settle.yml --repo "$GITHUB_REPOSITORY" -f pr_number="$pr"
+          done
