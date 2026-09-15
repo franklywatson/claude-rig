@@ -39,6 +39,9 @@
     "commander": "^15.0.0",
     "yaml": "^2.9.0"
   },
+  "overrides": {
+    "smol-toml": "1.7.2"
+  },
   "allowScripts": {
     "fsevents@2.3.3": true,
     "esbuild@0.28.2": true
