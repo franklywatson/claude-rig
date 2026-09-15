@@ -51,6 +51,13 @@ safe-outputs:
         - README.md
         - .github/dependency-versions.json
         - .github/
+        # Security bumps edit package.json/package-lock.json, and under
+        # request_review the signed push is refused outright (first live
+        # run -> fallback issues #133/#134; no branch is pushed to
+        # recover). The gates that remain for these PRs: the sweep's own
+        # full-suite run, CI on the PR, and the human merge.
+        - package.json
+        - package-lock.json
   add-comment:
     max: 4
   threat-detection:
