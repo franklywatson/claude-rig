@@ -4,8 +4,8 @@
       "name": "rtk",
       "readmeLabel": "rtk",
       "repo": "rtk-ai/rtk",
-      "testedVersion": "0.46.0",
-      "notes": "Token-optimized command proxy. Router rewrites grep/find/cat through rtk; rtk rewrite exit-code protocol (0/1/2/3) is version-coupled."
+      "testedVersion": "0.49.0",
+      "notes": "Token-optimized command proxy. Router rewrites grep/find/cat through rtk; rtk rewrite exit-code protocol (0/1/2/3) is version-coupled. Since 0.49.0: -l is GNU --files-with-matches under rtk grep (completing 0.47.0's -t/-m passthrough), rewrite handles safe pipes, peels process wrapper prefixes, and passes sudo commands through."
     },
     {
       "name": "jcodemunch",
