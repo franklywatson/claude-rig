@@ -68,6 +68,38 @@ describe('handlePreToolUse', () => {
     expect(msg(result)).toContain('rtk');
   });
 
+  it('counts an emitted rtk rewrite in the rtkRewrites counter', () => {
+    cache.setEnvironment(makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk' }));
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'grep -r pattern .' },
+      cache,
+      config,
+      undefined,
+      () => ({ command: 'rtk grep -r pattern .', autoAllow: true }),
+    );
+    expect(result).toMatchObject({ type: 'rewrite', command: 'rtk grep -r pattern .' });
+    expect(cache.getMetricCounters().rtkRewrites).toBe(1);
+    // rtkCalls stays PostToolUse's counter (commands mentioning rtk) — the
+    // PreToolUse hook must not double-increment it.
+    expect(cache.getMetricCounters().rtkCalls).toBe(0);
+  });
+
+  it('does not count a python rewrite as an rtk rewrite', () => {
+    cache.setEnvironment(makeEnv());
+    cache.setPythonEnv({ venvPath: '/project/.venv', uvAvailable: false, uvPath: null, detectedAt: Date.now() });
+    const result = handlePreToolUse(
+      'Bash',
+      { command: 'pytest tests/test_foo.py -v' },
+      cache,
+      config,
+      '/project',
+      { existsCheck: (p) => p === '/project/.venv/bin/pytest' },
+    );
+    expect(result).toMatchObject({ type: 'rewrite' });
+    expect(cache.getMetricCounters().rtkRewrites).toBe(0);
+  });
+
   it('returns null for pass-through tools', () => {
     cache.setEnvironment(makeEnv());
     const result = handlePreToolUse('Bash', { command: 'ls -la' }, cache, config);

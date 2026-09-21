@@ -134,6 +134,10 @@ export interface Environment {
   rtkAvailable: boolean;
   rtkPath: string | null;
   rtkVersion?: string | null;
+  /** Every rtk binary on PATH (`which -a rtk`), first-wins. Set only when
+   *  more than one is found — a dual install (e.g. brew + self-updater) makes
+   *  the reported version and /savings deltas unreliable; session start warns. */
+  rtkAllPaths?: string[];
   jcodemunchAvailable: boolean;
   jcodemunchCwdIndexed: boolean;
   jcodemunchCwdRepo: string | null;
@@ -175,7 +179,7 @@ export interface SessionCacheFile {
   editedFiles: Record<string, string[]>;
   currentPhase: string | null;
   metricsBaseline: MetricsBaseline | null;
-  metricCounters: { rtkCalls: number; jmCalls: number; efficientCalls: number; graphifyCalls: number };
+  metricCounters: { rtkCalls: number; jmCalls: number; efficientCalls: number; graphifyCalls: number; rtkRewrites: number };
   graphBuildInfo?: GraphBuildInfo;
   toolsWarned: boolean;
   changedFiles: string[];

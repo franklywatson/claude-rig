@@ -45,7 +45,7 @@ export class SessionCache {
   private currentPhase: string | null = null;
   private metricsBaseline: MetricsBaseline | undefined;
   private graphBuildInfo: GraphBuildInfo | undefined;
-  private metricCounters = { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 };
+  private metricCounters = { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 };
   private changedFiles: string[] = [];
   private toolsWarned = false;
   private pythonEnv: PythonEnv | undefined;
@@ -191,11 +191,11 @@ export class SessionCache {
     this.save();
   }
 
-  getMetricCounters(): { rtkCalls: number; jmCalls: number } {
+  getMetricCounters(): { rtkCalls: number; jmCalls: number; efficientCalls: number; graphifyCalls: number; rtkRewrites: number } {
     return { ...this.metricCounters };
   }
 
-  incrementMetricCounter(counter: 'rtkCalls' | 'jmCalls' | 'efficientCalls' | 'graphifyCalls'): void {
+  incrementMetricCounter(counter: 'rtkCalls' | 'jmCalls' | 'efficientCalls' | 'graphifyCalls' | 'rtkRewrites'): void {
     this.metricCounters[counter]++;
     this.save();
   }
@@ -306,7 +306,7 @@ export class SessionCache {
     this.currentPhase = null;
     this.metricsBaseline = undefined;
     this.graphBuildInfo = undefined;
-    this.metricCounters = { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 };
+    this.metricCounters = { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 };
     this.toolsWarned = false;
     this.changedFiles = [];
     this.pythonEnv = undefined;
@@ -372,7 +372,18 @@ export class SessionCache {
       this.currentPhase = data.currentPhase ?? null;
       this.metricsBaseline = data.metricsBaseline ?? undefined;
       this.graphBuildInfo = data.graphBuildInfo ?? undefined;
-      this.metricCounters = data.metricCounters ?? { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 };
+        // Spread over the full default set: cache files from older rig versions
+      // predate rtkRewrites, and a bare assignment would leave it undefined
+      // (undefined++ = NaN) once the PreToolUse rewrite counter fires.
+      const storedCounters = data.metricCounters as Partial<SessionCacheFile['metricCounters']> | undefined;
+      this.metricCounters = {
+        rtkCalls: 0,
+        jmCalls: 0,
+        efficientCalls: 0,
+        graphifyCalls: 0,
+        rtkRewrites: 0,
+        ...storedCounters,
+      };
       this.toolsWarned = data.toolsWarned ?? false;
       this.changedFiles = data.changedFiles ?? [];
       this.pythonEnv = data.pythonEnv ?? undefined;
