@@ -7,7 +7,7 @@
 A cockpit for your [Claude Code](https://claude.ai/code) tooling stack.
 [rtk](https://github.com/rtk-ai/rtk),
 [jcodemunch](https://github.com/jgravelle/jcodemunch-mcp),
-[graphify](https://github.com/safishamsi/graphify),
+[graphify](https://github.com/Graphify-Labs/graphify),
 [Headroom](https://github.com/chopratejas/headroom), and
 [superpowers](https://github.com/obra/superpowers) are each excellent
 instruments on their own — rig is the panel that wires whichever of them you
@@ -85,12 +85,12 @@ structural instead of persuasive, and projects that fit can graduate from
   (strongly recommended; powers the scout agent and tool router fallback). Detected via PATH or,
   failing that, the MCP server command registered in Claude Code's own config (`claude mcp list`)
   -- wheel-URL `uvx --from` installs work out of the box.
-- [graphify](https://github.com/safishamsi/graphify) -- knowledge graph builder
+- [graphify](https://github.com/Graphify-Labs/graphify) -- knowledge graph builder
   (recommended; auto-builds graphs at session start and provides god nodes,
   module communities, and dependency path queries that complement jcodemunch's
   symbol search)
 
-> **Tested against:** rtk 0.49.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.53 · headroom 0.37.0 · superpowers 6.3.0
+> **Tested against:** rtk 0.49.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.65 · headroom 0.37.0 · superpowers 6.3.0
 >
 > This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
 > (the machine-checkable source of truth, including each tool's repo coordinates).
@@ -423,7 +423,7 @@ and domain-specific scenarios.
 - [agentic-patterns](https://github.com/franklywatson/agentic-patterns) -- Pattern library (L0-L4) that guided this system's design
 - [superpowers](https://github.com/obra/superpowers) -- Base skills framework that the skill chain wraps
 - [gstack](https://github.com/garrytan/gstack) -- Alternative agent skill framework with resolver pipeline
-- [graphify](https://github.com/safishamsi/graphify) -- Knowledge graph builder for relationship-aware code exploration
+- [graphify](https://github.com/Graphify-Labs/graphify) -- Knowledge graph builder for relationship-aware code exploration
 
 ## License
 
