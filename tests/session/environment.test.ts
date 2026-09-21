@@ -93,6 +93,49 @@ describe('detectEnvironment', () => {
     expect(env.rtkVersion).toBeNull();
   });
 
+  it('records every rtk binary on PATH when multiple are installed (dual-install detection)', async () => {
+    const exec = makeExec({
+      'which rtk': '/opt/homebrew/bin/rtk',
+      'which -a rtk': '/opt/homebrew/bin/rtk\n/Users/jerome/.local/bin/rtk\n',
+      'which jcodemunch-mcp': new Error('not found'),
+      'which jcodemunch': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec, () => false, () => undefined, makeMcpQuery({}), () => null);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkPath).toBe('/opt/homebrew/bin/rtk');
+    expect(env.rtkAllPaths).toEqual(['/opt/homebrew/bin/rtk', '/Users/jerome/.local/bin/rtk']);
+  });
+
+  it('leaves rtkAllPaths unset when only one rtk binary is on PATH', async () => {
+    const exec = makeExec({
+      'which rtk': '/usr/local/bin/rtk',
+      'which -a rtk': '/usr/local/bin/rtk\n',
+      'which jcodemunch': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkAllPaths).toBeUndefined();
+  });
+
+  it('falls back to a single path when which -a is unavailable', async () => {
+    const exec = makeExec({
+      'which rtk': '/usr/local/bin/rtk',
+      // no 'which -a rtk' key — makeExec throws for it
+      'which jcodemunch': new Error('not found'),
+      'which jcodemunch-mcp': new Error('not found'),
+      'which uvx': new Error('not found'),
+    });
+
+    const env = await detectEnvironment('/fake/cwd', exec);
+    expect(env.rtkAvailable).toBe(true);
+    expect(env.rtkAllPaths).toBeUndefined();
+  });
+
   it('detects rtk unavailable when which fails', async () => {
     const exec = makeExec({
       'which rtk': new Error('not found'),

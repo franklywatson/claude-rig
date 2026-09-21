@@ -332,6 +332,26 @@ describe('formatSavingsReport', () => {
     expect(report).toContain('no token savings');
   });
 
+  it('annotates a decreased rtk total instead of printing a negative delta', () => {
+    // Observed in the field: rtk >= 0.49 recomputes/claws back savings, so the
+    // all-time total can be LOWER than the session-start baseline. The report
+    // must explain that, never render "+-31K".
+    const baseline: MetricsBaseline = { totalSaved: 1018225, capturedAt: Date.now() };
+    const report = formatSavingsReport(baseline, 987702, { rtkCalls: 42, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(report).toContain('988K saved');
+    expect(report).toContain('decreased by 31K');
+    expect(report).not.toContain('+-');
+    expect(report).toContain('not meaningful');
+  });
+
+  it('includes the rewrite count on the rtk line when rewrites were counted', () => {
+    const baseline: MetricsBaseline = { totalSaved: 1000, capturedAt: Date.now() };
+    const report = formatSavingsReport(baseline, 1340, { rtkCalls: 2, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 2 });
+    expect(report).toContain('2 calls');
+    expect(report).toContain('2 via rewrite');
+    expect(report).toContain('+340 this session');
+  });
+
   it('appends a clearly-separated headroom context-layer line when stats are present', () => {
     const baseline: MetricsBaseline = { totalSaved: 1000, capturedAt: Date.now() };
     const headroom = { tokensSaved: 40_000, savingsPct: 40, totalRequests: 42, cacheHitPct: 78.5 };

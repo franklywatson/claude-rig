@@ -100,6 +100,7 @@ export async function detectEnvironment(
     rtkAvailable: rtkResult.available,
     rtkPath: rtkResult.path,
     rtkVersion: rtkResult.version,
+    rtkAllPaths: rtkResult.allPaths.length > 1 ? rtkResult.allPaths : undefined,
     jcodemunchAvailable: jmResult.available,
     jcodemunchCwdIndexed: jmResult.cwdIndexed,
     jcodemunchCwdRepo: jmResult.cwdRepo,
@@ -115,9 +116,23 @@ export async function detectEnvironment(
   };
 }
 
-function detectRtk(exec: ExecFn): { available: boolean; path: string | null; version: string | null } {
+function detectRtk(exec: ExecFn): { available: boolean; path: string | null; version: string | null; allPaths: string[] } {
   try {
     const path = exec('which rtk').trim();
+    // Dual-install detection: enumerate every rtk on PATH. Failure is benign
+    // (some `which` builds lack -a) — fall back to the single resolved path.
+    let allPaths = [path];
+    try {
+      const listed = exec('which -a rtk')
+        .split('\n')
+        .map(l => l.trim())
+        .filter(Boolean);
+      if (listed.length > 0) {
+        allPaths = [...new Set([path, ...listed])];
+      }
+    } catch {
+      // `which -a` unavailable — single-path fallback
+    }
     // Version probe is diagnostics-only — failure never affects availability
     let version: string | null = null;
     try {
@@ -125,9 +140,9 @@ function detectRtk(exec: ExecFn): { available: boolean; path: string | null; ver
     } catch {
       // Probe failed — version stays unknown
     }
-    return { available: true, path, version };
+    return { available: true, path, version, allPaths };
   } catch {
-    return { available: false, path: null, version: null };
+    return { available: false, path: null, version: null, allPaths: [] };
   }
 }
 
