@@ -99,12 +99,43 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('**Spec:** none');
   });
 
+  it('plan-plus emits the Review Focus section and spec-reviewer verifies its pinning tests', () => {
+    const plan = read('skills/plan-plus/SKILL.md');
+    expect(plan).toContain('Review Focus');
+    // Each item is pinned by a test in the owning task, not free-floating prose.
+    expect(plan).toContain('pinned');
+    const spec = read('agents/spec-reviewer.md');
+    expect(spec).toContain('Review Focus');
+    expect(spec).toContain('pinning test');
+  });
+
   it('sdd-plus keeps per-task dispatch and declines superpowers 6.3.0 batching', () => {
     const content = read('skills/sdd-plus/SKILL.md');
     expect(content).toContain('do not batch');
     // The rationale must sit with the serialization rule it overrides.
     expect(content).toContain('load-bearing');
     expect(content).toContain('fresh implementer subagent per task');
+  });
+
+  it('sdd-plus answers the 6.4.1 plan handoff: Subagent-driven, tdd+ is the native peer', () => {
+    const content = read('skills/sdd-plus/SKILL.md');
+    expect(content).toContain('Subagent-driven');
+    // The choice is made once at the plan level — no drifting mid-plan.
+    expect(content).toContain('Native mid-plan');
+    // Per-task dispatch survives the handoff (the #2078 decline still stands).
+    expect(content).toContain('#2078');
+  });
+
+  it('tdd+/sdd+ document the deliberate #2110 divergence (full suite stays in verify+)', () => {
+    const tdd = read('skills/tdd-plus/SKILL.md');
+    expect(tdd).toContain('Deliberate divergence');
+    expect(tdd).toContain('#2110');
+    // Prose and hook behavior must agree: the zero-defect block is the gate.
+    expect(tdd).toContain('zero-defect');
+    const sdd = read('skills/sdd-plus/SKILL.md');
+    expect(sdd).toContain('full-suite-during-the-loop');
+    // A failure in a test the implementer did not author is named, not hidden.
+    expect(sdd).toContain('name that failure');
   });
 
   it('brain-plus overlay survives the superpowers 6.3.0 small-task path', () => {

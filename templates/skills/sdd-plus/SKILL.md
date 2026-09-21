@@ -28,6 +28,19 @@ role content lives in the agent definition:
 If a typed agent is unavailable (definition deleted), fall back to a general-purpose
 subagent using the superpowers prompt template for that role.
 
+## Plan Handoff: Subagent-driven (superpowers 6.4.1 #2258/#2318)
+
+Since 6.4.1, the superpowers plan handoff offers two execution approaches —
+Subagent-driven and Native (inline: the session implements every task
+itself) — and recommends one for the plan with a reason. When the delegated
+skill asks, answer **Subagent-driven**: this overlay's typed per-task
+dispatch (implementer → spec-reviewer → code-reviewer; batching still
+declined per #2078) is load-bearing here. rig's native/inline peer is `tdd+`
+— the session implementing the plan itself under scoped-run enforcement.
+Choose between them once, at the plan level, before execution starts; do not
+let the handoff switch to Native mid-plan (Step 1.7's typed-agent steering
+backstops this during sdd+ phase).
+
 ## Procedure
 
 ### Phase A: Load Plan
@@ -89,6 +102,15 @@ subagent using the superpowers prompt template for that role.
    nearly every run — the token saving is not worth losing per-task review
    granularity. (Team mode needs no ruling: its tasks are dispatched to
    separate worktrees by construction.)
+7. **Test scope in the loop: scoped runs; the full suite is verify+** (same
+   ruling as tdd+, and the test-scope hook is active during sdd+ phase).
+   Implementers iterate on the task's named tests, not the project suite —
+   superpowers 6.4.1's #2110 full-suite-during-the-loop guidance is
+   deliberately declined (see tdd+'s "Deliberate divergence" note); the
+   zero-defect block enforces full-suite green in verify+. If an
+   implementer's run surfaces a failure in a test it did not author, its
+   report must name that failure — the lead routes it to the owning task
+   rather than letting it hide until verify+.
 
 ### Phase B-team: Team execution (when team mode is on)
 

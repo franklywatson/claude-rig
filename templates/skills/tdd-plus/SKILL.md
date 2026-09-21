@@ -98,6 +98,20 @@ pytest tests/test_config.py::test_load_config
 
 Full suite runs happen during `verify+` phase, not here.
 
+### Deliberate divergence from superpowers 6.4.1 (#2110)
+
+superpowers 6.4.1's TDD skill says the project's suite defines green: run the
+project's full test command during the loop and report every failure by
+name, because sessions that ran only the named test file let a broken test
+next door go unseen. rig declines that for the tdd+ loop, deliberately. The
+concern is answered one phase later, structurally: `verify+` runs the full
+suite and its zero-defect hook *blocks* on any failure — the phase-aware
+downgrade that softens failures during tdd+ (where a failing run is the
+expected RED step) is lifted there. Neighboring breakage is caught before
+`review+` and merge, not missed, while scoped runs keep this loop fast.
+Skill prose and hook behavior agree: the full suite belongs to `verify+`,
+not here.
+
 ## Skill Chain
 
 After completing all plan tasks with tdd+:
