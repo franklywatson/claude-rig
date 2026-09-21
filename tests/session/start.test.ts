@@ -195,6 +195,34 @@ describe('handleSessionStart', () => {
     expect(output).toContain('rtk-ai/rtk');
   });
 
+  it('warns when multiple rtk binaries are on PATH (dual install)', async () => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which rtk') return '/opt/homebrew/bin/rtk';
+      if (cmd === 'which -a rtk') return '/opt/homebrew/bin/rtk\n/Users/jerome/.local/bin/rtk\n';
+      if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+      if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+      return '';
+    });
+
+    const output = await startSession('/home/user/test-project', cache);
+    expect(output).toContain('multiple rtk binaries on PATH');
+    expect(output).toContain('/opt/homebrew/bin/rtk');
+    expect(output).toContain('/Users/jerome/.local/bin/rtk');
+  });
+
+  it('does not warn about dual rtk installs when only one binary is on PATH', async () => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which rtk') return '/usr/bin/rtk';
+      if (cmd === 'which -a rtk') return '/usr/bin/rtk\n';
+      if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+      if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+      return '';
+    });
+
+    const output = await startSession('/home/user/test-project', cache);
+    expect(output).not.toContain('multiple rtk binaries');
+  });
+
   it('warns when jcodemunch was not detected', async () => {
     vi.mocked(execSync).mockImplementation((cmd: string) => {
       if (cmd === 'which rtk') return '/usr/bin/rtk';

@@ -322,6 +322,12 @@ export function handlePreToolUse(
     if (env.rtkAvailable && env.rtkPath && !isCompoundCommand(args.command)) {
       const rewrite = tryRtkRewrite(args.command, env.rtkPath, resolvedOptions.execRewrite);
       if (rewrite) {
+        // Exact rewrite count, incremented at emission — independent of
+        // PostToolUse's rtkCalls (a command-text heuristic that also counts
+        // explicit `rtk ...` invocations). The rewrite is invisible in
+        // transcripts (Claude Code records the original command), so this
+        // counter is the only precise record that routing actually happened.
+        cache.incrementMetricCounter('rtkRewrites');
         return { type: 'rewrite', command: rewrite.command, original: args.command, autoAllow: rewrite.autoAllow };
       }
     }

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { SessionCache, sessionCachePath } from '../../src/session/cache.js';
 import type { Environment, PythonEnv, SessionCacheFile } from '../../src/types.js';
-import { readFileSync, unlinkSync, existsSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
+import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdtempSync, symlinkSync, rmSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -113,11 +113,18 @@ describe('SessionCache', () => {
 
   it('stores and increments metric counters', () => {
     const cache = new SessionCache();
-    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
     cache.incrementMetricCounter('rtkCalls');
     cache.incrementMetricCounter('rtkCalls');
     cache.incrementMetricCounter('jmCalls');
-    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 2, jmCalls: 1, efficientCalls: 0, graphifyCalls: 0 });
+    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 2, jmCalls: 1, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
+  });
+
+  it('increments the rtkRewrites counter independently of rtkCalls', () => {
+    const cache = new SessionCache();
+    cache.incrementMetricCounter('rtkRewrites');
+    cache.incrementMetricCounter('rtkRewrites');
+    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 2 });
   });
 
   describe('edit-turn counter and turn-stamped history (cross-process stale-test model)', () => {
@@ -368,11 +375,11 @@ describe('SessionCache (file-backed)', () => {
 
     // cacheB should not see cacheA's state
     expect(cacheB.getCurrentPhase()).toBeNull();
-    expect(cacheB.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(cacheB.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
 
     // cacheA should retain its state
     expect(cacheA.getCurrentPhase()).toBe('tdd+');
-    expect(cacheA.getMetricCounters()).toEqual({ rtkCalls: 1, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(cacheA.getMetricCounters()).toEqual({ rtkCalls: 1, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
 
     trackPath(sessionCachePath(testCwd, sessionIdA));
     trackPath(sessionCachePath(testCwd, sessionIdB));
@@ -385,7 +392,7 @@ describe('SessionCache (file-backed)', () => {
     expect(cache.getEnvironment()).toBeUndefined();
     expect(cache.getEditedFiles('source')).toEqual([]);
     expect(cache.getCurrentPhase()).toBeNull();
-    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(cache.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
   });
 
   it('saves and round-trips all fields', () => {
@@ -412,10 +419,27 @@ describe('SessionCache (file-backed)', () => {
     expect(cache2.getEditedFiles('test')).toEqual(['tests/foo.test.ts']);
     expect(cache2.getCurrentPhase()).toBe('plan+');
     expect(cache2.getMetricsBaseline()!.totalSaved).toBe(50000);
-    expect(cache2.getMetricCounters()).toEqual({ rtkCalls: 1, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(cache2.getMetricCounters()).toEqual({ rtkCalls: 1, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
     expect(cache2.getPythonEnv()).toBeDefined();
     expect(cache2.getPythonEnv()!.venvPath).toBe('/project/.venv');
     expect(cache2.getPythonEnv()!.uvAvailable).toBe(true);
+  });
+
+  it('normalizes a missing rtkRewrites counter from older cache files', () => {
+    // Simulate a cache file written by a pre-rtkRewrites rig: strip the new
+    // field on disk, then load — it must read back as 0, not undefined/NaN.
+    const writer = new SessionCache(testCwd);
+    writer.setPhase('tdd+');
+    const path = sessionCachePath(testCwd);
+    const raw = JSON.parse(readFileSync(path, 'utf-8')) as SessionCacheFile;
+    delete raw.metricCounters.rtkRewrites;
+    writeFileSync(path, JSON.stringify(raw));
+    trackPath(path);
+
+    const cache2 = new SessionCache(testCwd);
+    expect(cache2.getMetricCounters()).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
+    cache2.incrementMetricCounter('rtkRewrites');
+    expect(cache2.getMetricCounters().rtkRewrites).toBe(1);
   });
 
   it('persists advisory suppression counters across cache instances', () => {
@@ -561,7 +585,7 @@ describe('SessionCache (file-backed)', () => {
     expect(parsed.editedFiles).toEqual({});
     expect(parsed.currentPhase).toBe('tdd+');
     expect(parsed.metricsBaseline).toBeNull();
-    expect(parsed.metricCounters).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 });
+    expect(parsed.metricCounters).toEqual({ rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0, rtkRewrites: 0 });
   });
 
   it('includes cwd in serialized cache file', () => {
