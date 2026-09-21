@@ -56,7 +56,10 @@ Rig installs the cockpit into a Claude Code project:
   for context injection, enriched with graphify relationship data (god nodes,
   module communities, dependency paths) when available
 
-Built from the [agentic-patterns](https://github.com/franklywatson/agentic-patterns) L2-L4 patterns.
+> **Tested against:** rtk 0.49.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.65 · headroom 0.37.0 · superpowers 6.4.1
+> This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
+> (the machine-checkable source of truth, including each tool's repo coordinates).
+> To bump a tested version, edit the manifest and run `npm run sync:versions` — don't edit the line by hand.
 
 ## Rig vs plain superpowers
 
@@ -89,11 +92,6 @@ structural instead of persuasive, and projects that fit can graduate from
   (recommended; auto-builds graphs at session start and provides god nodes,
   module communities, and dependency path queries that complement jcodemunch's
   symbol search)
-
-**Tested against:** rtk 0.49.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.65 · headroom 0.37.0 · superpowers 6.4.1
-> This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
-> (the machine-checkable source of truth, including each tool's repo coordinates).
-> To bump a tested version, edit the manifest and run `npm run sync:versions` — don't edit the line by hand.
 
 ### Using rig with Headroom
 
@@ -421,8 +419,9 @@ and domain-specific scenarios.
 
 - [agentic-patterns](https://github.com/franklywatson/agentic-patterns) -- Pattern library (L0-L4) that guided this system's design
 - [superpowers](https://github.com/obra/superpowers) -- Base skills framework that the skill chain wraps
-- [gstack](https://github.com/garrytan/gstack) -- Alternative agent skill framework with resolver pipeline
+- [rtk](https://github.com/rtk-ai/rtk) -- CLI proxy that reduces LLM token consumption by 60-90% on common dev commands
 - [graphify](https://github.com/Graphify-Labs/graphify) -- Knowledge graph builder for relationship-aware code exploration
+- [headroom](https://github.com/headroomlabs-ai/headroom) -- Compress tool outputs, logs, files, and RAG chunks before they reach the LLM
 
 ## License
 
