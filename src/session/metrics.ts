@@ -255,21 +255,35 @@ export interface JcodemunchSessionStats {
 export function formatSavingsReport(
   baseline: MetricsBaseline | null | undefined,
   currentSaved: number,
-  counters: { rtkCalls: number; jmCalls: number; efficientCalls: number; graphifyCalls: number },
+  counters: { rtkCalls: number; jmCalls: number; efficientCalls: number; graphifyCalls: number; rtkRewrites?: number },
   jmStats?: JcodemunchSessionStats | null,
   graphifyStats?: Record<string, GraphifyProjectStats> | null,
   headroomStats?: HeadroomStats | null,
 ): string {
   const hasBaseline = baseline != null && baseline.totalSaved > 0;
   const lines: string[] = [];
+  // Exact rewrite emissions (PreToolUse counter), when the caller has them —
+  // distinguishes transparent rewrites from explicit rtk invocations.
+  const rewrites = counters.rtkRewrites ?? 0;
+  const rewriteSuffix = rewrites > 0 ? `, ${rewrites} via rewrite` : '';
 
   if (hasBaseline) {
     lines.push('[rig] Session Savings');
     const delta = currentSaved - baseline.totalSaved;
-    if (delta > 0 || counters.rtkCalls > 0) {
+    if (delta < 0) {
+      // rtk's all-time total can DECREASE between baseline and now — rtk >= 0.49
+      // claws back savings on recalls and recomputes. A negative delta would
+      // render as "+-30523" (formatTokens has no negative branch), and "how
+      // much did rtk save this session" is not answerable in that state.
+      // Report the decrease explicitly instead.
+      const totalStr = formatTokens(currentSaved);
+      lines.push(
+        `  rtk: ${totalStr} saved (${counters.rtkCalls} calls${rewriteSuffix}, total decreased by ${formatTokens(-delta)} since baseline — savings were clawed back or recomputed, session delta not meaningful)`,
+      );
+    } else if (delta > 0 || counters.rtkCalls > 0) {
       const deltaStr = formatTokens(delta);
       const totalStr = formatTokens(currentSaved);
-      lines.push(`  rtk: ${totalStr} saved (${counters.rtkCalls} calls, +${deltaStr} this session)`);
+      lines.push(`  rtk: ${totalStr} saved (${counters.rtkCalls} calls${rewriteSuffix}, +${deltaStr} this session)`);
     } else {
       lines.push(`  rtk: no token savings this session`);
     }
@@ -277,7 +291,7 @@ export function formatSavingsReport(
     lines.push('[rig] Session Savings (all-time)');
     if (currentSaved > 0) {
       const totalStr = formatTokens(currentSaved);
-      lines.push(`  rtk: ${totalStr} saved (${counters.rtkCalls} calls, all-time)`);
+      lines.push(`  rtk: ${totalStr} saved (${counters.rtkCalls} calls${rewriteSuffix}, all-time)`);
     } else {
       lines.push(`  rtk: no data`);
     }

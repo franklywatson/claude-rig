@@ -166,6 +166,12 @@ export async function handleSessionStart(
     );
   }
 
+  if (env.rtkAvailable && env.rtkAllPaths && env.rtkAllPaths.length > 1) {
+    lines.push(
+      `[WARNING] multiple rtk binaries on PATH: ${env.rtkAllPaths.join(', ')} — rig invokes ${env.rtkPath}. Divergent versions make the reported version and /savings deltas unreliable. Remove the extras (e.g. brew uninstall rtk).`,
+    );
+  }
+
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
   }

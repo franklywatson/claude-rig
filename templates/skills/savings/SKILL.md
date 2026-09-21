@@ -34,9 +34,10 @@ Report token savings from rtk and jcodemunch usage during this session.
      outer bound discard any file older than 24 hours — files from earlier
      sessions today (same cwd, different session ids) hold a previous
      session's work and would inflate "this session" counts.
-   - Sum `metricCounters` (rtkCalls, jmCalls, efficientCalls, graphifyCalls)
-     across the remaining matching files. These summed values are the session
-     call counts used in the report.
+   - Sum `metricCounters` (rtkCalls, jmCalls, efficientCalls, graphifyCalls,
+     rtkRewrites) across the remaining matching files. Treat a missing
+     `rtkRewrites` as 0 — cache files from older rig versions predate it.
+     These summed values are the session call counts used in the report.
    - Take `metricsBaseline` and `environment` (rtkAvailable,
      jcodemunchAvailable) from the most recent matching file (highest
      `updatedAt`) — baselines and environment snapshots must not be summed.
@@ -47,6 +48,10 @@ Report token savings from rtk and jcodemunch usage during this session.
      permission. If it does, `.claude/settings.json` is out of date — re-run
      `rig init --force`.
 3. Compute the rtk session delta: `current total_saved - baseline totalSaved`.
+   If the delta is NEGATIVE, do not report it as a (negative) saving: rtk
+   >= 0.49 can claw back savings (recalls, recomputes), so the all-time total
+   sometimes drops below the session-start baseline. Report the decrease
+   explicitly instead (see Output Format).
 4. For jcodemunch: call `mcp__jcodemunch__get_session_stats` and read
    `session_tokens_saved`, `session_calls`, `total_tokens_saved`, and
    `tool_breakdown` directly. These are reliable per-session counters
@@ -81,6 +86,15 @@ With session data (baseline + delta available), single project:
   jcodemunch: XK saved (N queries, 150M total all-time)
   headroom: XK saved (context layer — N requests, X% compression, X% cache hits; not summed with tool-layer savings)
   graphify: N nodes, M edges, K communities (X% EXTRACTED, X% INFERRED, X% AMBIGUOUS)
+```
+
+When the summed `rtkRewrites` is greater than 0, append it to the rtk calls
+parenthetical — `N calls, M via rewrite` — so transparent rewrites are visible.
+
+When the rtk total DECREASED since the baseline, replace the rtk line with:
+
+```
+  rtk: XK saved (N calls, total decreased by YK since baseline — savings were clawed back or recomputed, session delta not meaningful)
 ```
 
 The headroom line appears only when the proxy is initialized for this project
