@@ -59,6 +59,13 @@ look for extra features they didn't mention.
 - Did they solve the wrong problem?
 - Did they implement the right feature the wrong way?
 
+**Review Focus pinning (when the plan carries a Review Focus section):**
+
+- Does each Review Focus item's pinning test exist in the task that owns
+  the code, and does it actually exercise the named input or failure mode?
+- Flag any item pinned to a missing test, or to a test that exists but does
+  not exercise what the item names.
+
 ## Enforcement Overlay
 
 Read `.harness.yaml` in the project root for active enforcement rules and

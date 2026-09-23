@@ -103,6 +103,14 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    parallelizable only when their Files lists are disjoint AND neither
    depends on the other.
 
+7. **Review Focus section** (superpowers 6.4.1 #2319). When the design
+   implies inputs or failure modes that no task's tests exercise, add a
+   **Review Focus** section to the plan: up to five such items, each pinned
+   by a test in the task that owns the code (name the task and the test).
+   Omit the section when every spec-implied failure mode is already covered
+   by a task's tests — an empty Review Focus is a claim nothing was missed,
+   so make it consciously.
+
 ### Phase C: Validate Plan
 
 1. Confirm the plan:
@@ -111,6 +119,7 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - [ ] Plan references exact file paths (no TBDs)
    - [ ] Evidence criteria defined for each task
    - [ ] `Spec:` pointer present (or explicitly `none`)
+   - [ ] Review Focus present, or consciously omitted with coverage verified
    - [ ] Active enforcement rules section present (if rules are configured)
 
 ## Output
