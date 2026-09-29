@@ -234,6 +234,29 @@ describe('captureHeadroomStats', () => {
     );
   });
 
+  it('accepts a negative tokens_saved (headroom >= 0.39.0 reports negative savings instead of flooring)', () => {
+    const onWarn = vi.fn();
+    const raw = JSON.stringify({
+      window_hours: 24,
+      total_requests: 42,
+      tokens_saved: -12_345,
+      savings_pct: -8.2,
+      cache_hit_pct: 78.5,
+    });
+
+    const stats = captureHeadroomStats(() => raw, onWarn);
+
+    // The schema gate requires finite numbers, not non-negative ones — a signed
+    // tokens_saved must pass capture and not trip the unexpected-schema warn.
+    expect(stats).toEqual({
+      tokensSaved: -12_345,
+      savingsPct: -8.2,
+      totalRequests: 42,
+      cacheHitPct: 78.5,
+    });
+    expect(onWarn).not.toHaveBeenCalled();
+  });
+
   it('returns null silently when headroom is absent (exec throws)', () => {
     const onWarn = vi.fn();
     const stats = captureHeadroomStats(() => { throw new Error('not found'); }, onWarn);
@@ -366,6 +389,21 @@ describe('formatSavingsReport', () => {
     expect(report).toContain('40% compression');
     // Per docs: context-layer savings overlap tool-layer savings — never summed
     expect(report).toContain('not summed');
+  });
+
+  it('renders the headroom line for a negative tokensSaved (headroom >= 0.39.0 reports negative savings)', () => {
+    const baseline: MetricsBaseline = { totalSaved: 1000, capturedAt: Date.now() };
+    const report = formatSavingsReport(
+      baseline, 1000,
+      { rtkCalls: 0, jmCalls: 0, efficientCalls: 0, graphifyCalls: 0 },
+      undefined, undefined,
+      { tokensSaved: -12_345, savingsPct: -8.2, totalRequests: 42, cacheHitPct: 78.5 },
+    );
+
+    // formatTokens has no negative branch: a finite negative renders as a raw
+    // digit string (no NaN, no suffix mangling) — reads sanely on its own line.
+    expect(report).toContain('headroom: -12345 saved (context layer');
+    expect(report).toContain('42 requests');
   });
 
   it('omits the headroom line when stats are null or there were no requests', () => {

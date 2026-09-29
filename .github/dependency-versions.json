@@ -25,8 +25,8 @@
       "name": "headroom",
       "readmeLabel": "headroom",
       "repo": "headroomlabs-ai/headroom",
-      "testedVersion": "0.37.0",
-      "notes": "Context-compression proxy. Repo moved to headroomlabs-ai (chopratejas redirects); detected via headroom-init-claude hook marker or localhost ANTHROPIC_BASE_URL; /savings reads `headroom perf --format json`."
+      "testedVersion": "0.39.1",
+      "notes": "Context-compression proxy. Repo moved to headroomlabs-ai (chopratejas redirects); detected via headroom-init-claude hook marker or localhost ANTHROPIC_BASE_URL; /savings reads `headroom perf --format json`. Since 0.38.0: zip-bomb DoS bound and per-port proxy logs. 0.39.0 reworked the savings surface (new-input basis beside whole-wire, exact cache-read cost in rollups, lifetime output spend, negative savings reported instead of floored at zero) and added protect_messages plus TPM limiting; captureHeadroomStats gates on finite numbers, so signed tokens_saved passes and renders. 0.39.1 fixes 0.39.0's TPM limiter refusing large-context requests — pin 0.39.1, never 0.39.0."
     },
     {
       "name": "superpowers",
