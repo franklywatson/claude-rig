@@ -4,8 +4,8 @@
       "name": "rtk",
       "readmeLabel": "rtk",
       "repo": "rtk-ai/rtk",
-      "testedVersion": "0.49.0",
-      "notes": "Token-optimized command proxy. Router rewrites grep/find/cat through rtk; rtk rewrite exit-code protocol (0/1/2/3) is version-coupled. Since 0.49.0: -l is GNU --files-with-matches under rtk grep (completing 0.47.0's -t/-m passthrough), rewrite handles safe pipes, peels process wrapper prefixes, and passes sudo commands through."
+      "testedVersion": "0.50.0",
+      "notes": "Token-optimized command proxy. Router rewrites grep/find/cat through rtk; rtk rewrite exit-code protocol (0/1/2/3) is version-coupled (unchanged through 0.50.0). Since 0.49.0: -l is GNU --files-with-matches under rtk grep (completing 0.47.0's -t/-m passthrough), rewrite handles safe pipes, peels process wrapper prefixes, and passes sudo commands through. Since 0.50.0: head/tail rewrites are faithful to the native commands (head window no longer reads past the lines requested, non-UTF-8 windows preserved), git/grep/dotnet/golangci arg parsing migrated onto a shared arg_tokenizer, and rtk gain reports weighted savings rates with signed saved-token sums (negative totals are possible; the metrics.ts negative-delta/clawback branch already handles them). The new rtk ast-grep output filter is search-shaped like rtk grep and stays pass-through — it is not in the blocked cat/read/smart code-reading family."
     },
     {
       "name": "jcodemunch",
