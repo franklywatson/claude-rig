@@ -92,7 +92,7 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('exhaustive');
   });
 
-  it('plan-plus emits the Spec: pointer for superpowers 6.3.0 SDD setup', () => {
+  it('plan-plus emits the Spec: pointer required by superpowers 7.0.0 plans', () => {
     const content = read('skills/plan-plus/SKILL.md');
     expect(content).toContain('`Spec:`');
     // Absent spec must be stated, not omitted, so SDD asks instead of inferring.
@@ -109,7 +109,7 @@ describe('skill templates — typed dispatch', () => {
     expect(spec).toContain('pinning test');
   });
 
-  it('sdd-plus keeps per-task dispatch and declines superpowers 6.3.0 batching', () => {
+  it('sdd-plus keeps per-task dispatch and declines superpowers batching (offered through 7.0.0)', () => {
     const content = read('skills/sdd-plus/SKILL.md');
     expect(content).toContain('do not batch');
     // The rationale must sit with the serialization rule it overrides.
@@ -117,7 +117,7 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('fresh implementer subagent per task');
   });
 
-  it('sdd-plus answers the 6.4.1 plan handoff: Subagent-driven, tdd+ is the native peer', () => {
+  it('sdd-plus answers the superpowers plan handoff (7.0.0 unchanged): Subagent-driven, tdd+ is the native peer', () => {
     const content = read('skills/sdd-plus/SKILL.md');
     expect(content).toContain('Subagent-driven');
     // The choice is made once at the plan level — no drifting mid-plan.
@@ -138,11 +138,15 @@ describe('skill templates — typed dispatch', () => {
     expect(sdd).toContain('name that failure');
   });
 
-  it('brain-plus overlay survives the superpowers 6.3.0 small-task path', () => {
+  it('brain-plus overlay survives the superpowers 7.0.0 sizing paths', () => {
     const content = read('skills/brain-plus/SKILL.md');
-    expect(content).toContain('Ceremony scales; this overlay does not');
-    // The opt-in question must not be skipped on the spike/bounded paths.
-    expect(content).toContain('still asked when fit signals are present');
+    expect(content).toContain('Sizing scales; this overlay does not');
+    // The opt-in question must not be skipped on the small/skip-the-questions paths.
+    expect(content).toContain('opt-in question is still asked');
+    // Skipping the base skill's questions is not opting out of the loop trajectory.
+    expect(content).toContain('skip-the-questions path');
+    // The opt-in lands inside 7.0.0's owns-the-choices conversation.
+    expect(content).toContain('owns-the-choices');
   });
 
   it('typed agents state the no-nested-subagent rule explicitly', () => {

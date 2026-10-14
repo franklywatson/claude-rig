@@ -28,12 +28,14 @@ role content lives in the agent definition:
 If a typed agent is unavailable (definition deleted), fall back to a general-purpose
 subagent using the superpowers prompt template for that role.
 
-## Plan Handoff: Subagent-driven (superpowers 6.4.1 #2258/#2318)
+## Plan Handoff: Subagent-driven (superpowers #2258/#2318; unchanged in 7.0.0)
 
-Since 6.4.1, the superpowers plan handoff offers two execution approaches —
-Subagent-driven and Native (inline: the session implements every task
-itself) — and recommends one for the plan with a reason. When the delegated
-skill asks, answer **Subagent-driven**: this overlay's typed per-task
+Since 6.4.1 (unchanged through 7.0.0, where the handoff lives in
+writing-plans' Execution Handoff), the superpowers plan handoff offers two
+execution approaches — Subagent-driven and Native (inline: the session
+implements every task itself) — and recommends one for the plan with a
+reason. When the delegated skill asks, answer **Subagent-driven**: this
+overlay's typed per-task
 dispatch (implementer → spec-reviewer → code-reviewer; batching still
 declined per #2078) is load-bearing here. rig's native/inline peer is `tdd+`
 — the session implementing the plan itself under scoped-run enforcement.
@@ -47,12 +49,15 @@ backstops this during sdd+ phase).
 
 1. Load the plan from `docs/plans/` or `docs/superpowers/plans/` (or the path
    given in arguments). If it carries a `Spec:` pointer, load the design it
-   names — superpowers 6.3.0's SDD setup reads that pointer to resolve plan
-   conflicts and ambiguities against the approved design
-   ([#2086](https://github.com/obra/superpowers/issues/2086)), and the design
-   is also the reference the spec-reviewer reviews against. If the pointer is
-   absent, do not infer a spec: treat a genuine conflict as ambiguity and stop
-   to ask.
+   names — superpowers 7.0.0's SDD setup reads that pointer (the pointer
+   landed via
+   [#2086](https://github.com/obra/superpowers/issues/2086)): the spec is the
+   authority the plan argues from, and conflicts inside the plan resolve
+   against it. The design is also the reference the spec-reviewer reviews
+   against. If the pointer is absent, do not infer a spec: treat a genuine
+   conflict as ambiguity and stop to ask (7.0.0's SDD instead ledger-marks
+   spec-less rulings as provisional and keeps going — rig stays stricter and
+   asks).
 2. Load active enforcement rules from session context (see session-start
    output) — include them in every implementer dispatch prompt.
 3. If the plan defines a signal stack, note each task's named gating signal:
@@ -88,8 +93,9 @@ backstops this during sdd+ phase).
    *outside* this plan (a different branch, disjoint files, no merge-order
    dependency) may proceed concurrently in its own worktree; reviewers are
    read-only and always safe to run in parallel.
-6. **Dispatch one implementer per task — do not batch.** superpowers 6.3.0
-   lets its controller batch small same-shape tasks into a single dispatch
+6. **Dispatch one implementer per task — do not batch.** superpowers (since
+   6.3.0, still offered in 7.0.0) lets its controller batch small same-shape
+   tasks into a single dispatch
    ([#2078](https://github.com/obra/superpowers/issues/2078)). Decline that
    here: the per-task dispatch is load-bearing for this overlay, not ceremony.
    One dispatch = one task = one branch = one two-stage review = one merge in
@@ -105,8 +111,9 @@ backstops this during sdd+ phase).
 7. **Test scope in the loop: scoped runs; the full suite is verify+** (same
    ruling as tdd+, and the test-scope hook is active during sdd+ phase).
    Implementers iterate on the task's named tests, not the project suite —
-   superpowers 6.4.1's #2110 full-suite-during-the-loop guidance is
-   deliberately declined (see tdd+'s "Deliberate divergence" note); the
+   superpowers' #2110 full-suite-during-the-loop guidance (since 6.4.1,
+   unchanged in 7.0.0) is deliberately declined (see tdd+'s "Deliberate
+   divergence" note); the
    zero-defect block enforces full-suite green in verify+. If an
    implementer's run surfaces a failure in a test it did not author, its
    report must name that failure — the lead routes it to the owning task

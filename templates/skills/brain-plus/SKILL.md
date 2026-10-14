@@ -71,17 +71,27 @@ Invoke this skill BEFORE starting any design work. It adds three capabilities on
    primary/loop boundary sits, the autonomy ceiling, and the maintainer
    cadence — capture all of it in the design.
 
-5. **Ceremony scales; this overlay does not.** superpowers 6.3.0 classifies the
-   request as spike, bounded, or architectural and skips its two-document
-   ritual on the small paths
-   ([#2063](https://github.com/obra/superpowers/issues/2063)). Whichever path
-   the wrapped skill takes, apply the overlay above in full — scout context
-   (Phase A), the signal-first considerations, the loop-fit assessment, and the
-   Phase C checklist. On a spike or bounded request the deliverable may be a
-   short answer or a single paragraph rather than a design document, but the
-   opt-in question is still asked when fit signals are present and the Phase C
-   items are still confirmed. Never skip the overlay because the base skill
-   skipped its ceremony.
+5. **Sizing scales; this overlay does not.** superpowers 7.0.0 sizes the work
+   only after it understands the request — a quick, clear task is done at
+   once, a small change is agreed in chat, a project gets a written design
+   with a builder check — and its first message offers to skip the questions
+   entirely
+   ([#2463](https://github.com/obra/superpowers/issues/2463)). Whichever size
+   the wrapped skill picks (or the user overrides to), apply the overlay above
+   in full — scout context (Phase A), the signal-first considerations, the
+   loop-fit assessment, and the Phase C checklist. On a quick task or a chat
+   change the deliverable may be a short answer or an agreed paragraph rather
+   than a design document, but the opt-in question is still asked when fit
+   signals are present — including on the skip-the-questions path, where the
+   base skill considers itself done: skipping its questions is not opting out
+   of the loop trajectory. The opt-in composes with 7.0.0's
+   owns-the-choices step
+   ([#2482](https://github.com/obra/superpowers/issues/2482)): treat the
+   signal-stack/maintainer question as one of the how-it-gets-made choices
+   the user can own. When a written design is produced, confirm the Phase C
+   checklist before handover so the rig sections ride through 7.0.0's builder
+   check with the rest of the document. Never skip the overlay because the
+   base skill took a small path.
 
 ### Phase C: Validate
 
