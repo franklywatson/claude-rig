@@ -69,6 +69,15 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    - [ ] Step 5: Commit
    ```
 
+   Keep steps decision-level (superpowers since 6.4.2,
+   [#2333](https://github.com/obra/superpowers/issues/2333): a plan records
+   decisions, not a transcript of the code): a test step names the test and
+   its assertions, a code step gives the exact signature and file with the
+   spec's pinned values, a verification step gives the command and its
+   passing output. A code body appears only for an algorithm those do not
+   determine. The `Test strategy:` / `Mock check:` lines are decisions —
+   one line each, not prose.
+
 4. **`Spec:` pointer.** The plan's header carries a `Spec:` line naming the
    design `brain+` produced — the document path plus a one-line scope summary:
 
@@ -76,13 +85,16 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    **Spec:** docs/designs/<slug>.md — <one line: what was approved and when>
    ```
 
-   superpowers 6.3.0's subagent-driven-development reads this pointer at setup
-   to resolve plan conflicts and ambiguities against the approved design
-   instead of guessing ([#2086](https://github.com/obra/superpowers/issues/2086)),
-   and `sdd+` hands it to the spec-reviewer as the compliance reference. If
-   there is no design document (a spike, or `plan+` invoked directly on a small
-   change), write `**Spec:** none — no design document; ask on conflict` rather
-   than omitting the line, so the controller stops to ask instead of inferring.
+   superpowers 7.0.0 requires this line natively in its plan header (the
+   pointer landed via
+   [#2086](https://github.com/obra/superpowers/issues/2086)); its SDD setup
+   reads it — the spec is the authority the plan argues from, and conflicts
+   inside the plan resolve against it — and `sdd+` hands it to the
+   spec-reviewer as the compliance reference. rig adds the one-line scope
+   summary format and the explicit fallback: if there is no design document
+   (a spike, or `plan+` invoked directly on a small change), write
+   `**Spec:** none — no design document; ask on conflict` rather than
+   omitting the line, so the controller stops to ask instead of inferring.
 
 5. **If the design includes a loop/signal-stack section** (see
    `references/agent-loops.md`): order the plan signal-stack-first — harness
@@ -103,13 +115,14 @@ This skill runs after `brain+` has produced a validated design. It creates the i
    parallelizable only when their Files lists are disjoint AND neither
    depends on the other.
 
-7. **Review Focus section** (superpowers 6.4.1 #2319). When the design
-   implies inputs or failure modes that no task's tests exercise, add a
-   **Review Focus** section to the plan: up to five such items, each pinned
-   by a test in the task that owns the code (name the task and the test).
-   Omit the section when every spec-implied failure mode is already covered
-   by a task's tests — an empty Review Focus is a claim nothing was missed,
-   so make it consciously.
+7. **Review Focus section** (native upstream since #2319 — superpowers 7.0.0
+   defines it in the plan header and checks it in self-review). Confirm the
+   section is present and rig-complete: up to five inputs or failure modes
+   the design implies but no task's tests exercise, each pinned by a test in
+   the task that owns the code (name the task and the test). Omit the section
+   only when every spec-implied failure mode is already covered by a task's
+   tests — an empty Review Focus is a claim nothing was missed, so make it
+   consciously.
 
 ### Phase C: Validate Plan
 
