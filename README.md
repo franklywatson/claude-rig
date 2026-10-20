@@ -56,7 +56,7 @@ Rig installs the cockpit into a Claude Code project:
   for context injection, enriched with graphify relationship data (god nodes,
   module communities, dependency paths) when available
 
-> **Tested against:** rtk 0.50.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.71 · headroom 0.39.1 · superpowers 6.4.1
+> **Tested against:** rtk 0.50.0 · jcodemunch-mcp ~1.108.x · graphify 0.9.71 · headroom 0.39.1 · superpowers 6.4.2
 > This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
 > (the machine-checkable source of truth, including each tool's repo coordinates).
 > To bump a tested version, edit the manifest and run `npm run sync:versions` — don't edit the line by hand.
