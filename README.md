@@ -56,7 +56,7 @@ Rig installs the cockpit into a Claude Code project:
   for context injection, enriched with graphify relationship data (god nodes,
   module communities, dependency paths) when available
 
-> **Tested against:** rtk 1.0.1 · jcodemunch-mcp ~1.108.x · graphify 0.9.92 · headroom 0.41.0 · superpowers 6.4.2
+> **Tested against:** rtk 1.0.1 · jcodemunch-mcp ~1.108.x · graphify 0.9.92 · headroom 0.41.0 · superpowers 7.0.0
 > This line is generated from [`.github/dependency-versions.json`](.github/dependency-versions.json)
 > (the machine-checkable source of truth, including each tool's repo coordinates).
 > To bump a tested version, edit the manifest and run `npm run sync:versions` — don't edit the line by hand.
@@ -132,7 +132,7 @@ data as a separate **context layer** line:
   jcodemunch: 85K saved (23 queries, 150M total all-time)
   headroom: 40K saved (context layer — 42 requests, 40% compression, 78% cache hits; not summed with tool-layer savings)
   graphify: 913 nodes, 1349 edges, 62 communities (100% EXTRACTED, 0% INFERRED, 0% AMBIGUOUS)
-  superpowers: installed (v6.3.0)
+  superpowers: installed (v7.0.0)
 ```
 
 `/savings` reports every layer it detects side by side — rtk and jcodemunch on
