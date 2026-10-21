@@ -28,9 +28,16 @@ network:
 # live in the code_security toolset — not in the default context/repos/
 # issues/pull_requests set. Without this block the first run had to fall
 # back to `npm audit` (which worked, but is the secondary signal).
+# No `mode: gh-proxy` here: toolsets provision the github-mcp-server
+# container; in gh-proxy mode there are no GitHub MCP tools at all, the
+# list is a no-op, and the `gh api .../dependabot/alerts` fallback 403s
+# through the proxy token (no security_events) — the combination every
+# "[aw] Vulnerability watch is missing required tool" issue reported.
+# MCP mode authenticates with GH_AW_GITHUB_MCP_SERVER_TOKEN ||
+# GH_AW_GITHUB_TOKEN || GITHUB_TOKEN; the job token carries
+# security-events: read.
 tools:
   github:
-    mode: gh-proxy
     toolsets: [repos, issues, pull_requests, code_security]
 max-ai-credits: 500
 timeout-minutes: 40
