@@ -28,9 +28,9 @@
   ],
   "license": "MIT",
   "devDependencies": {
-    "@types/node": "^26.6.4",
-    "@vitest/coverage-v8": "^5.0.3",
-    "markdownlint-cli2": "^0.23.3",
+    "@types/node": "^26.6.5",
+    "@vitest/coverage-v8": "^5.0.5",
+    "markdownlint-cli2": "^0.24.0",
     "tsx": "^4.23.15",
     "typescript": "^5.7.0",
     "vitest": "^5.0.1"
