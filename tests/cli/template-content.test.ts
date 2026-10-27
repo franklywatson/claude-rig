@@ -109,7 +109,7 @@ describe('skill templates — typed dispatch', () => {
     expect(spec).toContain('pinning test');
   });
 
-  it('sdd-plus keeps per-task dispatch and declines superpowers batching (offered through 7.0.0)', () => {
+  it('sdd-plus keeps per-task dispatch and declines superpowers batching (offered through 7.0.1)', () => {
     const content = read('skills/sdd-plus/SKILL.md');
     expect(content).toContain('do not batch');
     // The rationale must sit with the serialization rule it overrides.
@@ -117,7 +117,7 @@ describe('skill templates — typed dispatch', () => {
     expect(content).toContain('fresh implementer subagent per task');
   });
 
-  it('sdd-plus answers the superpowers plan handoff (7.0.0 unchanged): Subagent-driven, tdd+ is the native peer', () => {
+  it('sdd-plus answers the superpowers plan handoff (7.0.1 unchanged): Subagent-driven, tdd+ is the native peer', () => {
     const content = read('skills/sdd-plus/SKILL.md');
     expect(content).toContain('Subagent-driven');
     // The choice is made once at the plan level — no drifting mid-plan.
@@ -138,14 +138,17 @@ describe('skill templates — typed dispatch', () => {
     expect(sdd).toContain('name that failure');
   });
 
-  it('brain-plus overlay survives the superpowers 7.0.0 sizing paths', () => {
+  it('brain-plus overlay survives the superpowers 7.0.1 sizing paths', () => {
     const content = read('skills/brain-plus/SKILL.md');
     expect(content).toContain('Sizing scales; this overlay does not');
     // The opt-in question must not be skipped on the small/skip-the-questions paths.
     expect(content).toContain('opt-in question is still asked');
     // Skipping the base skill's questions is not opting out of the loop trajectory.
+    // 7.0.1 makes the skill's own skip offer conditional (never on by-name
+    // invocation, so never on the /brain+ path) — coverage still applies when
+    // the user waves the questions off themselves.
     expect(content).toContain('skip-the-questions path');
-    // The opt-in lands inside 7.0.0's owns-the-choices conversation.
+    // The opt-in lands inside 7.0.1's owns-the-choices conversation.
     expect(content).toContain('owns-the-choices');
   });
 
