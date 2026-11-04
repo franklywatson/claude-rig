@@ -71,25 +71,36 @@ Invoke this skill BEFORE starting any design work. It adds three capabilities on
    primary/loop boundary sits, the autonomy ceiling, and the maintainer
    cadence — capture all of it in the design.
 
-5. **Sizing scales; this overlay does not.** superpowers 7.0.0 sizes the work
+5. **Sizing scales; this overlay does not.** superpowers 7.0.1 sizes the work
    only after it understands the request — a quick, clear task is done at
    once, a small change is agreed in chat, a project gets a written design
-   with a builder check — and its first message offers to skip the questions
-   entirely
-   ([#2463](https://github.com/obra/superpowers/issues/2463)). Whichever size
-   the wrapped skill picks (or the user overrides to), apply the overlay above
-   in full — scout context (Phase A), the signal-first considerations, the
-   loop-fit assessment, and the Phase C checklist. On a quick task or a chat
-   change the deliverable may be a short answer or an agreed paragraph rather
-   than a design document, but the opt-in question is still asked when fit
-   signals are present — including on the skip-the-questions path, where the
-   base skill considers itself done: skipping its questions is not opting out
-   of the loop trajectory. The opt-in composes with 7.0.0's
+   with a builder check. Before sizing, 7.0.1 digs into the project's own
+   context first (it reads what the request referred to and never asks what
+   the context already answers) and then lays out two or three approaches
+   with a recommendation for the user to pick; the design doc carries the
+   chosen approach as its Approaches part
+   ([#2571](https://github.com/obra/superpowers/issues/2571)). The offer to
+   skip the questions is conditional
+   ([#2560](https://github.com/obra/superpowers/issues/2560)): it appears
+   only when brainstorming started on its own — `/brain+` dispatches the
+   skill by name, so this path never sees the offer and the first message
+   ends with its question. (The user can still wave the questions off
+   themselves; the coverage below applies there too.) Whichever size the
+   wrapped skill picks (or the user overrides to), apply the overlay above
+   in full — scout context (Phase A; the wrapped skill's read-first pass
+   composes with the scout harvest, it does not replace it), the
+   signal-first considerations, the loop-fit assessment, and the Phase C
+   checklist. On a quick task or a chat change the deliverable may be a
+   short answer or an agreed paragraph rather than a design document, but
+   the opt-in question is still asked when fit signals are present —
+   including on the skip-the-questions path, where the base skill considers
+   itself done: skipping its questions is not opting out of the loop
+   trajectory. The opt-in composes with the wrapped skill's
    owns-the-choices step
    ([#2482](https://github.com/obra/superpowers/issues/2482)): treat the
    signal-stack/maintainer question as one of the how-it-gets-made choices
    the user can own. When a written design is produced, confirm the Phase C
-   checklist before handover so the rig sections ride through 7.0.0's builder
+   checklist before handover so the rig sections ride through the builder
    check with the rest of the document. Never skip the overlay because the
    base skill took a small path.
 
