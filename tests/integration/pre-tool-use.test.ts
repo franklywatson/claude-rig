@@ -228,6 +228,46 @@ describe('PreToolUse hook E2E', () => {
     }, HOOK_TIMEOUT);
   });
 
+  describe('transparent rewrites (updatedInput)', () => {
+    const sessionId = 'rewrite-fields';
+
+    afterAll(() => {
+      const path = sessionCachePath(tempDir, sessionId);
+      if (existsSync(path)) unlinkSync(path);
+    });
+
+    it('carries the unchanged tool input fields alongside the rewritten command', async () => {
+      // Claude Code replaces the whole tool input with updatedInput, so a
+      // rewrite that returns only `command` silently drops the call's
+      // timeout, run_in_background and description.
+      const writer = new SessionCache(tempDir, sessionId);
+      writer.setEnvironment(makeEnv());
+      writer.setPythonEnv({ venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv', detectedAt: Date.now() });
+
+      const result = await runHook(hookPath, {
+        session_id: sessionId,
+        tool_name: 'Bash',
+        tool_input: {
+          command: 'python scripts/report.py',
+          description: 'Generate the report',
+          timeout: 300000,
+          run_in_background: true,
+        },
+      }, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const parsed = JSON.parse(jsonLine as string);
+      expect(parsed.hookSpecificOutput.updatedInput).toEqual({
+        command: 'uv run python scripts/report.py',
+        description: 'Generate the report',
+        timeout: 300000,
+        run_in_background: true,
+      });
+    }, HOOK_TIMEOUT);
+  });
+
   describe('branch discipline (git fixture)', () => {
     // Separate git-initialized fixture so the shared tempDir stays a plain
     // directory for the other tests. Each test uses its own session_id so
