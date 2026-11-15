@@ -32,6 +32,30 @@ jest.mock('../src/router/resolver.js');`,
       expect(result?.message).toContain('mock');
     });
 
+    it.each([
+      ['from unittest.mock import patch'],
+      ['from unittest.mock import MagicMock, patch'],
+      ['import unittest.mock'],
+      ['from unittest import mock'],
+    ])('detects a Python unittest.mock import in an e2e test file: %s', (line) => {
+      const result = checkConstitutional(
+        'e2e/test_checkout.py',
+        `${line}\n\ndef test_checkout():\n    assert True\n`,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('no_mocks');
+    });
+
+    it('does not flag a Python e2e test that imports unittest without mock', () => {
+      const result = checkConstitutional(
+        'e2e/test_checkout.py',
+        'import unittest\n\nclass CheckoutTest(unittest.TestCase):\n    pass\n',
+        config,
+      );
+      expect(result).toBeNull();
+    });
+
     it('allows mocks in regular unit test files', () => {
       const result = checkConstitutional(
         'tests/router/resolver.test.ts',
