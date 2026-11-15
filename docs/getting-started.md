@@ -3,7 +3,7 @@
 ## Prerequisites
 
 - [Claude Code](https://claude.ai/code) CLI installed and configured
-- Node.js 18+
+- Node.js 18+ (22.12+ recommended -- older versions print engine warnings on `npm install`, and the test suite does not start on Node 18)
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework.
   **Required.** Install via the Claude Code plugin marketplace:
   `/plugin install superpowers@claude-plugins-official`. Every skill in the

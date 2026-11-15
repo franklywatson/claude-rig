@@ -81,7 +81,7 @@ structural instead of persuasive, and projects that fit can graduate from
 ## Requirements
 
 - [Claude Code](https://claude.ai/code) CLI
-- Node.js 18+
+- Node.js 18+ (22.12+ recommended -- older versions print engine warnings on `npm install`, and the test suite does not start on Node 18)
 - [superpowers](https://github.com/obra/superpowers) -- base skills framework (required; all skill chain skills wrap `superpowers:*` skills)
 - [rtk](https://github.com/rtk-ai/rtk) -- token-optimized command proxy (strongly recommended; tool router redirects `grep`/`find`/`cat` through rtk when available)
 - [jcodemunch](https://github.com/jgravelle/jcodemunch-mcp) -- indexed code search MCP server
