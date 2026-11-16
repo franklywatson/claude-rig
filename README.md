@@ -262,6 +262,10 @@ enforcement rules are emitted at session start and referenced dynamically by
 skill templates -- set `no_mocks: silent` to disable no-mock enforcement
 entirely.
 
+An optional `.harness.yaml.local` sits on top of `.harness.yaml`: same
+format, merged over it, gitignored by `rig init` -- machine-local levels
+without touching the shared config.
+
 ## Skill chain
 
 | Skill | Purpose | Wraps |

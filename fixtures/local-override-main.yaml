@@ -1,0 +1,6 @@
+rules:
+  stale_tests:
+    enforcement: advise
+    grace_period: 3
+  constitutional:
+    no_mocks: silent

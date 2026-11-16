@@ -570,7 +570,7 @@ if needed and stores the results. The `/savings` skill reports all projects.
 
 ### Config (`src/config.ts`)
 
-Loads `.harness.yaml` and merges its rules with built-in defaults. `getEnforcementLevel()` resolves level per rule.
+Loads `.harness.yaml` and merges its rules with built-in defaults; an optional, gitignored `.harness.yaml.local` (derived from the config path by `loadConfig`) layers machine-local overrides on top. `getEnforcementLevel()` resolves level per rule.
 
 ### Session (`src/session/`)
 

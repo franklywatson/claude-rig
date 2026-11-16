@@ -62,17 +62,34 @@ export const DEFAULT_CONFIG: HarnessConfig = {
   },
 };
 
-export async function loadConfig(configPath: string): Promise<HarnessConfig> {
+/**
+ * Read and parse one config layer. Returns null when the file is absent,
+ * unreadable, or not an object — an inert layer, skipped by loadConfig.
+ */
+async function readConfigLayer(path: string): Promise<HarnessConfig | null> {
   try {
-    const raw = await readFile(configPath, 'utf-8');
+    const raw = await readFile(path, 'utf-8');
     const parsed = parseYaml(raw) as HarnessConfig | null;
-    if (!parsed || typeof parsed !== 'object') {
-      return structuredClone(DEFAULT_CONFIG);
-    }
-    return mergeConfigs(structuredClone(DEFAULT_CONFIG), parsed);
+    return parsed && typeof parsed === 'object' ? parsed : null;
   } catch {
-    return structuredClone(DEFAULT_CONFIG);
+    return null;
   }
+}
+
+export async function loadConfig(configPath: string): Promise<HarnessConfig> {
+  let config = structuredClone(DEFAULT_CONFIG);
+
+  // Layer 1: the project's .harness.yaml over built-in defaults.
+  const project = await readConfigLayer(configPath);
+  if (project) config = mergeConfigs(config, project);
+
+  // Layer 2: .harness.yaml.local over that — gitignored machine-local
+  // overrides (see `rig init`'s gitignore entry). An absent or invalid
+  // local file leaves the merged config untouched.
+  const local = await readConfigLayer(`${configPath}.local`);
+  if (local) config = mergeConfigs(config, local);
+
+  return config;
 }
 
 export function mergeConfigs(base: HarnessConfig, override: HarnessConfig): HarnessConfig {

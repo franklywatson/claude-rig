@@ -236,6 +236,15 @@ recommends a worktree when the plan is multi-task or the tree is dirty.
 | `advise` | Advisory injected into the agent's context via `additionalContext` JSON, tool call proceeds |
 | `silent` | Logged only, no visible output |
 
+### Local overrides
+
+`.harness.yaml.local`, if present, is merged over `.harness.yaml` — same
+format, same merge semantics, highest precedence. `rig init` adds it to
+`.gitignore`, so machine-specific levels (a stricter `zero_defect` on your
+workstation, one rule silenced during a refactor) stay out of the shared
+config. Absent or malformed, it changes nothing. Delete it to return to
+project-wide settings; hooks read the config fresh on each invocation.
+
 ## How the hooks work
 
 ### PreToolUse: Tool Router
