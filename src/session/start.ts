@@ -253,6 +253,7 @@ export async function handleSessionStart(
     lines.push('  - mcp__graphify__god_nodes for core abstractions');
     lines.push('  - mcp__graphify__get_community for module clustering');
     lines.push('  - mcp__graphify__shortest_path for dependency paths');
+    lines.push('  - mcp__graphify__get_section for a markdown heading\'s section body');
   }
 
   // Graphify MCP server self-check (only when CLI is present but MCP not ready)
