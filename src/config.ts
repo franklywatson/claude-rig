@@ -62,17 +62,53 @@ export const DEFAULT_CONFIG: HarnessConfig = {
   },
 };
 
-export async function loadConfig(configPath: string): Promise<HarnessConfig> {
+/**
+ * Read and parse one config layer. Returns null when the file is absent,
+ * unreadable, unparseable, or not a document with a rules object — an
+ * inert layer, skipped by loadConfig. A layer of the wrong shape must
+ * never throw out of loadConfig: the hook templates' catch-all would turn
+ * that into a silent no-op of the whole harness.
+ */
+async function readConfigLayer(path: string): Promise<HarnessConfig | null> {
   try {
-    const raw = await readFile(configPath, 'utf-8');
+    const raw = await readFile(path, 'utf-8');
     const parsed = parseYaml(raw) as HarnessConfig | null;
-    if (!parsed || typeof parsed !== 'object') {
-      return structuredClone(DEFAULT_CONFIG);
+    const isRulesDocument =
+      !!parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      !!parsed.rules &&
+      typeof parsed.rules === 'object';
+    if (!isRulesDocument) {
+      debugLog(`config layer skipped (not a rules document): ${path}`);
+      return null;
     }
-    return mergeConfigs(structuredClone(DEFAULT_CONFIG), parsed);
-  } catch {
-    return structuredClone(DEFAULT_CONFIG);
+    return parsed;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    debugLog(`config layer skipped (${code ?? 'parse error'}): ${path}`);
+    return null;
   }
+}
+
+function debugLog(message: string): void {
+  if (process.env.RIG_DEBUG) console.error(`[rig] ${message}`);
+}
+
+export async function loadConfig(configPath: string): Promise<HarnessConfig> {
+  let config = structuredClone(DEFAULT_CONFIG);
+
+  // Layer 1: the project's .harness.yaml over built-in defaults.
+  const project = await readConfigLayer(configPath);
+  if (project) config = mergeConfigs(config, project);
+
+  // Layer 2: .harness.yaml.local over that — gitignored machine-local
+  // overrides (see `rig init`'s gitignore entry). An absent or invalid
+  // local file leaves the merged config untouched.
+  const local = await readConfigLayer(`${configPath}.local`);
+  if (local) config = mergeConfigs(config, local);
+
+  return config;
 }
 
 export function mergeConfigs(base: HarnessConfig, override: HarnessConfig): HarnessConfig {

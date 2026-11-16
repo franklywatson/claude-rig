@@ -167,6 +167,11 @@ Access custom rules in your check via `config.rules`:
 const level = (config.rules as any).secrets?.enforcement ?? 'block';
 ```
 
+Caveat: `mergeConfigs` (used by `loadConfig` for `.harness.yaml` and
+`.harness.yaml.local`) copies only the eight built-in rule categories, so a
+custom category does not survive the merge — either read and parse the YAML
+file directly in your check, or extend `mergeConfigs` with your category.
+
 ## Custom skills
 
 Add a new skill by creating a SKILL.md file in `.claude/skills/<name>/`:

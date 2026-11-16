@@ -236,6 +236,15 @@ recommends a worktree when the plan is multi-task or the tree is dirty.
 | `advise` | Advisory injected into the agent's context via `additionalContext` JSON, tool call proceeds |
 | `silent` | Logged only, no visible output |
 
+### Local overrides
+
+`.harness.yaml.local`, if present, is merged over `.harness.yaml` — same
+format, same merge semantics, highest precedence. `rig init` adds it to
+`.gitignore`, so machine-specific levels (a stricter `zero_defect` on your
+workstation, one rule silenced during a refactor) stay out of the shared
+config. Absent or malformed, it changes nothing. Delete it to return to
+project-wide settings; hooks read the config fresh on each invocation.
+
 ## How the hooks work
 
 ### PreToolUse: Tool Router
@@ -302,7 +311,8 @@ what rig installed:
    | `.claude/skills/` | `brain-plus/`, `plan-plus/`, `tdd-plus/`, `sdd-plus/`, `verify-plus/`, `review-plus/`, `debug-plus/`, `verify-harness/`, `savings/`, `investigate/` |
    | `.claude/agents/` | `scout.md`, `code-reviewer.md`, `spec-reviewer.md`, `implementer.md` |
 
-3. Remove `.harness.yaml`, the rig-managed block in `.gitignore` (between
+3. Remove `.harness.yaml` and any `.harness.yaml.local` you created, the
+   rig-managed block in `.gitignore` (between
    `# --- rig-managed (do not edit below) ---` and `# --- end rig-managed ---`),
    and `graphify-out/` if you no longer use the graph.
 4. Review `permissions` in `.claude/settings.json`: rig merges its entries

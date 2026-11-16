@@ -92,6 +92,53 @@ describe('config', () => {
     });
   });
 
+  describe('loadConfig local override layer (.harness.yaml.local)', () => {
+    it('applies the local file over the project config and defaults', async () => {
+      const config = await loadConfig(resolve(FIXTURES, 'local-override-main.yaml'));
+      // local wins over the main file
+      expect(config.rules.stale_tests.enforcement).toBe('block');
+      // main-file values not overridden by local are preserved
+      expect(config.rules.stale_tests.grace_period).toBe(3);
+      expect(config.rules.constitutional.no_mocks).toBe('silent');
+      // untouched categories keep their defaults
+      expect(config.rules.tool_routing.grep).toBe('advise');
+    });
+
+    it('leaves the merged config unchanged when no local file exists', async () => {
+      const config = await loadConfig(resolve(FIXTURES, 'local-override.yaml'));
+      expect(config.rules.tool_routing.grep).toBe('advise');
+      expect(config.rules.stale_tests.enforcement).toBe('block');
+    });
+
+    it('ignores a broken local file and keeps the main config', async () => {
+      const config = await loadConfig(resolve(FIXTURES, 'broken-local-main.yaml'));
+      expect(config.rules.constitutional.no_mocks).toBe('silent');
+      expect(config.rules.stale_tests.enforcement).toBe('advise');
+    });
+
+    it('applies the local file even when the main config is absent', async () => {
+      const config = await loadConfig(resolve(FIXTURES, 'only-local.yaml'));
+      expect(config.rules.tool_routing.grep).toBe('silent');
+      expect(config.rules.tool_routing.sed_i).toBe('block');
+    });
+
+    it.each([
+      ['rules: with nothing under it', 'degenerate-local-main.yaml'],
+      ['a top-level list', 'list-local-main.yaml'],
+      ['an empty document', 'empty-local-main.yaml'],
+    ])('treats a degenerate local file (%s) as inert', async (_shape, fixture) => {
+      const config = await loadConfig(resolve(FIXTURES, fixture));
+      // main-file values apply, defaults untouched — never a rejection
+      expect(config.rules.constitutional.no_mocks).toBe('silent');
+      expect(config.rules.stale_tests.enforcement).toBe('advise');
+    });
+
+    it('returns defaults for a main config that is an empty object', async () => {
+      const config = await loadConfig(resolve(FIXTURES, 'empty-object-main.yaml'));
+      expect(config).toEqual(DEFAULT_CONFIG);
+    });
+  });
+
   describe('mergeConfigs', () => {
     it('overrides base with local values', () => {
       const base: HarnessConfig = {

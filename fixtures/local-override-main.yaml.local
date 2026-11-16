@@ -1,0 +1,3 @@
+rules:
+  stale_tests:
+    enforcement: block
