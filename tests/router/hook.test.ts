@@ -59,6 +59,18 @@ describe('handlePreToolUse', () => {
     expect(msg(result)).toContain('Edit');
   });
 
+  it('does not block awk that only compares values', () => {
+    cache.setEnvironment(makeEnv());
+    const result = handlePreToolUse('Bash', { command: "awk '$3 > 100 {print $1}' report.txt" }, cache, config);
+    expect(result).toBeNull();
+  });
+
+  it('still blocks awk output redirected to a file', () => {
+    cache.setEnvironment(makeEnv());
+    const result = handlePreToolUse('Bash', { command: "awk '{print $1}' report.txt > out.txt" }, cache, config);
+    expect(result).toMatchObject({ level: 'block' });
+  });
+
   it('advises rtk for grep when rtk available but rewrite declines', () => {
     cache.setEnvironment(makeEnv({ rtkAvailable: true, rtkPath: '/usr/bin/rtk' }));
     // Declining mock: without it this test spawned the real rtkPath and only
