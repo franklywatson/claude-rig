@@ -44,26 +44,32 @@ const TOOL_INTENT_MAP: Record<string, IntentType> = {
 
 /**
  * True when an awk command writes a file: the shell redirects its output
- * (`awk '...' in > out`) or the awk program redirects a print
- * (`awk '{print > "out"}' in`). A `>` used as a comparison inside the quoted
- * program, a stderr redirect, `>&N` and `/dev/null` do not count.
+ * (`awk '...' in > out`, including stderr redirects like `2> err.log`) or
+ * the awk program redirects a print (`awk '{print > "out"}' in`). A `>` used
+ * as a comparison inside the quoted program, a `>` in an awk comment or a
+ * heredoc body, `>&N` dups and `/dev/null` targets do not count.
  */
 function awkWritesFile(segment: string): boolean {
   if (!/^\s*awk\b/.test(segment)) return false;
   const { unquoted, quoted } = splitQuoted(segment);
 
-  // Shell redirection of stdout, outside any quotes.
-  for (const [, fd, dup, target] of unquoted.matchAll(/(\d*)>>?(&?)\s*([^\s<>]*)/g)) {
-    if (fd !== '' && fd !== '1') continue; // 2> redirects stderr
-    if (dup === '&' || target === '/dev/null') continue; // >&2, >/dev/null
+  // Shell redirection outside any quotes, to a real target — any fd: `2>`
+  // a file still creates/truncates it. Only the first logical line is
+  // scanned: a heredoc body is data, not shell syntax, so a `>` there is
+  // not a redirect. Backslash continuations join their follow-up line.
+  const firstLogicalLine = unquoted.replace(/\\\n/g, ' ').split('\n')[0];
+  for (const [, , dup, target] of firstLogicalLine.matchAll(/(\d*)>>?(&?)\s*([^\s<>]*)/g)) {
+    if (dup === '&' || target === '/dev/null') continue; // 2>&1, >&2, >/dev/null
     return true;
   }
 
   // print/printf redirected from inside the awk program. Drop awk string
-  // literals and parenthesised expressions first, so a `>` inside a string
-  // or a parenthesised comparison is not mistaken for a redirect.
+  // literals, comments, and parenthesised expressions first, so a `>` inside
+  // a string, a comment, or a parenthesised comparison is not mistaken for
+  // a redirect.
   return quoted.some((program) => {
     let code = program.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    code = code.replace(/#[^\n]*/g, ''); // awk comments run to end of line
     while (/\([^()]*\)/.test(code)) code = code.replace(/\([^()]*\)/g, '');
     return /\bprintf?\b[^;}|\n]*>/.test(code);
   });
