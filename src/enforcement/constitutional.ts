@@ -5,6 +5,7 @@ const MOCK_PATTERNS = [
   /vi\.mock\(/,
   /\bunittest\.mock\b/,
   /\bfrom\s+unittest\s+import\s+[^\n]*\bmock\b/,
+  /sinon\.(?:stub|spy|fake|mock)\b/,
   /@patch\(/,
   /Mock\(/,
   /createMock\(/,

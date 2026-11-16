@@ -49,6 +49,13 @@ describe('classifyIntent', () => {
       ['awk NR>10 file'],
       ['awk \'{print > "out.txt"}\' in.txt'],
       ['awk \'{printf("%s\\n", $1) >> "out.txt"}\' in.txt'],
+      // stderr redirected to a real file still creates/truncates it
+      ["awk '{print $1}' data.txt 2> results.log"],
+      ["awk '{print $1}' data.txt 2>> results.log"],
+      // backslash continuation: the redirect is on the same logical line
+      ["awk '{print $1}' f \\\n  > out"],
+      // redirect on the first line, heredoc body after it
+      ["awk '{print $1}' > out <<'EOF'\nbody\nEOF"],
     ])('classifies awk writing a file as file_modify: %s', (command) => {
       expect(classifyIntent('Bash', { command })).toBe('file_modify');
     });
@@ -66,6 +73,10 @@ describe('classifyIntent', () => {
       ["ps aux | awk '{print $2}' 2>/dev/null"],
       ["awk '{print}' notes.txt >/dev/null"],
       ["awk '{print}' notes.txt >&2"],
+      // heredoc body is data, not shell syntax — a `>` there is not a redirect
+      ["awk '{print $1}' f <<'EOF'\ncount > 5\nEOF"],
+      // a commented-out redirect inside the awk program is not live code
+      ["awk '{ # print > \"out.txt\"\nprint $1 }' f"],
     ])('does not classify read-only awk as file_modify: %s', (command) => {
       expect(classifyIntent('Bash', { command })).toBe('pass_through');
     });

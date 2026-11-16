@@ -56,6 +56,20 @@ jest.mock('../src/router/resolver.js');`,
       expect(result).toBeNull();
     });
 
+    it.each([
+      ["sinon.stub(api, 'fetch');"],
+      ['sinon.spy(ops, \'run\');'],
+      ['sinon.fake.returns(42);'],
+    ])('detects sinon stubbing in a stack test file: %s', (line) => {
+      const result = checkConstitutional(
+        'tests/api/checkout.stack.test.ts',
+        `import sinon from 'sinon';\n${line}\n`,
+        config,
+      );
+      expect(result).not.toBeNull();
+      expect(result?.message).toContain('no_mocks');
+    });
+
     it('allows mocks in regular unit test files', () => {
       const result = checkConstitutional(
         'tests/router/resolver.test.ts',
