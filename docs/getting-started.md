@@ -285,18 +285,32 @@ absent from your file.
 
 ## Uninstall
 
-Remove the generated files:
+`.claude/` can also hold your own hooks, skills, and agents, so remove only
+what rig installed:
 
-```bash
-rm -rf .claude/hooks/ .claude/skills/ .claude/agents/ .harness.yaml
-rm -f /tmp/rig-session-*.json /tmp/rig-rtk-rewrite-failures.log
-```
+1. In `.claude/settings.json`, remove the hook commands under
+   `hooks.PreToolUse`, `hooks.PostToolUse`, and `hooks.SessionStart` that run
+   `pre-tool-use.ts`, `post-tool-use.ts`, or `session-start.ts` from
+   `.claude/hooks/scripts/`. Leave any other hooks in those arrays in place.
+2. Delete the files rig generated. Hook scripts carry `@rig-generated`;
+   skills, references, and agents carry `<!-- rig-generated -->`. The marker
+   stays after local edits, so save anything you customized first.
 
-Then remove hook registrations from `.claude/settings.json`. The `init` command added entries under `hooks.PreToolUse` and `hooks.PostToolUse` and `hooks.SessionStart` -- remove those arrays.
+   | Location | Installed by rig |
+   | --- | --- |
+   | `.claude/hooks/scripts/` | `pre-tool-use.ts`, `post-tool-use.ts`, `session-start.ts` |
+   | `.claude/skills/` | `brain-plus/`, `plan-plus/`, `tdd-plus/`, `sdd-plus/`, `verify-plus/`, `review-plus/`, `debug-plus/`, `verify-harness/`, `savings/`, `investigate/` |
+   | `.claude/agents/` | `scout.md`, `code-reviewer.md`, `spec-reviewer.md`, `implementer.md` |
 
-Also remove the rig-managed block from `.gitignore` (delimited by
-`# --- rig-managed (do not edit below) ---` / `# --- end rig-managed ---`)
-and the `graphify-out/` directory that `rig init` created.
+3. Remove `.harness.yaml`, the rig-managed block in `.gitignore` (between
+   `# --- rig-managed (do not edit below) ---` and `# --- end rig-managed ---`),
+   and `graphify-out/` if you no longer use the graph.
+4. Review `permissions` in `.claude/settings.json`: rig merges its entries
+   into your existing allow and deny lists.
+
+The session cache is optional to clear. `/tmp/rig-session-*.json` files are
+per session and record their project in a `cwd` field;
+`/tmp/rig-rtk-rewrite-failures.log` is shared by every rig project.
 
 ## Next steps
 
