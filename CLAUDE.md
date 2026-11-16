@@ -41,7 +41,7 @@ All types in `src/types.ts`. Important ones:
 
 ## Conventions
 
-- Config via `.harness.yaml` (YAML, layered merge with base + local)
+- Config via `.harness.yaml` (YAML, merged with built-in defaults)
 - Environment detection uses injectable `ExecFn` for testability
 - Session cache: 4-hour env TTL, file-backed in /tmp keyed by (cwd, session id); scout cache has a separate 30-min TTL
 - All hooks read JSON from stdin, write JSON to stdout (Claude Code hook protocol)

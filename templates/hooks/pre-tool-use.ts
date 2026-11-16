@@ -53,9 +53,11 @@ import { readFileSync } from 'node:fs';
     // (Only takes effect in permission modes that consult the hook's decision,
     // i.e. default mode — not bypassPermissions, where updatedInput is ignored.)
     if (result && result.type === 'rewrite') {
+      // updatedInput replaces the whole tool input, so carry the unchanged
+      // fields (timeout, run_in_background, description) alongside the command.
       const hookSpecificOutput = {
         hookEventName: 'PreToolUse',
-        updatedInput: { command: result.command },
+        updatedInput: { ...input.tool_input, command: result.command },
         ...(result.autoAllow ? { permissionDecision: 'allow' } : {}),
       };
       console.log(JSON.stringify({ hookSpecificOutput }));

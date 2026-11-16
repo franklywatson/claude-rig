@@ -17,10 +17,10 @@ const INTENT_PRECEDENCE: Record<IntentType, number> = {
   pass_through: 0,
 };
 
-const BASH_INTENT_PATTERNS: Array<{ pattern: RegExp; intent: IntentType }> = [
+const BASH_INTENT_PATTERNS: Array<{ pattern: { test(segment: string): boolean }; intent: IntentType }> = [
   // Destructive patterns first (highest precedence)
   { pattern: /^\s*sed\s+(-i|--in-place)\b/, intent: 'file_modify' },
-  { pattern: /^\s*awk\b.*>\s*\S+/, intent: 'file_modify' },
+  { pattern: { test: awkWritesFile }, intent: 'file_modify' },
   // Search patterns
   { pattern: /^\s*(grep[rx]?|rg)\b/, intent: 'text_search' },
   { pattern: /^\s*sed\b/, intent: 'text_search' },
@@ -41,6 +41,73 @@ const TOOL_INTENT_MAP: Record<string, IntentType> = {
   Write: 'file_modify',
   Bash: 'pass_through', // resolved by bash command analysis
 };
+
+/**
+ * True when an awk command writes a file: the shell redirects its output
+ * (`awk '...' in > out`, including stderr redirects like `2> err.log`) or
+ * the awk program redirects a print (`awk '{print > "out"}' in`). A `>` used
+ * as a comparison inside the quoted program, a `>` in an awk comment or a
+ * heredoc body, `>&N` dups and `/dev/null` targets do not count.
+ */
+function awkWritesFile(segment: string): boolean {
+  if (!/^\s*awk\b/.test(segment)) return false;
+  const { unquoted, quoted } = splitQuoted(segment);
+
+  // Shell redirection outside any quotes, to a real target — any fd: `2>`
+  // a file still creates/truncates it. Only the first logical line is
+  // scanned: a heredoc body is data, not shell syntax, so a `>` there is
+  // not a redirect. Backslash continuations join their follow-up line.
+  const firstLogicalLine = unquoted.replace(/\\\n/g, ' ').split('\n')[0];
+  for (const [, , dup, target] of firstLogicalLine.matchAll(/(\d*)>>?(&?)\s*([^\s<>]*)/g)) {
+    if (dup === '&' || target === '/dev/null') continue; // 2>&1, >&2, >/dev/null
+    return true;
+  }
+
+  // print/printf redirected from inside the awk program. Drop awk string
+  // literals, comments, and parenthesised expressions first, so a `>` inside
+  // a string, a comment, or a parenthesised comparison is not mistaken for
+  // a redirect.
+  return quoted.some((program) => {
+    let code = program.replace(/"(?:[^"\\]|\\.)*"/g, '""');
+    code = code.replace(/#[^\n]*/g, ''); // awk comments run to end of line
+    while (/\([^()]*\)/.test(code)) code = code.replace(/\([^()]*\)/g, '');
+    return /\bprintf?\b[^;}|\n]*>/.test(code);
+  });
+}
+
+/**
+ * Split a shell segment into its unquoted text and the contents of its
+ * quoted spans. An unterminated quote runs to the end of the segment.
+ */
+function splitQuoted(segment: string): { unquoted: string; quoted: string[] } {
+  let unquoted = '';
+  const quoted: string[] = [];
+  let quote: string | null = null;
+  let span = '';
+
+  for (let i = 0; i < segment.length; i++) {
+    const ch = segment[i];
+    if (quote === null) {
+      if (ch === '"' || ch === '\'') {
+        quote = ch;
+        span = '';
+        unquoted += ' ';
+      } else {
+        unquoted += ch;
+      }
+    } else if (ch === '\\' && quote === '"' && i + 1 < segment.length) {
+      span += ch + segment[++i];
+    } else if (ch === quote) {
+      quoted.push(span);
+      quote = null;
+    } else {
+      span += ch;
+    }
+  }
+  if (quote !== null) quoted.push(span);
+
+  return { unquoted, quoted };
+}
 
 function classifyBashCommand(command: string): IntentType {
   // Destructive operations are flagged wherever they appear in a chain — a

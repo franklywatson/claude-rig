@@ -3,7 +3,9 @@ import type { EnforcementViolation, HarnessConfig } from '../types.js';
 const MOCK_PATTERNS = [
   /jest\.mock\(/,
   /vi\.mock\(/,
-  /from\s+['"]unittest\.mock['"]/,
+  /\bunittest\.mock\b/,
+  /\bfrom\s+unittest\s+import\s+[^\n]*\bmock\b/,
+  /sinon\.(?:stub|spy|fake|mock)\b/,
   /@patch\(/,
   /Mock\(/,
   /createMock\(/,
