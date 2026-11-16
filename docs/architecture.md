@@ -524,6 +524,7 @@ agent to use directly:
 - `mcp__graphify__god_nodes` — core abstractions ranked by connection density
 - `mcp__graphify__get_community` — module clustering for a specific community
 - `mcp__graphify__shortest_path` — dependency path between two symbols
+- `mcp__graphify__get_section` — a markdown heading's section body, derived from the source file at read time
 
 **Auto-building:** `ensureGraphBuilt()` automatically runs `graphify update
 <directory>` when no graph exists for a directory. This happens for both the

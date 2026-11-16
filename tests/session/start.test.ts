@@ -564,6 +564,7 @@ describe('handleSessionStart', () => {
       expect(output).toContain('mcp__graphify__god_nodes');
       expect(output).toContain('mcp__graphify__get_community');
       expect(output).toContain('mcp__graphify__shortest_path');
+      expect(output).toContain('mcp__graphify__get_section');
       rmSync(tmpDir, { recursive: true });
     });
 
