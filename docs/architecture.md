@@ -96,7 +96,7 @@ Emitted via hook protocol: advisory -> additionalContext JSON (exit 0)
 | `text_search` | Bash `grep`, `rg` | rtk or jcodemunch `search_text` |
 | `file_discovery` | Bash `find`, `fd` | jcodemunch `get_file_tree` |
 | `file_read` | Bash `cat`, `head`, `tail` | rtk or jcodemunch `get_symbol` |
-| `file_modify` | Bash `sed -i`, `awk >` | Block, redirect to Edit tool |
+| `file_modify` | Bash `sed -i`, `awk` with output redirect | Block, redirect to Edit tool |
 | `scout_explore` | `Agent` tool dispatching the `Explore` subagent | Advise scout subagent (jcodemunch + graphify) |
 
 **Step 2.5 — jcodemunch divert (pre-rewrite).** Before the rtk rewrite (Step 3),
@@ -159,7 +159,10 @@ with `permissionDecision: "allow"` (auto-approve); an exit-3 rewrite is
 emitted as `updatedInput` **without** `permissionDecision`, so Claude Code
 prompts the user (matching rtk's own `process_claude_payload`; unrated commands
 map to Default→exit 3, so exit-3 is the common case — auto-allowing it would
-defeat rtk's least-privilege default). This only takes
+defeat rtk's least-privilege default). In both cases the emitted
+`updatedInput` carries the original tool input's unchanged fields
+(`description`, `timeout`, `run_in_background`) alongside the rewritten
+`command` — it replaces the whole input object. This only takes
 effect in default permission mode; in `bypassPermissions` the `updatedInput`
 is ignored and the original command runs unmodified. Exits 1 and 2 fall through silently to
 rig's own rules by design (stdout is never used on exit 2).
@@ -271,7 +274,7 @@ advisories are not first-occurrence-suppressed — every unscoped run is flagged
 
 ### Constitutional rules
 
-Regex-based detection of mocking patterns (`jest.mock`, `vi.mock`, `sinon.stub`, etc.) in
+Regex-based detection of mocking patterns (`jest.mock`, `vi.mock`, `unittest.mock`, `sinon.stub`, etc.) in
 stack/E2E test files only. Unit test mocks are permitted for isolation.
 All constitutional rules are configurable via `.harness.yaml` -- set `no_mocks: silent`
 to disable no-mock enforcement, or `evidence_only: silent` to disable evidence-only
@@ -570,7 +573,10 @@ if needed and stores the results. The `/savings` skill reports all projects.
 
 ### Config (`src/config.ts`)
 
-Loads `.harness.yaml` and merges its rules with built-in defaults; an optional, gitignored `.harness.yaml.local` (derived from the config path by `loadConfig`) layers machine-local overrides on top. `getEnforcementLevel()` resolves level per rule.
+Loads `.harness.yaml` and merges its rules with built-in defaults; an
+optional, gitignored `.harness.yaml.local` (derived from the config path by
+`loadConfig`) layers machine-local overrides on top. `getEnforcementLevel()`
+resolves level per rule.
 
 ### Session (`src/session/`)
 

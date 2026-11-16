@@ -46,6 +46,33 @@ rig init --force
 `rig init --force` is idempotent — it only adds missing entries and preserves
 existing user customizations (other allow entries, deny rules, hook configs).
 
+## Enforcement level not matching `.harness.yaml`
+
+### Symptom
+
+A rule behaves at a different level than `.harness.yaml` specifies — e.g. a
+rule set to `block` only advises, or one your colleagues don't see fires only
+on your machine.
+
+### Cause
+
+A `.harness.yaml.local` in the project root (gitignored, machine-local) is
+merged over `.harness.yaml` with higher precedence. It may be left over from
+an experiment you forgot about, or contain a typo'd key that changes a
+different rule than intended.
+
+### Diagnosis / fix
+
+```bash
+ls .harness.yaml.local
+```
+
+If it exists, read it against the effective behavior you want. Delete it to
+return to the project-wide config — hooks re-read the config on every
+invocation, no restart needed. To see each config layer as it loads, run any
+hook with `RIG_DEBUG=1`; skipped layers (absent, unreadable, or not a rules
+document) are named on stderr.
+
 ## Graphify MCP not available
 
 ### What's happening

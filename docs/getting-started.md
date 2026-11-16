@@ -311,7 +311,8 @@ what rig installed:
    | `.claude/skills/` | `brain-plus/`, `plan-plus/`, `tdd-plus/`, `sdd-plus/`, `verify-plus/`, `review-plus/`, `debug-plus/`, `verify-harness/`, `savings/`, `investigate/` |
    | `.claude/agents/` | `scout.md`, `code-reviewer.md`, `spec-reviewer.md`, `implementer.md` |
 
-3. Remove `.harness.yaml`, the rig-managed block in `.gitignore` (between
+3. Remove `.harness.yaml` and any `.harness.yaml.local` you created, the
+   rig-managed block in `.gitignore` (between
    `# --- rig-managed (do not edit below) ---` and `# --- end rig-managed ---`),
    and `graphify-out/` if you no longer use the graph.
 4. Review `permissions` in `.claude/settings.json`: rig merges its entries
