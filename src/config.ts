@@ -64,16 +64,35 @@ export const DEFAULT_CONFIG: HarnessConfig = {
 
 /**
  * Read and parse one config layer. Returns null when the file is absent,
- * unreadable, or not an object — an inert layer, skipped by loadConfig.
+ * unreadable, unparseable, or not a document with a rules object — an
+ * inert layer, skipped by loadConfig. A layer of the wrong shape must
+ * never throw out of loadConfig: the hook templates' catch-all would turn
+ * that into a silent no-op of the whole harness.
  */
 async function readConfigLayer(path: string): Promise<HarnessConfig | null> {
   try {
     const raw = await readFile(path, 'utf-8');
     const parsed = parseYaml(raw) as HarnessConfig | null;
-    return parsed && typeof parsed === 'object' ? parsed : null;
-  } catch {
+    const isRulesDocument =
+      !!parsed &&
+      typeof parsed === 'object' &&
+      !Array.isArray(parsed) &&
+      !!parsed.rules &&
+      typeof parsed.rules === 'object';
+    if (!isRulesDocument) {
+      debugLog(`config layer skipped (not a rules document): ${path}`);
+      return null;
+    }
+    return parsed;
+  } catch (err) {
+    const code = (err as NodeJS.ErrnoException).code;
+    debugLog(`config layer skipped (${code ?? 'parse error'}): ${path}`);
     return null;
   }
+}
+
+function debugLog(message: string): void {
+  if (process.env.RIG_DEBUG) console.error(`[rig] ${message}`);
 }
 
 export async function loadConfig(configPath: string): Promise<HarnessConfig> {

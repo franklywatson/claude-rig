@@ -121,6 +121,22 @@ describe('config', () => {
       expect(config.rules.tool_routing.grep).toBe('silent');
       expect(config.rules.tool_routing.sed_i).toBe('block');
     });
+
+    it.each([
+      ['rules: with nothing under it', 'degenerate-local-main.yaml'],
+      ['a top-level list', 'list-local-main.yaml'],
+      ['an empty document', 'empty-local-main.yaml'],
+    ])('treats a degenerate local file (%s) as inert', async (_shape, fixture) => {
+      const config = await loadConfig(resolve(FIXTURES, fixture));
+      // main-file values apply, defaults untouched — never a rejection
+      expect(config.rules.constitutional.no_mocks).toBe('silent');
+      expect(config.rules.stale_tests.enforcement).toBe('advise');
+    });
+
+    it('returns defaults for a main config that is an empty object', async () => {
+      const config = await loadConfig(resolve(FIXTURES, 'empty-object-main.yaml'));
+      expect(config).toEqual(DEFAULT_CONFIG);
+    });
   });
 
   describe('mergeConfigs', () => {
