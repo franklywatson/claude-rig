@@ -75,6 +75,20 @@ describe('detectHeadroom', () => {
     expect(result.initialized).toBe(true);
   });
 
+  it('detects initialization from an IPv6 loopback ANTHROPIC_BASE_URL proxy env', () => {
+    const settings = JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'http://[::1]:8787' } });
+    const { readFile, existsCheck } = makeFiles({ [PROJECT_SETTINGS]: settings });
+    const result = detectHeadroom(CWD, headroomOnPath, readFile, existsCheck, HOME);
+    expect(result.initialized).toBe(true);
+  });
+
+  it('detects initialization from a case-insensitive localhost ANTHROPIC_BASE_URL proxy env', () => {
+    const settings = JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'http://LOCALHOST:8787' } });
+    const { readFile, existsCheck } = makeFiles({ [PROJECT_SETTINGS]: settings });
+    const result = detectHeadroom(CWD, headroomOnPath, readFile, existsCheck, HOME);
+    expect(result.initialized).toBe(true);
+  });
+
   it('does not treat a remote ANTHROPIC_BASE_URL as headroom', () => {
     const settings = JSON.stringify({ env: { ANTHROPIC_BASE_URL: 'https://api.example.com' } });
     const { readFile, existsCheck } = makeFiles({ [PROJECT_SETTINGS]: settings });

@@ -21,7 +21,7 @@ export interface HeadroomDetection {
 }
 
 const HEADROOM_HOOK_MARKER = 'headroom-init-claude';
-const LOCAL_PROXY_PATTERN = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?/;
+const LOCAL_PROXY_PATTERN = /^https?:\/\/(\[::1\]|127\.0\.0\.1|localhost)(:\d+)?/i;
 
 export function detectHeadroom(
   cwd: string,
