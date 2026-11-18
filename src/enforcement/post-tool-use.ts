@@ -5,12 +5,15 @@ import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests, staleSetKey } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
 import { checkZeroDefect } from './zero-defect.js';
+import { selectTestOutput } from './test-command.js';
 import {
   incrementMetric,
   captureExternalGraphifyStats,
   captureGraphifyStatsViaReport,
 } from '../session/metrics.js';
 import type { ExecFn } from '../session/metrics.js';
+
+export { isTestCommand } from './test-command.js';
 
 /**
  * Extract a Bash command's output from the PostToolUse payload.
@@ -25,18 +28,9 @@ export function extractBashOutput(
   toolResponse: unknown,
   args: Record<string, unknown>,
 ): string | undefined {
-  if (typeof toolResponse === 'string' && toolResponse.length > 0) {
-    return toolResponse;
-  }
-  if (toolResponse && typeof toolResponse === 'object') {
-    const response = toolResponse as Record<string, unknown>;
-    const parts = [response.stdout, response.stderr].filter(
-      (v): v is string => typeof v === 'string' && v.length > 0,
-    );
-    if (parts.length > 0) return parts.join('\n');
-  }
-  const legacy = args.output;
-  return typeof legacy === 'string' && legacy.length > 0 ? legacy : undefined;
+  const output = readBashOutput(toolResponse, args);
+  if (!output?.stderr) return output?.text;
+  return `${output.text}\n${output.stderr}`;
 }
 
 /**
@@ -63,6 +57,62 @@ export function handlePostToolUse(
   return cache.transaction(() =>
     runPostToolChecks(tool, args, tracker, cache, config, execFn, toolResponse),
   );
+}
+
+/**
+ * A Bash command's output. `stderr` is set only when it arrived apart from
+ * stdout: where its lines fall among stdout's is then not known.
+ */
+interface BashOutput {
+  text: string;
+  stderr?: string;
+}
+
+function readBashOutput(toolResponse: unknown, args: Record<string, unknown>): BashOutput | undefined {
+  if (typeof toolResponse === 'string' && toolResponse) return { text: toolResponse };
+  if (toolResponse && typeof toolResponse === 'object') {
+    const { stdout, stderr } = toolResponse as Record<string, unknown>;
+    const errorOutput = typeof stderr === 'string' && stderr ? stderr : undefined;
+    if (typeof stdout === 'string' && stdout) return { text: stdout, stderr: errorOutput };
+    if (errorOutput) return { text: errorOutput };
+  }
+  return typeof args.output === 'string' && args.output ? { text: args.output } : undefined;
+}
+
+function checkTestCommandOutput(
+  command: unknown,
+  output: BashOutput | undefined,
+  cache: SessionCache,
+  config: HarnessConfig,
+  succeeded: boolean,
+): EnforcementViolation | null {
+  if (typeof command !== 'string' || !output) return null;
+  const testOutput = selectTestOutput(command, output.text, output.stderr, succeeded);
+  if (testOutput === null) return null;
+  const changedFiles = cache.getChangedFiles();
+  return checkZeroDefect(
+    testOutput.text,
+    config,
+    changedFiles.length > 0 ? changedFiles : undefined,
+    cache.getCurrentPhase(),
+    testOutput.packageScript,
+  );
+}
+
+/**
+ * PostToolUseFailure handler. A failed Bash call carries its output in the
+ * payload's `error` field. Runs only the zero-defect check and writes nothing
+ * to the session cache, so a failed Edit or Write is never tracked as an edit.
+ */
+export function handlePostToolUseFailure(
+  tool: string,
+  args: Record<string, unknown>,
+  error: unknown,
+  cache: SessionCache,
+  config: HarnessConfig,
+): EnforcementViolation | null {
+  if (tool !== 'Bash' || typeof error !== 'string' || !error) return null;
+  return checkTestCommandOutput(args.command, { text: error }, cache, config, false);
 }
 
 function runPostToolChecks(
@@ -154,23 +204,9 @@ function runPostToolChecks(
 
   // Zero-defect check on test command output
   if (tool === 'Bash') {
-    const command = args.command as string;
-    const output = extractBashOutput(toolResponse, args);
-
-    if (command && output) {
-      // Check if this was a test run
-      const isTestCommand = /vitest|jest|pytest|mocha/.test(command);
-      if (isTestCommand) {
-        const changedFiles = cache.getChangedFiles();
-        const zeroDefect = checkZeroDefect(
-          output,
-          config,
-          changedFiles.length > 0 ? changedFiles : undefined,
-          cache.getCurrentPhase(),
-        );
-        if (zeroDefect) violations.push(zeroDefect);
-      }
-    }
+    const output = readBashOutput(toolResponse, args);
+    const zeroDefect = checkTestCommandOutput(args.command, output, cache, config, true);
+    if (zeroDefect) violations.push(zeroDefect);
   }
 
   // Capture graphify stats for external directories accessed via jcodemunch

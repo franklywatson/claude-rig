@@ -6,6 +6,7 @@
  * Generated: {{GENERATED_DATE}}
  *
  * Enforces stale test detection, constitutional rules, zero-defect.
+ * Also registered for PostToolUseFailure, where only zero-defect runs.
  * Config: .harness.yaml
  */
 import { resolve } from 'node:path';
@@ -14,6 +15,7 @@ import { execSync } from 'node:child_process';
 
 (async () => {
   let handlePostToolUse: any;
+  let handlePostToolUseFailure: any;
   let FileTracker: any;
   let SessionCache: any;
   let loadConfig: any;
@@ -21,6 +23,7 @@ import { execSync } from 'node:child_process';
   try {
     const enforcement = await import('{{RIG_DIST_PATH}}/enforcement/post-tool-use.js');
     handlePostToolUse = enforcement.handlePostToolUse;
+    handlePostToolUseFailure = enforcement.handlePostToolUseFailure;
     const tracker = await import('{{RIG_DIST_PATH}}/enforcement/file-tracker.js');
     FileTracker = tracker.FileTracker;
     const cache = await import('{{RIG_DIST_PATH}}/session/cache.js');
@@ -52,9 +55,11 @@ import { execSync } from 'node:child_process';
     execSync(cmd, { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'], ...opts }) as string;
 
   loadConfig(resolve(cwd, '.harness.yaml')).then((config: any) => {
-    // tool_response carries the tool's real output (Bash stdout/stderr) —
-    // tool_input never does in current Claude Code payloads.
-    const result = handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn, input.tool_response);
+    // Successful Bash calls carry output in tool_response. Failed calls carry it in error.
+    const isFailure = input.hook_event_name === 'PostToolUseFailure';
+    const result = isFailure
+      ? handlePostToolUseFailure(input.tool_name, input.tool_input ?? {}, input.error, cache, config)
+      : handlePostToolUse(input.tool_name, input.tool_input, tracker, cache, config, execFn, input.tool_response);
 
     if (result) {
       // The severity comes from the structured result's level, derived by the
@@ -70,7 +75,7 @@ import { execSync } from 'node:child_process';
       // Plain text on exit 0 only reaches the human UI, never the agent.
       console.log(JSON.stringify({
         hookSpecificOutput: {
-          hookEventName: 'PostToolUse',
+          hookEventName: isFailure ? 'PostToolUseFailure' : 'PostToolUse',
           additionalContext: result.message,
         },
       }));

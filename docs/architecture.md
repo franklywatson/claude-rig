@@ -223,6 +223,11 @@ invocations of the chain skills (`tdd-plus`, `sdd-plus`, etc.) set the current
 phase (`setPhase`). Hooks run as separate processes, so the session cache is
 the only channel that crosses invocations.
 
+Claude Code fires `PostToolUseFailure` instead of `PostToolUse` when a tool call
+fails. The same script handles this event and runs only the zero-defect check
+for Bash commands, using the payload's `error` field as output. It writes nothing
+to the session cache, so a failed Edit or Write leaves no edit record.
+
 A fourth check, `checkTestScope` (`src/enforcement/test-scope.ts`), runs in
 the **PreToolUse** hook rather than this pipeline: its output is a scoped-run
 redirect, which is only actionable before the full suite executes (see "Test
@@ -283,7 +288,7 @@ reference them dynamically instead of hardcoding assumptions.
 
 ### Zero-defect check
 
-Parses test output (vitest, jest, pytest patterns) for failure indicators. Classifies as pass, fail,
+Parses test output (vitest, jest, pytest and node:test patterns) for failure indicators. Classifies as pass, fail,
 or unknown. Supports pre-existing failure classification via `git diff` — failures in untouched
 files are reported separately from regressions based on `zero_defect.unrelated_errors` config.
 
@@ -295,7 +300,33 @@ in `verify+`, where a green suite is mandatory. The phase comes from the session
 cache (`cache.getCurrentPhase()`); callers that pass no phase keep the strict
 behavior unchanged.
 
-**Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
+Claude Code sends successful Bash output in `tool_response` and failed Bash
+output in `PostToolUseFailure.error`. Both paths apply the same phase and
+changed-file policy. Commands that name Vitest, Jest, pytest or Mocha retain
+the existing runner classification. Runner launchers such as `vitest.mjs`
+count as commands. Configuration files such as `vitest.config.ts` do not.
+
+The hook also recognizes `npm test`, `npm run test` and the corresponding pnpm,
+Yarn and Bun forms. It reads standalone test output, including setup errors.
+For a compound command it follows the requested scripts and npm's lifecycle
+banners. For example, in `npm test && npm run build && cd web && npm test`,
+both test sections count, including a type check in the second package's
+pretest. npm's echoed commands and checkmarked passing results are metadata.
+For a successful foreground `&&` chain, a failure message needs a runner
+record because the package test itself exited zero.
+
+When a filter drops the banners, another step can write into the same stream,
+or a different package can silence its banner, generic errors may belong to
+either step. The hook then looks for test-run evidence such as a runner's
+failure line, a failing TAP result, Node's spec failure or cancellation, or
+pnpm's failed-test footer. In compound commands it takes only identifiable
+test records from separately delivered stderr. A standalone test receives both
+streams. Shell substitutions, arbitrary wrappers and truncated output limit
+what the hook can attribute. A failure can go unreported if its only remaining
+diagnostic cannot be tied to a test.
+
+**Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`,
+`src/enforcement/test-command.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
 
 ---
 
