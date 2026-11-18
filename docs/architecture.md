@@ -300,65 +300,33 @@ in `verify+`, where a green suite is mandatory. The phase comes from the session
 cache (`cache.getCurrentPhase()`); callers that pass no phase keep the strict
 behavior unchanged.
 
-The check runs on the output of a test command. A command is one when it names
-a runner (`vitest`, `jest`, `pytest`, `mocha`) anywhere in it, with one
-exception: a runner name inside a dotted name, which is what a file name with
-an extension is, names a file. So `node check-vitest-config.cjs` and
-`npx eslint vitest.config.ts` are not test commands (a runner's own launcher
-file, such as `vitest.mjs`, still counts, and so does a versioned binary such
-as `pytest-3.12`). A command is also one when a package manager's test script
-(`npm test`, `npm run test`) starts it or starts one of its steps, after `&&`,
-`||`, `;`, `|` or on a new line. That second form is a bounded pattern, not a
-shell parser: a quoted word is kept as a word but its text is not read
-(`npm run "build" test` runs the build), and a script that comes after a
-substitution, a comment, a heredoc, an escape or a subshell is not read
-either.
+Claude Code sends successful Bash output in `tool_response` and failed Bash
+output in `PostToolUseFailure.error`. Both paths apply the same phase and
+changed-file policy. Commands that name Vitest, Jest, pytest or Mocha retain
+the existing runner classification. Runner launchers such as `vitest.mjs`
+count as commands. Configuration files such as `vitest.config.ts` do not.
 
-A command that names a runner is read whole and checked as it always was. The
-rest of this section is about a package manager's test script.
+The hook also recognizes `npm test`, `npm run test` and the corresponding pnpm,
+Yarn and Bun forms. It reads standalone test output, including setup errors.
+For a compound command it follows the requested scripts and npm's lifecycle
+banners. For example, in `npm test && npm run build && cd web && npm test`,
+both test sections count, including a type check in the second package's
+pretest. npm's echoed commands and checkmarked passing results are metadata.
+For a successful foreground `&&` chain, a failure message needs a runner
+record because the package test itself exited zero.
 
-A test script that nothing else in the command can write around is read whole.
-That holds behind a leading `cd dir &&` with a plain directory (not a computed
-one such as `"$(pwd)"`), with its output piped through a filter such as `tail`
-or `grep`, and before later steps that print nothing (`true`, `exit`, a plain
-`cd`, an assignment), that print their own words (`echo`, `printf`), or that
-are a test script themselves. A line that reads as a failure and that the
-command spells out itself is left out before the output is read, so
-`npm test; echo "FAILED=$?"` is no failure after a passing run. The two are
-compared without quote marks, capitals or colors, and with every number,
-variable and `$?` alike.
+When a filter drops the banners, another step can write into the same stream,
+or a different package can silence its banner, generic errors may belong to
+either step. The hook then looks for test-run evidence such as a runner's
+failure line, a failing TAP result, Node's spec failure or cancellation, or
+pnpm's failed-test footer. In compound commands it takes only identifiable
+test records from separately delivered stderr. A standalone test receives both
+streams. Shell substitutions, arbitrary wrappers and truncated output limit
+what the hook can attribute. A failure can go unreported if its only remaining
+diagnostic cannot be tied to a test.
 
-Otherwise other steps print into the same output, and some of them may not
-have run at all, as in `npm run build && npm test && npm run lint`. The test
-run is then cut out at the lines npm prints for its scripts. It starts at the
-first `pretest` or `test` line (`> name@1.0.0 test`) and ends at the first
-line of an npm script that comes later in the command. A later script that
-printed no line did not start.
-
-That is trusted only while every such line is there and nothing can write
-without one. Where it does not hold (the start cut off by `| tail`, a package
-manager that prints no lines, a later step that is not a plain
-`npm run <script>`, a step in the background, output cut in the middle), what
-is left counts only if it shows a failed test run: a runner's `FAIL` line that
-names a file, a failed count at the head of a vitest or jest summary line, a
-failing TAP result or node:test's count of failures, or the line pnpm ends
-with when the test script failed. A line with such a sign does not count when
-the command holds that line's words itself (the first two words of a `FAIL`
-line, the text the sign matched for the others):
-`npm run build && npm test || echo "FAILED - see build.log"` prints them
-whether or not the tests ran. One word of a sign elsewhere in the command, as
-in `| grep FAIL`, changes nothing. Output that arrives on a separate stderr is
-read with the test run on the same condition, since where its lines fall is
-not known.
-
-In a test script's output a failed node:test run counts as a failure too,
-although it prints neither `FAIL` nor `ERROR`. The check reads its TAP results
-(`not ok 1 - adds`, unless marked TODO or SKIP), its spec reporter's `✖` lines
-and its closing count, and pnpm's closing line for a failed test script. Where
-no line names a failure, the message lists the line the run closed with, a
-runner's summary line included.
-
-**Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
+**Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`,
+`src/enforcement/test-command.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
 
 ---
 

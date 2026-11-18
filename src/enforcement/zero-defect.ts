@@ -24,7 +24,15 @@ const TAP_FAILURE =
   /^[ \t]*not ok(?:[ \t]+\d+(?=[ \t]|$)|[ \t]+-[ \t])(?![^\n]*#[ \t]*(?:TODO|SKIP|todo|skip|Todo|Skip)\b)/m;
 
 // node:test's closing count of failed tests, in TAP and in its spec reporter.
-const NODE_FAILURE_COUNT = /^(?:# fail|ℹ fail) [1-9]/m;
+const NODE_FAILURE_COUNT = /^(?:#|ℹ) (?:fail|cancelled) [1-9]\d*\s*$/m;
+
+// The spec reporter repeats timed failures in its recap. A TODO carries a note
+// after the time, and other tools use the cross without a test duration.
+const SPEC_FAILURE = /^[ \t]*✖ [^\n]*\(\d+(?:\.\d+)?ms\)[ \t\r]*$/;
+// Successful results, TAP test titles and package-manager command echoes can
+// quote any diagnostic, including an entire failing test.
+const RESULT_METADATA = /^(?:[✓✔↓]\s|ok \d+\b|# Subtest: |PASS\s|\$ )/;
+const PACKAGE_DIAGNOSTIC = /\b(?:FAIL(?:ED)?|ERROR)\b|\b[1-9]\d* failed\b/;
 
 // The whole line pnpm ends with when the `test` script failed. For any other
 // script it prints "Command failed with exit code N".
@@ -39,7 +47,7 @@ const RUNNER_SUMMARY = /^[ \t]*(?:Test Files|Test Suites|Tests):?[ \t]+[1-9]\d* 
 // Color codes, which a tool prints when color is forced on.
 const COLOR_CODES = /\x1b\[[0-9;]*m/g;
 
-const TEST_RUN_SIGNS = [RUNNER_FAIL_LINE, RUNNER_SUMMARY, TAP_FAILURE, NODE_FAILURE_COUNT, PNPM_TEST_FAILED];
+const TEST_RUN_SIGNS = [RUNNER_FAIL_LINE, RUNNER_SUMMARY, TAP_FAILURE, SPEC_FAILURE, NODE_FAILURE_COUNT, PNPM_TEST_FAILED];
 
 // How a command writes a color code (`\033[31m`).
 const COLOR_NOTATION = /\\(?:033|e|x1[bB])\[[0-9;]*m/g;
@@ -81,14 +89,18 @@ export function comparable(text: string): string {
  * the other signs by the text they match (`not ok 1`, `Tests: 1 failed`).
  */
 export function showsFailedTestRun(output: string, saidByCommand = ''): boolean {
-  return output.replace(COLOR_CODES, '').split('\n').some(line =>
-    TEST_RUN_SIGNS.some(sign => {
-      const found = sign.exec(line);
-      if (!found) return false;
-      const words = sign === RUNNER_FAIL_LINE ? line.trim().split(/\s+/).slice(0, 2).join(' ') : found[0];
-      return !saidByCommand.includes(comparable(words));
-    }),
-  );
+  return output.split('\n').some(line => isTestFailureLine(line, saidByCommand));
+}
+
+export function isTestFailureLine(rawLine: string, saidByCommand = ''): boolean {
+  const line = rawLine.replace(COLOR_CODES, '');
+  return TEST_RUN_SIGNS.some(sign => {
+    const found = sign.exec(line);
+    if (!found) return false;
+    if (!saidByCommand) return true;
+    const words = sign === RUNNER_FAIL_LINE ? line.trim().split(/\s+/).slice(0, 2).join(' ') : found[0];
+    return !saidByCommand.includes(comparable(words));
+  });
 }
 
 /**
@@ -96,14 +108,8 @@ export function showsFailedTestRun(output: string, saidByCommand = ''): boolean 
  * it has always looked for, or as a sign of a failed test run.
  */
 export function readsAsFailure(line: string): boolean {
-  return FAILURE_PATTERNS.some(p => p.test(line)) || showsFailedTestRun(line);
+  return FAILURE_PATTERNS.some(p => p.test(line)) || isTestFailureLine(line);
 }
-
-// node:test's spec reporter names a failed test with its time, as it runs
-// (`✖ adds (1ms)`) and once more in a closing recap. A test marked TODO
-// carries a note after the time. Other tools use the mark too
-// (`✖ 3 problems`).
-const SPEC_FAILURE = /^✖ [^\n]*\(\d+(?:\.\d+)?ms\)$/;
 
 // What a failed run closes with. The last such line is listed when the output
 // names no failure, or when the lines that named them were cut off.
@@ -116,25 +122,37 @@ const CLOSING_LINE_PATTERNS = [NODE_FAILURE_COUNT, PNPM_TEST_FAILED, RUNNER_SUMM
  */
 function failureLines(testOutput: string, testRunSigns: boolean): string[] {
   const named: string[] = [];
-  const closing: string[] = [];
+  let closing: string | undefined;
+  let diagnostic: string | undefined;
   for (const rawLine of testOutput.split('\n')) {
-    // The lines this check has always listed are matched as they arrived.
+    const line = testRunSigns ? rawLine.replace(COLOR_CODES, '').trim() : rawLine.trim();
+    if (testRunSigns && RESULT_METADATA.test(line)) continue;
+    // TAP directives and the spec reporter's TODO annotation decide the
+    // result even when the test name itself contains an error message.
+    if (testRunSigns && /^not ok[ \t]/.test(line)) {
+      if (TAP_FAILURE.test(line)) named.push(line);
+      continue;
+    }
+    if (testRunSigns && line.startsWith('✖ ')) {
+      if (SPEC_FAILURE.test(line) && !named.includes(line)) named.push(line);
+      continue;
+    }
     if (FAILURE_LINE_PATTERNS.some(p => p.test(rawLine))) {
-      named.push(rawLine.trim());
+      named.push(line);
       continue;
     }
     if (!testRunSigns) continue;
-    const line = rawLine.replace(COLOR_CODES, '').trim();
-    if (TAP_FAILURE.test(line) || RUNNER_FAIL_LINE.test(line)) {
+    if (RUNNER_FAIL_LINE.test(line)) {
       named.push(line);
-    } else if (SPEC_FAILURE.test(line)) {
-      // The spec reporter's closing recap repeats a line already listed.
-      if (!named.includes(line)) named.push(line);
     } else if (CLOSING_LINE_PATTERNS.some(p => p.test(line))) {
-      closing.push(line);
+      closing = line;
+    } else if (!diagnostic && PACKAGE_DIAGNOSTIC.test(rawLine)) {
+      diagnostic = line;
     }
   }
-  return named.length > 0 ? named : closing.slice(-1);
+  if (named.length) return named;
+  const fallback = closing ?? diagnostic;
+  return fallback ? [fallback] : [];
 }
 
 /**
@@ -202,10 +220,14 @@ export function classifyFailures(
   changedFiles: string[],
   testRunSigns = false,
 ): ClassifiedFailure {
+  return classifyLines(failureLines(testOutput, testRunSigns), changedFiles);
+}
+
+function classifyLines(failures: string[], changedFiles: string[]): ClassifiedFailure {
   const regressions: string[] = [];
   const preExisting: string[] = [];
 
-  for (const line of failureLines(testOutput, testRunSigns)) {
+  for (const line of failures) {
     const filePath = extractFilePath(line);
     if (!filePath) {
       // Can't classify without a file path — treat as regression
@@ -249,9 +271,9 @@ export function checkZeroDefect(
   const tolerance = config.rules.zero_defect?.tolerance ?? 'strict';
   const unrelatedErrors = config.rules.zero_defect?.unrelated_errors ?? 'block';
 
-  const hasFailure =
-    FAILURE_PATTERNS.some(p => p.test(testOutput)) || (testRunSigns && showsFailedTestRun(testOutput));
-  if (!hasFailure) return null;
+  if (!testRunSigns && !FAILURE_PATTERNS.some(p => p.test(testOutput))) return null;
+  const failures = failureLines(testOutput, testRunSigns);
+  if (testRunSigns && !failures.length) return null;
 
   // During tdd+/sdd+, failing tests are expected (RED). Cap the level at
   // advisory so the loop isn't blocked on every RED run; the message formatters
@@ -261,11 +283,11 @@ export function checkZeroDefect(
 
   // No changed files provided — use original behavior
   if (!changedFiles) {
-    return formatViolation(testOutput, effectiveTolerance, testRunSigns);
+    return formatViolation(failures, effectiveTolerance);
   }
 
   // Classify failures
-  const { regressions, preExisting } = classifyFailures(testOutput, changedFiles, testRunSigns);
+  const { regressions, preExisting } = classifyLines(failures, changedFiles);
 
   // No regressions — check pre-existing handling
   if (regressions.length === 0) {
@@ -274,7 +296,7 @@ export function checkZeroDefect(
       return formatPreExistingMessage(preExisting);
     }
     // block: fall through to format all as violations
-    return formatViolation(testOutput, effectiveTolerance, testRunSigns);
+    return formatViolation(failures, effectiveTolerance);
   }
 
   // Has regressions — always block on those
@@ -294,9 +316,7 @@ export function checkZeroDefect(
   };
 }
 
-function formatViolation(testOutput: string, tolerance: string, testRunSigns: boolean): EnforcementViolation {
-  const failures = failureLines(testOutput, testRunSigns);
-
+function formatViolation(failures: string[], tolerance: string): EnforcementViolation {
   const level = tolerance === 'strict' ? 'block' : 'advise';
   const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
 

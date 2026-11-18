@@ -446,6 +446,27 @@ describe('checkZeroDefect on the output of a package test script', () => {
     expect(result?.message).not.toContain('rounds');
   });
 
+  it('treats checked test titles as passing even when they quote a real diagnostic', () => {
+    const green = "   \x1b[32m✓\x1b[0m reports error TS2322 and FAIL 324ms";
+    expect(check(green)).toBeNull();
+    const mixed = check(green + '\n FAIL  tests/sum.test.ts > adds');
+    expect(mixed?.message).toContain('1 failure(s) found');
+    expect(mixed?.message).not.toContain('TS2322');
+  });
+
+  it('respects TODO results whose titles quote errors in either Node reporter', () => {
+    expect(check('not ok 1 - handles ERROR output # TODO\n# fail 0')).toBeNull();
+    expect(check('✖ handles ERROR output (0.51ms) # TODO\nℹ fail 0')).toBeNull();
+  });
+
+  it.each([
+    ['✖ waits for message (1.2ms)\nℹ fail 0\nℹ cancelled 1', '✖ waits for message (1.2ms)'],
+    ['✖ adds (1ms)', '✖ adds (1ms)'],
+    ['ℹ fail 0\nℹ cancelled 1', 'ℹ cancelled 1'],
+  ])('reports a cancelled or filtered spec run: %j', (output, expected) => {
+    expect(check(output)?.message).toContain(expected);
+  });
+
   it('does not list what another tool marks with ✖', () => {
     // eslint closes with such a line. A test script can run it before its tests.
     const result = check(`✖ 1 problem (1 error, 0 warnings)\n${tapFailed}`);

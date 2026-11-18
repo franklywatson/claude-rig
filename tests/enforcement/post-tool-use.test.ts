@@ -521,6 +521,53 @@ describe('handlePostToolUse', () => {
   const failed = (command: string, ...lines: string[]) =>
     handlePostToolUseFailure('Bash', { command }, lines.join('\n'), cache, config);
 
+  it('checks each test lifecycle and excludes diagnostics from the build between them', () => {
+    const result = failed('npm test; npm run build; cd packages/web && npm test',
+      ...nodeTest, ...tapFailed, ...buildOk, 'ERROR unrelated build diagnostic',
+      '> web@1.0.0 pretest', '> tsc --noEmit', typeError);
+    expect(result?.message).toContain('2 failure(s) found');
+    expect(result?.message).toContain('not ok 1 - adds');
+    expect(result?.message).toContain(typeError);
+    expect(result?.message).not.toContain('build diagnostic');
+  });
+
+  it('allows a later package to run lint silently', () => {
+    expect(failed('npm test && cd packages/web && npm run lint', ...nodeTest, ...tapPassed, typeError)).toBeNull();
+  });
+
+  it('attributes a second test banner to the new package before a conditional lint', () => {
+    const result = failed('npm test && cd packages/web && npm test && npm run lint',
+      ...nodeTest, ...tapPassed, '> web@1.0.0 test', '> tsc --noEmit', typeError);
+    expect(result?.message).toContain(typeError);
+  });
+
+  it('keeps a pnpm test diagnostic with its own script', () => {
+    const result = failed('pnpm run build; pnpm test',
+      '$ node build.cjs', 'ERROR build.config.json: missing', '$ tsc --noEmit', typeError,
+      '[ELIFECYCLE] Test failed. See above for more details.');
+    expect(result?.message).toContain(typeError);
+    expect(result?.message).not.toContain('build.config.json');
+  });
+
+  it('reads a real pretest after a helper with pretest in its filename', () => {
+    const result = failed('node scripts/pretest-env.cjs && npm test',
+      'environment ready', '> demo@1.0.0 pretest', '> tsc --noEmit', typeError);
+    expect(result?.message).toContain(typeError);
+  });
+
+  it('keeps npm’s echoed test arguments out of the test results', () => {
+    const command = "npm test -- --test-name-pattern='warns|ERROR'";
+    const stdout = '> demo@1.0.0 test\n> node --test --test-name-pattern=warns|ERROR\n✔ warns (1ms)\nℹ pass 1';
+    expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, { stdout })).toBeNull();
+  });
+
+  it('uses the successful Bash status when a closing echo runs only after passing tests', () => {
+    const command = 'npm test && echo "no ERROR in $PWD"';
+    const stdout = [...nodeTest, ...tapPassed, 'no ERROR in /workspace/web'].join('\n');
+    expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, { stdout })).toBeNull();
+    expect(failed(command, ...nodeTest, typeError)?.message).toContain(typeError);
+  });
+
   describe('a failing node:test run started through a package script', () => {
     // `assert.equal(2 + 2, 5)` with the default message: the output holds no
     // FAIL, ERROR or "N failed" for the check to find.
@@ -1211,6 +1258,15 @@ describe('handlePostToolUse', () => {
       const result = run('npm run build; npm test || true', vitestStdout.slice(0, -2), vitestStderr);
       expect(result?.level).toBe('block');
       expect(result?.message).toContain('FAIL  tests/sum.test.ts > adds');
+    });
+
+    it('includes only runner evidence from a separate, shared stderr', () => {
+      const result = run('npm run build; npm test | tee test.log',
+        [...buildLine, ...nodeTest, ...tapFailed],
+        ['ERROR build.config.json: missing', ' FAIL  tests/other.test.ts > subtracts']);
+      expect(result?.message).toContain('not ok 1 - adds');
+      expect(result?.message).toContain('tests/other.test.ts');
+      expect(result?.message).not.toContain('build.config.json');
     });
 
     it('leaves out what the command echoes to stderr itself', () => {
