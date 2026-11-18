@@ -546,7 +546,8 @@ being trusted. Build failures carry an `errorReason` (timeout vs AST
 recursion vs missing CLI), rendered as `build failed (<reason>)` at session
 start. Stats capture is timeout-bounded and warns on `GRAPH_REPORT.md`
 format drift; building a graph via `Bash(graphify update <dir>)` also
-triggers per-project stats capture in the PostToolUse hook.
+triggers per-project stats capture in the PostToolUse hook (see "Per-project
+stats" below for the paths it skips).
 
 **Confidence levels:** Graph edges carry confidence labels — `EXTRACTED`
 (verified by AST analysis), `INFERRED` (heuristic), `AMBIGUOUS`. Session-start
@@ -562,7 +563,13 @@ exist). `ScoutCache` with 30-min TTL prevents redundant indexing.
 as `Record<string, GraphifyProjectStats>`. The CWD project stats are captured at
 session start. External directory stats are captured when `mcp__jcodemunch__index_folder`
 is called on a non-CWD directory — the post-tool-use hook triggers a graphify build
-if needed and stores the results. The `/savings` skill reports all projects.
+if needed and stores the results. The capture places the directory inside
+double-quoted shell commands, so it is skipped for a path that contains a double
+quote, `$`, a backtick, `%`, `!` or an ASCII control character, ends with a backslash,
+contains a doubled backslash (outside Windows), or starts with `-` as given or
+once normalized. The same check applies to `mcp__jcodemunch__resolve_repo` and
+to the directory text matched from a Bash `graphify update <dir>`.
+The `/savings` skill reports all projects.
 
 **Entry point detection:** Derives from filename patterns: `index.*`, `main.*`, `cli.*`, `app.*`, `server.*`.
 

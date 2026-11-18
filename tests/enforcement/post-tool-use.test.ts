@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { handlePostToolUse, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
+import { handlePostToolUse, isShellQuotablePath, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
 import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
 import { SessionCache } from '../../src/session/cache.js';
@@ -412,6 +412,79 @@ describe('handlePostToolUse', () => {
     expect(cache.getGraphifyStats('/external/unreachable')).toBeUndefined();
   });
 
+  it.each<[string, string, Record<string, unknown>]>([
+    ['index_folder path', 'mcp__jcodemunch__index_folder', { path: '/external/a$b' }],
+    ['index_folder folder_path', 'mcp__jcodemunch__index_folder', { folder_path: '/external/a%b' }],
+    ['index_folder path that is not a string', 'mcp__jcodemunch__index_folder', { path: 42 }],
+    ['index_folder path ending in a backslash', 'mcp__jcodemunch__index_folder', { path: 'C:\\external\\proj\\' }],
+    ['index_folder path starting with a hyphen', 'mcp__jcodemunch__index_folder', { path: '-x/../external' }],
+    ['resolve_repo path', 'mcp__jcodemunch__resolve_repo', { path: '/external/a"b' }],
+    ['double-quoted Bash graphify update', 'Bash', { command: 'graphify update "/external/a$b"' }],
+    ['single-quoted Bash graphify update', 'Bash', { command: "graphify update '/external/a\"b'" }],
+    ['unquoted Bash graphify update', 'Bash', { command: 'graphify update /external/a%b' }],
+    ['unquoted Bash operand that ends in a backslash', 'Bash', { command: 'graphify update /external/my\\ dir' }],
+    ['index_folder path with an exclamation mark', 'mcp__jcodemunch__index_folder', { path: '/external/a!b' }],
+  ])('runs no capture command when the path is not shell-quotable: %s', (_label, tool, args) => {
+    const calls: string[] = [];
+    const exec = (cmd: string) => { calls.push(cmd); return ''; };
+
+    handlePostToolUse(tool, args, tracker, cache, config, exec);
+
+    expect(calls).toEqual([]);
+  });
+
+  it('applies the doubled-backslash rule of the platform the hook runs on', () => {
+    const calls: string[] = [];
+    const exec = (cmd: string) => { calls.push(cmd); throw new Error('not found'); };
+
+    handlePostToolUse('mcp__jcodemunch__index_folder', { path: '/external/a\\\\b' }, tracker, cache, config, exec);
+
+    // Skipped where the hook's shell is /bin/sh, captured where it is cmd.exe.
+    expect(calls.length === 0).toBe(process.platform !== 'win32');
+  });
+
+  it('still captures stats for a safe external path with a space and ampersand', () => {
+    const report = '- 10 nodes · 20 edges · 3 communities detected';
+    const calls: string[] = [];
+    const exec = (cmd: string) => {
+      calls.push(cmd);
+      if (cmd.includes('test -f')) throw new Error('not found');
+      if (cmd.includes('graphify update')) return '';
+      if (cmd.includes('GRAPH_REPORT.md')) return report;
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    handlePostToolUse(
+      'mcp__jcodemunch__index_folder',
+      { path: '/external/R&D proj' },
+      tracker,
+      cache,
+      config,
+      exec,
+    );
+
+    expect(calls.some(c => c.includes('graphify update'))).toBe(true);
+    expect(cache.getGraphifyStats('/external/R&D proj')?.nodes).toBe(10);
+  });
+
+  it.each<[string, string, Record<string, unknown>, string]>([
+    ['index_folder folder_path', 'mcp__jcodemunch__index_folder', { folder_path: '/external/via folder' }, '/external/via folder'],
+    ['a single-quoted Bash graphify update', 'Bash', { command: "graphify update '/external/quoted dir'" }, '/external/quoted dir'],
+    ['a double-quoted Bash graphify update followed by a semicolon', 'Bash', { command: 'graphify update "/external/semi dir"; echo done' }, '/external/semi dir'],
+  ])('still captures stats through %s', (_label, tool, args, dir) => {
+    const report = '- 10 nodes · 20 edges · 3 communities detected';
+    const exec = (cmd: string) => {
+      if (cmd.includes('test -f')) throw new Error('not found');
+      if (cmd.includes('graphify update')) return '';
+      if (cmd.includes('GRAPH_REPORT.md')) return report;
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    handlePostToolUse(tool, args, tracker, cache, config, exec);
+
+    expect(cache.getGraphifyStats(dir)?.nodes).toBe(10);
+  });
+
   describe('stale-test detection across hook processes (turn model)', () => {
     // Hooks run as separate processes: every invocation builds a FRESH
     // FileTracker. A "turn" is one PostToolUse Edit/Write invocation, counted
@@ -657,5 +730,75 @@ describe('handlePostToolUse', () => {
         expect(trackerPhases).toContain(phase);
       }
     });
+  });
+});
+
+// The guard decides whether a tool-supplied path may be placed inside the
+// double-quoted stats-capture commands. Allowed characters must not change the
+// command on either /bin/sh or cmd.exe.
+describe('isShellQuotablePath', () => {
+  it.each([
+    ['a plain absolute path', '/ext/project'],
+    ['a space', '/ext/my project'],
+    ['an ampersand', '/ext/R&D'],
+    ['a pipe', '/ext/a|b'],
+    ['a semicolon', '/ext/a;b'],
+    ['a single quote', "/ext/o'brien"],
+    ['parentheses', '/ext/proj (1)'],
+    ['a backslash that is not last', 'C:\\ext\\project'],
+    ['a non-ASCII letter', '/ext/caf\u00e9'],
+    ['a hyphen that is not leading', '/ext/-inner/-x'],
+  ])('allows %s', (_label, path) => {
+    expect(isShellQuotablePath(path)).toBe(true);
+  });
+
+  it.each([
+    ['a double quote', '/ext/a"b'],
+    ['a dollar sign', '/ext/a$b'],
+    ['a backtick', '/ext/a`b'],
+    ['a percent sign', '/ext/a%b'],
+    ['an exclamation mark', '/ext/a!b'],
+    ['a newline', '/ext/a\nb'],
+    ['a carriage return', '/ext/a\rb'],
+    ['a tab', '/ext/a\tb'],
+    ['a NUL', '/ext/a\u0000b'],
+    ['the last C0 control character', '/ext/a\u001fb'],
+    ['a DEL', '/ext/a\u007fb'],
+    ['a trailing backslash', 'C:\\ext\\project\\'],
+    ['a trailing backslash without a drive letter', '/ext/project\\'],
+    ['a leading hyphen', '-x/ext'],
+    ['a leading hyphen behind ./', './-x/ext'],
+    ['a leading hyphen behind a parent segment', 'a/../-x/ext'],
+    ['a leading hyphen that normalizing removes', '-x/../ext'],
+  ])('rejects %s', (_label, path) => {
+    expect(isShellQuotablePath(path)).toBe(false);
+  });
+
+  it.each([
+    ['undefined', undefined],
+    ['null', null],
+    ['a number', 42],
+    ['an empty string', ''],
+  ])('rejects %s', (_label, value) => {
+    expect(isShellQuotablePath(value)).toBe(false);
+  });
+
+  it('rejects every C0 control character and DEL', () => {
+    const controls = [...Array.from({ length: 0x20 }, (_, code) => code), 0x7f];
+    for (const code of controls) {
+      expect(isShellQuotablePath(`/ext/a${String.fromCharCode(code)}b`)).toBe(false);
+    }
+  });
+
+  // /bin/sh reads a doubled backslash inside double quotes as one, so the
+  // command would name a different directory. cmd.exe keeps both.
+  it.each(['linux', 'darwin'] as const)('rejects a doubled backslash on %s', (platform) => {
+    expect(isShellQuotablePath('/ext/a\\\\b', platform)).toBe(false);
+    expect(isShellQuotablePath('\\\\host\\share\\proj', platform)).toBe(false);
+  });
+
+  it('allows a doubled backslash on win32, where UNC paths start with one', () => {
+    expect(isShellQuotablePath('\\\\host\\share\\proj', 'win32')).toBe(true);
+    expect(isShellQuotablePath('C:\\ext\\\\proj', 'win32')).toBe(true);
   });
 });
