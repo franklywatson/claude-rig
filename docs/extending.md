@@ -75,19 +75,19 @@ export function checkSecrets(
 The hook that `rig init` installs (`.claude/hooks/scripts/post-tool-use.ts`)
 does not contain the checks itself — it parses stdin, loads `.harness.yaml`,
 delegates to rig's compiled `handlePostToolUse` (which runs the built-in
-pipeline and returns one merged `EnforcementViolation | null`), and emits the
+pipeline and returns one merged `EnforcementViolation | null`; a failed tool
+call goes to `handlePostToolUseFailure` instead, with `isFailure` set), and emits the
 result: block → stderr + exit 2, advise → agent-visible `additionalContext`
 JSON. The seam for a custom check is the generated hook script, around that
 `handlePostToolUse` call — run your check there and merge by level:
 
 ```typescript
-// In .claude/hooks/scripts/post-tool-use.ts (the generated file), after:
-//   const result = handlePostToolUse(input.tool_name, input.tool_input,
-//     tracker, cache, config, execFn, input.tool_response);
+// In .claude/hooks/scripts/post-tool-use.ts (the generated file), after the
+// statement that assigns `result` (the `handlePostToolUse` call):
 import { checkSecrets } from './check-secrets.js';
 
 let custom: EnforcementViolation | null = null;
-if (input.tool_name === 'Edit' || input.tool_name === 'Write') {
+if (!isFailure && (input.tool_name === 'Edit' || input.tool_name === 'Write')) {
   const filePath = String(input.tool_input?.file_path ?? '');
   const content = String(
     input.tool_input?.content ?? input.tool_input?.new_string ?? '',
@@ -106,7 +106,7 @@ if (violations.length > 0) {
   }
   console.log(JSON.stringify({
     hookSpecificOutput: {
-      hookEventName: 'PostToolUse',
+      hookEventName: isFailure ? 'PostToolUseFailure' : 'PostToolUse',
       additionalContext: message,
     },
   }));

@@ -272,6 +272,7 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
   const hookRegistrations: Record<string, string> = {
     PreToolUse: 'pre-tool-use.ts',
     PostToolUse: 'post-tool-use.ts',
+    PostToolUseFailure: 'post-tool-use.ts',
     SessionStart: 'session-start.ts',
   };
 

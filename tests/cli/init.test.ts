@@ -259,6 +259,30 @@ describe('initCommand', () => {
     expect(settings.hooks.SessionStart.length).toBe(1);
   });
 
+  it('registers one failure hook with the quoted post-tool-use script path across re-init', async () => {
+    const settingsPath = join(tempDir, '.claude', 'settings.json');
+    for (let run = 0; run < 2; run++) {
+      await initCommand(tempDir, { force: false });
+      const entries = JSON.parse(readFileSync(settingsPath, 'utf-8')).hooks.PostToolUseFailure;
+      expect(entries).toHaveLength(1);
+      expect(entries[0].hooks).toHaveLength(1);
+      expect(entries[0].hooks[0].command).toContain('"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts"');
+    }
+  });
+
+  it('keeps a user-defined failure hook beside the rig one', async () => {
+    const claudeDir = join(tempDir, '.claude');
+    mkdirSync(claudeDir, { recursive: true });
+    const own = { matcher: 'Bash', hooks: [{ type: 'command', command: 'my-own-hook.sh' }] };
+    writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify({ hooks: { PostToolUseFailure: [own] } }));
+
+    await initCommand(tempDir, { force: false });
+
+    const entries = JSON.parse(readFileSync(join(claudeDir, 'settings.json'), 'utf-8')).hooks.PostToolUseFailure;
+    expect(entries).toHaveLength(2);
+    expect(entries[0]).toEqual(own);
+  });
+
   it('creates verify-harness skill', async () => {
     await initCommand(tempDir, { force: false });
     expect(existsSync(join(tempDir, '.claude', 'skills', 'verify-harness', 'SKILL.md'))).toBe(true);
@@ -345,7 +369,7 @@ describe('initCommand', () => {
 
     const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'post-tool-use.ts'), 'utf-8');
     expect(content).toContain('additionalContext');
-    expect(content).toContain("hookEventName: 'PostToolUse'");
+    expect(content).toContain("hookEventName: isFailure ? 'PostToolUseFailure' : 'PostToolUse'");
     // Exit 2 must be gated on the structured result level, never on message
     // text (which can embed the literal '[BLOCK]' from tool output)
     expect(content).toContain("result.level === 'block'");

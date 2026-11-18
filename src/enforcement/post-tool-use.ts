@@ -65,6 +65,38 @@ export function handlePostToolUse(
   );
 }
 
+function checkTestCommandOutput(
+  command: string,
+  output: string | undefined,
+  cache: SessionCache,
+  config: HarnessConfig,
+): EnforcementViolation | null {
+  if (!command || !output || !/vitest|jest|pytest|mocha/.test(command)) return null;
+  const changedFiles = cache.getChangedFiles();
+  return checkZeroDefect(
+    output,
+    config,
+    changedFiles.length > 0 ? changedFiles : undefined,
+    cache.getCurrentPhase(),
+  );
+}
+
+/**
+ * PostToolUseFailure handler. A failed Bash call carries its output in the
+ * payload's `error` field. Runs only the zero-defect check and writes nothing
+ * to the session cache, so a failed Edit or Write is never tracked as an edit.
+ */
+export function handlePostToolUseFailure(
+  tool: string,
+  args: Record<string, unknown>,
+  error: unknown,
+  cache: SessionCache,
+  config: HarnessConfig,
+): EnforcementViolation | null {
+  if (tool !== 'Bash' || typeof error !== 'string' || !error) return null;
+  return checkTestCommandOutput(args.command as string, error, cache, config);
+}
+
 function runPostToolChecks(
   tool: string,
   args: Record<string, unknown>,
@@ -154,23 +186,9 @@ function runPostToolChecks(
 
   // Zero-defect check on test command output
   if (tool === 'Bash') {
-    const command = args.command as string;
     const output = extractBashOutput(toolResponse, args);
-
-    if (command && output) {
-      // Check if this was a test run
-      const isTestCommand = /vitest|jest|pytest|mocha/.test(command);
-      if (isTestCommand) {
-        const changedFiles = cache.getChangedFiles();
-        const zeroDefect = checkZeroDefect(
-          output,
-          config,
-          changedFiles.length > 0 ? changedFiles : undefined,
-          cache.getCurrentPhase(),
-        );
-        if (zeroDefect) violations.push(zeroDefect);
-      }
-    }
+    const zeroDefect = checkTestCommandOutput(args.command as string, output, cache, config);
+    if (zeroDefect) violations.push(zeroDefect);
   }
 
   // Capture graphify stats for external directories accessed via jcodemunch

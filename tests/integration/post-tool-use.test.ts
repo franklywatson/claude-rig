@@ -42,11 +42,55 @@ describe('PostToolUse hook E2E', () => {
     // (tempDir, SESSION_ID) — remove the exact paths so /tmp doesn't
     // accumulate fixtures. Never glob-delete: real sessions own sibling
     // cache files.
-    for (const path of [sessionCachePath(tempDir, SESSION_ID), sessionCachePath(tempDir)]) {
+    for (const path of [SESSION_ID, undefined, 'failed-edit', 'failed-tdd'].map(id => sessionCachePath(tempDir, id))) {
       if (existsSync(path)) unlinkSync(path);
     }
     rmSync(tempDir, { recursive: true, force: true });
   });
+
+  const failedTest = {
+    hook_event_name: 'PostToolUseFailure', session_id: SESSION_ID, is_interrupt: false,
+    tool_name: 'Bash', tool_input: { command: 'npx vitest run tests/foo.test.ts' },
+    error: 'Exit code 1\nFAIL tests/foo.test.ts\nTests: 1 failed',
+  };
+
+  it('blocks a failed vitest call using the error field', async () => {
+    const result = await runHook(hookPath, failedTest, tempDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('ZERO-DEFECT');
+  }, HOOK_TIMEOUT);
+
+  it('ignores a failed command that is not a test run, even when its output says FAIL', async () => {
+    const result = await runHook(hookPath, {
+      ...failedTest, tool_input: { command: 'grep foo bar' }, error: 'Exit code 2\nFAIL: not a test run',
+    }, tempDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+  }, HOOK_TIMEOUT);
+
+  // In live sessions an Edit whose text is not found is rejected before any
+  // hook runs. This payload stands for a failure after the tool has started.
+  it('leaves no session cache after a failed edit', async () => {
+    const result = await runHook(hookPath, {
+      ...failedTest, session_id: 'failed-edit', tool_name: 'Edit', error: 'String not found',
+      tool_input: { file_path: 'src/foo.ts', old_string: 'a', new_string: 'b' },
+    }, tempDir);
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(sessionCachePath(tempDir, 'failed-edit'))).toBe(false);
+  }, HOOK_TIMEOUT);
+
+  it('advises on the failure event during tdd+', async () => {
+    const session_id = 'failed-tdd';
+    const skill = await runHook(hookPath, {
+      session_id, hook_event_name: 'PostToolUse', tool_name: 'Skill', tool_input: { skill: 'tdd-plus' },
+    }, tempDir);
+    expect(skill.exitCode).toBe(0);
+    const result = await runHook(hookPath, { ...failedTest, session_id }, tempDir);
+    expect(result.exitCode).toBe(0);
+    const { hookSpecificOutput } = JSON.parse(result.stdout);
+    expect(hookSpecificOutput.hookEventName).toBe('PostToolUseFailure');
+    expect(hookSpecificOutput.additionalContext).toContain('ZERO-DEFECT');
+  }, HOOK_TIMEOUT);
 
   it('exits 0 for non-test source file edit', async () => {
     const result = await runHook(hookPath, {

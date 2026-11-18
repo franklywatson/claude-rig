@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { handlePostToolUse, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
+import { handlePostToolUse, handlePostToolUseFailure, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
 import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
 import { SessionCache } from '../../src/session/cache.js';
@@ -47,6 +47,31 @@ describe('handlePostToolUse', () => {
     expect(tracker.getStaleSources()).toEqual(
       expect.arrayContaining([expect.objectContaining({ file: 'src/router/rules.ts' })]),
     );
+  });
+
+  describe('handlePostToolUseFailure', () => {
+    const command = 'npx vitest run';
+    const error = 'Exit code 1\nFAIL tests/foo.test.ts\nTests: 1 failed';
+
+    it('blocks failed tests outside tdd+ and advises during tdd+', () => {
+      expect(handlePostToolUseFailure('Bash', { command }, error, cache, config)?.level).toBe('block');
+      cache.setPhase('tdd+');
+      expect(handlePostToolUseFailure('Bash', { command }, error, cache, config)?.level).toBe('advise');
+    });
+
+    it('ignores other tools and non-test commands', () => {
+      expect(handlePostToolUseFailure('Edit', { command }, error, cache, config)).toBeNull();
+      expect(handlePostToolUseFailure('Bash', { command: 'grep foo bar' }, error, cache, config)).toBeNull();
+    });
+
+    it.each([undefined, 1, '', {}])('ignores error %s even with legacy output', (invalid) => {
+      expect(handlePostToolUseFailure('Bash', { command, output: error }, invalid, cache, config)).toBeNull();
+    });
+
+    it('classifies a failure in a changed file as a regression', () => {
+      cache.setChangedFiles(['tests/foo.test.ts']);
+      expect(handlePostToolUseFailure('Bash', { command }, error, cache, config)?.message).toContain('REGRESSION');
+    });
   });
 
   it('checks zero-defect on Bash test commands (legacy tool_input.output fallback)', () => {

@@ -270,6 +270,9 @@ error. A fourth check, **test scope**, runs in the PreToolUse hook: during
 `tdd+`/`sdd+` phases a full-suite run (e.g. `npm test`) gets a scoped-run
 suggestion before it executes.
 
+A Bash command that exits non-zero reaches the same script through the
+`PostToolUseFailure` event. For that event only the zero-defect check runs.
+
 ### Session Start: Auto-indexing
 
 When a Claude Code session starts, the session-start hook:
@@ -298,7 +301,7 @@ absent from your file.
 what rig installed:
 
 1. In `.claude/settings.json`, remove the hook commands under
-   `hooks.PreToolUse`, `hooks.PostToolUse`, and `hooks.SessionStart` that run
+   `hooks.PreToolUse`, `hooks.PostToolUse`, `hooks.PostToolUseFailure`, and `hooks.SessionStart` that run
    `pre-tool-use.ts`, `post-tool-use.ts`, or `session-start.ts` from
    `.claude/hooks/scripts/`. Leave any other hooks in those arrays in place.
 2. Delete the files rig generated. Hook scripts carry `@rig-generated`;
