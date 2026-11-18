@@ -2,7 +2,8 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
-import { initCommand } from '../../src/cli/init.js';
+import { fileURLToPath } from 'node:url';
+import { initCommand, hookImportBase } from '../../src/cli/init.js';
 import type { ExecFn } from '../../src/session/environment.js';
 
 describe('initCommand', () => {
@@ -275,6 +276,31 @@ describe('initCommand', () => {
       // Should NOT use createRequire (breaks with ESM in some Node versions)
       expect(content).not.toContain('createRequire');
     }
+  });
+
+  it('uses file URLs for every generated hook import', async () => {
+    await initCommand(tempDir, { force: false });
+
+    const hooksDir = join(tempDir, '.claude', 'hooks', 'scripts');
+    for (const hook of ['pre-tool-use.ts', 'post-tool-use.ts', 'session-start.ts']) {
+      const content = readFileSync(join(hooksDir, hook), 'utf-8');
+      const imports = [...content.matchAll(/await import\('([^']+)'\)/g)];
+      expect(imports.length).toBeGreaterThan(0);
+      for (const [, specifier] of imports) {
+        expect(specifier).toMatch(/^file:\/\//);
+        expect(specifier).not.toContain('\\');
+        expect(specifier).toMatch(/\.js$/);
+      }
+    }
+  });
+
+  it('renders an import base that survives a single-quoted string', () => {
+    // Characters that broke the generated import on some install paths
+    const dir = resolve("/opt/it's a rig/we#ird 100%/what?/dist");
+    const base = hookImportBase(dir);
+    expect(base).toMatch(/^file:\/\//);
+    expect(base).not.toMatch(/['\\ #?]/);
+    expect(fileURLToPath(base)).toBe(dir);
   });
 
   it('generates hook scripts that use constructors with cwd, not load/save', async () => {
