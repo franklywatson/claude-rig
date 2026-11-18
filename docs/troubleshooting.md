@@ -5,46 +5,61 @@
 ### Symptom
 
 When running `/savings` or any skill that reads session cache files, you get
-permission prompts for `Bash(ls /tmp/rig-session-*.json)`,
-`Read(/tmp/rig-session-*.json)`, or similar — even after running `rig init`.
+permission prompts for `ls /tmp/rig-session-*.json`, for reading a
+`/tmp/rig-session-*.json` file, or similar — even after running `rig init`.
 
 ### Cause
 
-Earlier versions of `rig init` only auto-allowed `Bash(cat /tmp/rig-session-*)`
-but not the `ls` listing step or `Read` tool reads of those same files. The
-savings skill's own procedure uses all three. The README's claim that this was
-"auto-permissioned" was incomplete.
+Session-cache allow entries are opt-in. Plain `rig init` and `rig init --force`
+add no allow entries.
+
+Earlier versions wrote the two `Read` entries with one leading slash. In project
+settings Claude Code reads that form as a path inside the project, so those entries
+did not match the session cache. The entries below use two slashes, which is an
+absolute path. The one-slash entries can be deleted.
 
 ### Diagnosis
 
-Starting in rig 0.3.5+, the session-start hook emits this warning when
-`.claude/settings.json` is missing any required entries:
+When the project settings file can be read and parsed, the session-start hook checks the
+combined allow list. If required entries are missing, it lists them in a warning.
 
 ```
 [WARNING] .claude/settings.json is missing rig-required permission entries.
-  Missing: Bash(ls /tmp/rig-session-*), Read(/tmp/rig-session-*.json)
-  Fix: rig init --force
+  Missing: Read(//tmp/rig-session-*.json), Read(//private/tmp/rig-session-*.json)
+  Fix: rig init --broad-permissions
 ```
 
-To check manually, look at `.claude/settings.json` and confirm `permissions.allow`
-contains all of:
+To check manually, look for each of these entries in `permissions.allow` across
+`.claude/settings.json`, `.claude/settings.local.json`, and `~/.claude/settings.json`.
 
 - `mcp__jcodemunch__*`
 - `mcp__graphify__*`
 - `Bash(cat /tmp/rig-session-*)`
 - `Bash(ls /tmp/rig-session-*)`
-- `Read(/tmp/rig-session-*.json)`
-- `Read(/private/tmp/rig-session-*.json)` *(macOS: /tmp resolves to /private/tmp before permission matching)*
+- `Read(//tmp/rig-session-*.json)`
+- `Read(//private/tmp/rig-session-*.json)` *(macOS: /tmp resolves to /private/tmp before permission matching)*
 - `Bash(npx:*)`
 
 ### Fix
 
 ```bash
-rig init --force
+rig init --broad-permissions
 ```
 
-`rig init --force` is idempotent — it only adds missing entries and preserves
-existing user customizations (other allow entries, deny rules, hook configs).
+`rig init --broad-permissions` is idempotent for allow entries. It adds missing
+entries to the project's allow list and preserves existing ones.
+
+The flag adds more than the entries listed above: it also pre-authorizes the
+broader shell patterns in the README's [Permissions](../README.md#permissions)
+section, such as `Bash(node:*)` and `Bash(npm:*)`. To allow only the entries
+above, add them to `permissions.allow` by hand.
+
+With these entries, in a session where you have trusted the folder, reading a
+cache file with the Read tool or `cat` no longer prompts. Listing with
+`ls /tmp/rig-session-*.json` can still prompt, because a listing needs read
+access to `/tmp` itself and rig does not pre-authorize that. Approve that prompt,
+or add a wider rule yourself (for example `Read(//tmp/**)`) if you accept Claude
+reading everything in `/tmp`.
 
 ## Enforcement level not matching `.harness.yaml`
 

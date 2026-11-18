@@ -234,6 +234,14 @@ describe('skill templates — savings aggregation', () => {
     expect(content).toMatch(/`updatedAt` predates the anchor/);
     expect(content).toContain('older than 24 hours');
   });
+
+  it('savings names the opt-in flag for the session-cache allow entries', () => {
+    const content = read('skills/savings/SKILL.md');
+    // Allow entries are opt-in: plain `rig init` and `--force` add none
+    expect(content).not.toContain('auto-allows');
+    expect(content).not.toContain('rig init --force');
+    expect(content).toContain('rig init --broad-permissions');
+  });
 });
 
 describe('hook templates — rtk rewrite auto-allow gate', () => {

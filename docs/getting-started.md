@@ -101,8 +101,8 @@ mcp__jcodemunch__*     # jcodemunch MCP tools (symbol search, file tree)
 mcp__graphify__*       # graphify MCP tools (knowledge graph)
 Bash(cat /tmp/rig-session-*)  # session cache reads (savings skill)
 Bash(ls /tmp/rig-session-*)
-Read(/tmp/rig-session-*.json)
-Read(/private/tmp/rig-session-*.json)
+Read(//tmp/rig-session-*.json)
+Read(//private/tmp/rig-session-*.json)
 Bash(npx:*)            # hook scripts use npx tsx
 Bash(rtk:*)            # rtk token-optimized commands (when rtk detected)
 Bash(ls:*)             # broad bash read-ops

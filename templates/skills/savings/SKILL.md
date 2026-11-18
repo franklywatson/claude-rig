@@ -43,10 +43,11 @@ Report token savings from rtk and jcodemunch usage during this session.
      `updatedAt`) — baselines and environment snapshots must not be summed.
    - If no file has a matching `cwd`, fall back to the single most recent
      file by modification time.
-   - `rig init` auto-allows `Bash(ls /tmp/rig-session-*)` and
-     `Read(/tmp/rig-session-*.json)`, so this flow should not prompt for
-     permission. If it does, `.claude/settings.json` is out of date — re-run
-     `rig init --force`.
+   - If reading a cache file prompts for permission: the allow entries for
+     the session cache (such as `Read(//tmp/rig-session-*.json)`) are opt-in.
+     `rig init --broad-permissions` adds them together with its broader shell
+     patterns, or they can be added to `permissions.allow` by hand. The `ls`
+     listing can still prompt: it needs read access to `/tmp` itself.
 3. Compute the rtk session delta: `current total_saved - baseline totalSaved`.
    If the delta is NEGATIVE, do not report it as a (negative) saving: rtk
    >= 0.49 can claw back savings (recalls, recomputes), so the all-time total

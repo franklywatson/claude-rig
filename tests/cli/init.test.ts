@@ -728,8 +728,8 @@ console.log('stale old hook');
       expect(settings.permissions.allow).toContain('mcp__graphify__*');
       expect(settings.permissions.allow).toContain('Bash(cat /tmp/rig-session-*)');
       expect(settings.permissions.allow).toContain('Bash(ls /tmp/rig-session-*)');
-      expect(settings.permissions.allow).toContain('Read(/tmp/rig-session-*.json)');
-      expect(settings.permissions.allow).toContain('Read(/private/tmp/rig-session-*.json)');
+      expect(settings.permissions.allow).toContain('Read(//tmp/rig-session-*.json)');
+      expect(settings.permissions.allow).toContain('Read(//private/tmp/rig-session-*.json)');
       expect(settings.permissions.allow).toContain('Bash(npx:*)');
     });
 
