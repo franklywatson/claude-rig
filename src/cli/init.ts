@@ -254,6 +254,75 @@ const STALE_DENY_ENTRIES = [
   'Write(**/*.key)',
 ];
 
+/**
+ * Whether a hook group's matcher reaches a tool, by Claude Code's matcher
+ * rules: absent, '' and '*' match every tool; a matcher made only of letters,
+ * digits, `_`, `-`, spaces, `,` and `|` is a list of exact names; anything
+ * else is an unanchored regular expression.
+ */
+function matcherReaches(matcher: unknown, tool: string): boolean {
+  if (matcher === undefined || matcher === '' || matcher === '*') return true;
+  if (typeof matcher !== 'string') return false;
+  if (/^[A-Za-z0-9_\- ,|]+$/.test(matcher)) {
+    return matcher.split(/[|,]/).some(name => name.trim() === tool);
+  }
+  try {
+    return new RegExp(matcher).test(tool);
+  } catch {
+    return false;
+  }
+}
+
+// A failure command an earlier `rig init` wrote, start to end: bare `npx tsx`,
+// or npx at a literal absolute path behind a PATH prefix for its directory,
+// then the quoted script under the project's own .claude directory. A launcher
+// spelled with a variable, `~`, a substitution or a wildcard is one somebody
+// chose, and a prefix, another launcher or a trailing argument makes it their
+// command too.
+const EARLIER_RIG_FAILURE_COMMAND =
+  /^(?:npx|PATH="(\/[^"$`\\\n*?[{]*):\$PATH" \1\/npx) tsx "\$\{CLAUDE_PROJECT_DIR\}\/\.claude\/hooks\/scripts\/post-tool-use\.ts"$/;
+
+/**
+ * Register rig's PostToolUseFailure handler. The event runs post-tool-use.ts,
+ * the script PostToolUse already uses, and rig has not registered it before,
+ * so there is no older entry to migrate. The match by script file name that
+ * does that for the other events would only claim a user's own hook that
+ * happens to share the name. Here rig's handler is one rig wrote and nobody
+ * changed: this run's command or an earlier run's, and no field beside it. An
+ * `if`, `async` or `shell` on it would make it answer for fewer calls, or in
+ * another way, than the registration rig needs. It also has to sit in a group
+ * whose matcher reaches Bash (the one tool the failure check acts on). Every
+ * other entry is left as found.
+ */
+function registerFailureHook(hooks: Record<string, unknown>, npxCommand: string): void {
+  // Quoted for the same reason as the commands above: a project path with spaces.
+  const command = `${npxCommand} "\${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts"`;
+
+  if (!hooks.PostToolUseFailure) {
+    hooks.PostToolUseFailure = [];
+  }
+  // A value that is not a list is not rig's to rewrite.
+  if (!Array.isArray(hooks.PostToolUseFailure)) return;
+  const groups = hooks.PostToolUseFailure as Array<Record<string, unknown>>;
+
+  for (const group of groups) {
+    if (typeof group !== 'object' || group === null || !Array.isArray(group.hooks)) continue;
+    if (!matcherReaches(group.matcher, 'Bash')) continue;
+    for (const h of group.hooks as Array<Record<string, unknown>>) {
+      if (typeof h !== 'object' || h === null || typeof h.command !== 'string') continue;
+      const asWritten = h.type === 'command' && Object.keys(h).length === 2;
+      if (asWritten && (h.command === command || EARLIER_RIG_FAILURE_COMMAND.test(h.command))) {
+        h.command = command;
+        return;
+      }
+    }
+  }
+  groups.push({
+    matcher: '',
+    hooks: [{ type: 'command', command }],
+  });
+}
+
 function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean, broadPermissions: boolean): void {
   const settingsPath = join(claudeDir, 'settings.json');
   let settings: Record<string, unknown> = {};
@@ -272,7 +341,6 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
   const hookRegistrations: Record<string, string> = {
     PreToolUse: 'pre-tool-use.ts',
     PostToolUse: 'post-tool-use.ts',
-    PostToolUseFailure: 'post-tool-use.ts',
     SessionStart: 'session-start.ts',
   };
 
@@ -329,6 +397,8 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
       });
     }
   }
+
+  registerFailureHook(hooks, npxCommand);
 
   // ── Permissions ──
 

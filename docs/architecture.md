@@ -300,6 +300,29 @@ in `verify+`, where a green suite is mandatory. The phase comes from the session
 cache (`cache.getCurrentPhase()`); callers that pass no phase keep the strict
 behavior unchanged.
 
+The check runs on the output of a test command. A command is one when it names
+a runner (`vitest`, `jest`, `pytest`, `mocha`) anywhere in it, with one
+exception: a runner name inside a dotted name, which is what a file name with
+an extension is, names a file. So `node check-vitest-config.cjs` and
+`npx eslint vitest.config.ts` are not test commands (a runner's own launcher
+file, such as `vitest.mjs`, still counts, and so does a versioned binary such
+as `pytest-3.12`). A command is also one when a package manager's test script
+(`npm test`, `npm run test`) starts it or starts one of its steps, after `&&`,
+`||`, `;`, `|` or on a new line. That second form is a bounded pattern, not a
+shell parser: a quoted word is kept as a word but its text is not read
+(`npm run "build" test` runs the build), and a script that comes after a
+substitution, a comment, a heredoc, an escape or a subshell is not read
+either.
+
+A test script that starts the command is read whole, and a leading
+`cd dir &&` does not change that. When any other step comes first, as in
+`npm run build && npm test`, that step can stop the command before the tests
+start, and it prints output of its own. The test run is then read from the
+line npm prints for the script (`> name@1.0.0 test`) onward. Where that line
+is missing, the output counts only if it shows a failed test run: a `FAIL`
+line, a failed count in a runner's summary line, a failing TAP result, or the
+line pnpm ends with when the test script failed.
+
 **Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
 
 ---

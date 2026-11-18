@@ -65,16 +65,107 @@ export function handlePostToolUse(
   );
 }
 
+// The runner names this check has always looked for anywhere in a command.
+// One case no longer counts: a runner name inside a file name that carries an
+// extension (`check-vitest-config.cjs`, `vitest.config.ts`) names a file, not
+// a test run. An extension starts with a letter, so the versioned binary
+// `pytest-3.12` is still a runner. A runner's own launcher file (`vitest.mjs`,
+// `jest.js`, `vitest.cmd`) still counts too.
+const TEST_RUNNER =
+  /(?:vitest|jest|pytest|mocha)(?![\w-]*\.[A-Za-z])|(?<![\w.-])(?:vitest|jest|pytest|mocha)\.(?:[cm]?js|cmd|exe|ps1|bat|sh)(?![\w.-])/;
+
+// A package manager's test script (`npm test`, `npm run test`, and the same
+// for pnpm, yarn and bun) that starts the command or one of its `&&`, `||`,
+// `;`, `|` or newline steps, after any VAR=value prefixes, with any arguments.
+// The first group is what stands before the step: nothing when the script is
+// the first thing the command runs.
+const PACKAGE_TEST_SCRIPT =
+  /(^|&&|\|\||[;|\n])[ \t]*(?:\w+=[^\s;|&<>]*[ \t]+)*(?:npm|pnpm|yarn|bun)[ \t]+(?:run[ \t]+)?test(?=$|[\s;|&<>])/;
+
+// Shell syntax that can hold text which never runs as a command: substitutions,
+// comments, escapes, subshells, heredocs.
+const UNREAD_SHELL_SYNTAX = /[`$#\\()]|<</;
+
+// The line npm prints before it runs the test script: `> demo@1.0.0 test`, or
+// `> test` for a package with no name.
+const TEST_SCRIPT_LINE = /^> \S*@\S* test(?=\s|$)|^> test\r?$/m;
+
+// What shows, where that line is missing, that tests ran and failed: a FAIL or
+// FAILED line, a failed count in a runner's own summary line, a failing TAP
+// result or node:test's count of failures, or the line pnpm ends with when the
+// test script failed. A bare "1 failed" is not enough: a build prints that too.
+const FAILED_TEST_RUN =
+  /^\s*(?:FAIL|FAILED)\s|^\s*(?:Test Files|Test Suites|Tests):?\s.*\b[1-9]\d* failed\b|^\s*not ok \d+(?!.*# (?:TODO|SKIP))|^# fail [1-9]|^ℹ fail [1-9]|ELIFECYCLE\W+Test failed\b/m;
+
+// Leading `cd dir &&` steps. They only say where what follows runs: a `cd`
+// prints nothing unless it fails, and then nothing after `&&` starts.
+const DIRECTORY_CHANGES = /^(?:cd[ \t]+[^\s;|&<>]+[ \t]*(?:&&|[;\n])[ \t]*)+/;
+
+/**
+ * Find a package manager's test script in a Bash command. `first` says whether
+ * it is the first thing the command runs, directory changes aside.
+ *
+ * This is a bounded pattern, not a shell parser. A quoted word stays a word,
+ * but its text is not read: `npm run "build" test` runs the build script, and
+ * a commit message can mention `npm test`. A script that follows syntax the
+ * pattern cannot read is left alone; what comes after the script
+ * (`; echo $?`, a comment) does not matter.
+ */
+function findPackageTestScript(command: string): { first: boolean } | null {
+  const text = command
+    // Double quotes around a command substitution can hold quotes of their
+    // own (`"$(cat <<'EOF' ... "x" ... EOF)"`), so where such a word ends is
+    // not known: it becomes syntax the pattern cannot read.
+    .replace(/"(?:[^"\\]|\\.)*"|'[^']*'/g, word => (/^"[^]*(?:\$\(|`)/.test(word) ? '$' : '""'))
+    .trimStart()
+    .replace(DIRECTORY_CHANGES, '');
+  const script = PACKAGE_TEST_SCRIPT.exec(text);
+  if (!script || UNREAD_SHELL_SYNTAX.test(text.slice(0, script.index + script[0].length))) return null;
+  return { first: script[1] === '' };
+}
+
+/**
+ * Whether a Bash command runs tests: it names a test runner, or it calls a
+ * package manager's test script.
+ */
+export function isTestCommand(command: string): boolean {
+  return TEST_RUNNER.test(command) || findPackageTestScript(command) !== null;
+}
+
+/**
+ * The part of a command's output that came from its test run, or null when no
+ * test run shows in it.
+ *
+ * A command that names a runner is read whole, as it always was, and so is
+ * one that starts with a package test script. A package test script behind an
+ * earlier step (`npm run build && npm test`) only runs if that step lets it,
+ * and the step prints output of its own. Its test run is read from the line
+ * npm prints for the script. Where that line is missing (cut off by `| tail`,
+ * or a package manager that prints none), the output counts only if it shows
+ * a failed test run.
+ */
+function testRunOutput(command: string, output: string): string | null {
+  if (TEST_RUNNER.test(command)) return output;
+  const script = findPackageTestScript(command);
+  if (!script) return null;
+  if (script.first) return output;
+  const scriptLine = TEST_SCRIPT_LINE.exec(output);
+  if (scriptLine) return output.slice(scriptLine.index);
+  return FAILED_TEST_RUN.test(output) ? output : null;
+}
+
 function checkTestCommandOutput(
   command: string,
   output: string | undefined,
   cache: SessionCache,
   config: HarnessConfig,
 ): EnforcementViolation | null {
-  if (!command || !output || !/vitest|jest|pytest|mocha/.test(command)) return null;
+  if (typeof command !== 'string' || !output) return null;
+  const testOutput = testRunOutput(command, output);
+  if (testOutput === null) return null;
   const changedFiles = cache.getChangedFiles();
   return checkZeroDefect(
-    output,
+    testOutput,
     config,
     changedFiles.length > 0 ? changedFiles : undefined,
     cache.getCurrentPhase(),

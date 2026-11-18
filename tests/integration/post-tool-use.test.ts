@@ -42,7 +42,8 @@ describe('PostToolUse hook E2E', () => {
     // (tempDir, SESSION_ID) — remove the exact paths so /tmp doesn't
     // accumulate fixtures. Never glob-delete: real sessions own sibling
     // cache files.
-    for (const path of [SESSION_ID, undefined, 'failed-edit', 'failed-tdd'].map(id => sessionCachePath(tempDir, id))) {
+    const sessionIds = [SESSION_ID, undefined, 'failed-edit', 'failed-tdd', 'failed-tdd-npm'];
+    for (const path of sessionIds.map(id => sessionCachePath(tempDir, id))) {
       if (existsSync(path)) unlinkSync(path);
     }
     rmSync(tempDir, { recursive: true, force: true });
@@ -66,6 +67,175 @@ describe('PostToolUse hook E2E', () => {
     }, tempDir);
     expect(result.exitCode).toBe(0);
     expect(result.stdout).toBe('');
+  }, HOOK_TIMEOUT);
+
+  // What a real failing vitest test prints when it is started through the
+  // project's `npm test` script, as Claude Code delivers it in `error`.
+  const npmTestError = [
+    'Exit code 1',
+    '',
+    '> demo@1.0.0 test',
+    '> vitest run',
+    '',
+    ' RUN  v5.1.0 /tmp/demo',
+    '',
+    ' ❯ tests/sum.test.ts (1 test | 1 failed) 5ms',
+    '   × adds 5ms',
+    '',
+    ' FAIL  tests/sum.test.ts > adds',
+    'AssertionError: expected 3 to be 4 // Object.is equality',
+    '',
+    ' Test Files  1 failed (1)',
+    '      Tests  1 failed (1)',
+  ].join('\n');
+
+  it.each(['npm test', 'npm run test', 'npx vitest run'])(
+    'blocks a failed %s under the default strict settings',
+    async (command) => {
+      const result = await runHook(hookPath, { ...failedTest, tool_input: { command }, error: npmTestError }, tempDir);
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('ZERO-DEFECT');
+      expect(result.stderr).toContain('1 failure(s) found');
+    },
+    HOOK_TIMEOUT,
+  );
+
+  it('ignores a failed script whose file name only contains a runner name', async () => {
+    const result = await runHook(hookPath, {
+      ...failedTest,
+      tool_input: { command: 'node check-vitest-config.cjs' },
+      error: 'Exit code 1\nERROR: vitest.config.ts has no test.include entry',
+    }, tempDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('');
+  }, HOOK_TIMEOUT);
+
+  // `npm run build && npm test` with a build that fails: bash never starts the
+  // test script. This is what npm really printed for that command.
+  const buildFailedError = [
+    'Exit code 1',
+    '',
+    '> demo@1.0.0 build',
+    '> node build.cjs',
+    '',
+    'ERROR: missing build configuration',
+  ].join('\n');
+
+  it.each(['npm run build && npm test', 'npm run "build" test'])(
+    'stays quiet about a failed build that never reached the tests: %s',
+    async (command) => {
+      const result = await runHook(hookPath, {
+        ...failedTest, tool_input: { command }, error: buildFailedError,
+      }, tempDir);
+      expect(result.exitCode).toBe(0);
+      expect(result.stdout).toBe('');
+      expect(result.stderr).toBe('');
+    },
+    HOOK_TIMEOUT,
+  );
+
+  // The same command with an asset build that counts one missing file and
+  // exits 1. A count like this is not a test result.
+  it('stays quiet about a build that printed a failed count of its own', async () => {
+    const result = await runHook(hookPath, {
+      ...failedTest,
+      tool_input: { command: 'npm run build && npm test' },
+      error: 'Exit code 1\n\n> demo@1.0.0 build\n> node build-assets.cjs\n\nAsset compilation: 1 failed\n',
+    }, tempDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('');
+  }, HOOK_TIMEOUT);
+
+  // `npm run build; npm test`, exit 0, so the PostToolUse event: the build
+  // printed an error, then the tests ran and passed.
+  it('stays quiet about passing tests that followed a step that printed an error', async () => {
+    const result = await runHook(hookPath, {
+      session_id: SESSION_ID,
+      hook_event_name: 'PostToolUse',
+      tool_name: 'Bash',
+      tool_input: { command: 'npm run build; npm test' },
+      tool_response: {
+        stdout: [
+          '',
+          '> demo@1.0.0 build',
+          '> node build-config.cjs',
+          '',
+          'ERROR: missing build configuration',
+          '',
+          '> demo@1.0.0 test',
+          '> vitest run',
+          '',
+          ' ✓ tests/pass.test.ts (1 test) 2ms',
+          '',
+          ' Test Files  1 passed (1)',
+          '      Tests  1 passed (1)',
+        ].join('\n'),
+        stderr: '',
+        interrupted: false,
+      },
+    }, tempDir);
+    expect(result.exitCode).toBe(0);
+    expect(result.stdout).toBe('');
+    expect(result.stderr).toBe('');
+  }, HOOK_TIMEOUT);
+
+  // `cd . && pnpm test` with pnpm 11.25.0 and a failing node:test run. pnpm
+  // prints the script's command and no line that names the script.
+  it('blocks a failing TAP run that pnpm started behind a directory change', async () => {
+    const result = await runHook(hookPath, {
+      ...failedTest,
+      tool_input: { command: 'cd . && pnpm test' },
+      error: [
+        'Exit code 1',
+        '$ node mark-test.cjs && node --test tap/adds.mjs',
+        'TAP version 13',
+        '# ERROR: total came back as text',
+        '# Subtest: adds',
+        'not ok 1 - adds',
+        '  ---',
+        "  failureType: 'testCodeFailure'",
+        "  code: 'ERR_ASSERTION'",
+        '  ...',
+        '1..1',
+        '# tests 1',
+        '# pass 0',
+        '# fail 1',
+        '[ELIFECYCLE] Test failed. See above for more details.',
+      ].join('\n'),
+    }, tempDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('ZERO-DEFECT');
+  }, HOOK_TIMEOUT);
+
+  it('blocks a failed test that ran after a successful build', async () => {
+    const result = await runHook(hookPath, {
+      ...failedTest,
+      tool_input: { command: 'npm run build && npm test' },
+      error: npmTestError.replace(
+        'Exit code 1\n',
+        'Exit code 1\n\n> demo@1.0.0 build\n> node build.cjs\n\nbuild ok, arguments: []\n',
+      ),
+    }, tempDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('1 failure(s) found');
+  }, HOOK_TIMEOUT);
+
+  it.each(['npm test', 'npm run build && npm test'])('advises on a failed %s during tdd+', async (command) => {
+    const session_id = 'failed-tdd-npm';
+    const skill = await runHook(hookPath, {
+      session_id, hook_event_name: 'PostToolUse', tool_name: 'Skill', tool_input: { skill: 'tdd-plus' },
+    }, tempDir);
+    expect(skill.exitCode).toBe(0);
+    const result = await runHook(hookPath, {
+      ...failedTest, session_id, tool_input: { command }, error: npmTestError,
+    }, tempDir);
+    expect(result.exitCode).toBe(0);
+    const { hookSpecificOutput } = JSON.parse(result.stdout);
+    expect(hookSpecificOutput.hookEventName).toBe('PostToolUseFailure');
+    expect(hookSpecificOutput.additionalContext).toContain('[ADVISE] ZERO-DEFECT');
+    expect(hookSpecificOutput.additionalContext).toContain('1 failure(s) found');
   }, HOOK_TIMEOUT);
 
   // In live sessions an Edit whose text is not found is rejected before any

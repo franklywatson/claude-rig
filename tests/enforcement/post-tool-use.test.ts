@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { handlePostToolUse, handlePostToolUseFailure, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
+import {
+  handlePostToolUse,
+  handlePostToolUseFailure,
+  isTestCommand,
+  SKILL_PHASE_MAP,
+} from '../../src/enforcement/post-tool-use.js';
 import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
 import { SessionCache } from '../../src/session/cache.js';
@@ -72,6 +77,419 @@ describe('handlePostToolUse', () => {
       cache.setChangedFiles(['tests/foo.test.ts']);
       expect(handlePostToolUseFailure('Bash', { command }, error, cache, config)?.message).toContain('REGRESSION');
     });
+
+    it.each(['npm test', 'npm run test', 'npx vitest run'])('blocks a failed %s', (testCommand) => {
+      const result = handlePostToolUseFailure('Bash', { command: testCommand }, error, cache, config);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('1 failure(s) found');
+    });
+
+    it.each([undefined, 7, {}])('ignores a command that is not a string: %j', (notACommand) => {
+      expect(handlePostToolUseFailure('Bash', { command: notACommand }, error, cache, config)).toBeNull();
+    });
+
+    it('ignores a failed script whose file name only contains a runner name', () => {
+      const configError = 'Exit code 1\nERROR: vitest.config.ts has no test.include entry';
+      expect(
+        handlePostToolUseFailure('Bash', { command: 'node check-vitest-config.cjs' }, configError, cache, config),
+      ).toBeNull();
+    });
+  });
+
+  describe('isTestCommand', () => {
+    // Every runner invocation the earlier substring rule caught still counts.
+    it.each([
+      'npx vitest run',
+      'npx vitest run tests/foo.test.ts',
+      'npx vitest run --config vitest.config.ts',
+      'npx vitest@3 run',
+      'rtk vitest run',
+      'node node_modules/vitest/vitest.mjs run',
+      'node node_modules/jest/bin/jest.js',
+      './node_modules/.bin/jest --ci',
+      'python -u -m pytest -q',
+      'uv run --project pkg pytest',
+      'pytest-3 -q',
+      'pytest-3.12 -q',
+      '/usr/bin/pytest-3.11 tests/',
+      'tox -e pytest-py3.12',
+      'npx mocha',
+      'npx ts-mocha tests/**/*.ts',
+      'npm run test:jest',
+      'pnpm --filter pkg exec vitest run',
+      'yarn workspace pkg vitest run',
+      'watch -n 1 npx vitest run',
+      'bash -c "npx vitest run"',
+      'bash scripts/vitest.sh',
+      'echo `vitest run --config vitest.config.mjs 2>&1`',
+      'vitest \\\n  run',
+    ])('recognizes the runner in %j', (testCommand) => {
+      expect(isTestCommand(testCommand)).toBe(true);
+    });
+
+    it.each([
+      'npm test',
+      'npm run test',
+      'npm test -- tests/foo.test.ts',
+      'npm test -- -t "handles errors (slow)"',
+      'cd "$PROJECT_DIR" && npm test',
+      'pnpm test',
+      'yarn test',
+      'bun run test',
+      'CI=1 npm test',
+      'cd web && npm test',
+      'npm test 2>&1 | tail -20',
+      'npm test; echo "exit: $?"',
+      'npm test; echo $?',
+      'npm test # the whole suite',
+      'npm run lint; npm test',
+      'cd web\nnpm test',
+    ])('recognizes the package test script in %j', (testCommand) => {
+      expect(isTestCommand(testCommand)).toBe(true);
+    });
+
+    it.each([
+      'node check-vitest-config.cjs',
+      'npx eslint vitest.config.ts',
+      'cat jest.config.js',
+      'git add pytest.ini',
+    ])('does not take a runner name inside a file name for a test run: %j', (otherCommand) => {
+      expect(isTestCommand(otherCommand)).toBe(false);
+    });
+
+    // Text that never runs as a command, or is another script altogether.
+    it.each([
+      'echo ERROR # ignored ; npm test',
+      "cat <<'EOF'\nnpm test\nERROR fixture\nEOF",
+      'bash script.sh -c "npm test"',
+      'result=$(echo npm test); echo ERROR',
+      'X=$(echo npm test ; echo ERROR)',
+      'echo "a \\" ; npm test "',
+      "echo $'a\\'b ; npm test'",
+      'git commit -m "make npm test pass"',
+      'git commit -m "wip; npm test still red"',
+      "git commit -m 'lint && npm test in CI'",
+      'git commit -m "$(cat <<\'EOF\'\ndocs: recommend "npm ci && npm test && npm run build"\nEOF\n)"',
+      'echo "$(echo "x; npm test ")"',
+      'echo "`echo "x; npm test "`"',
+      'echo \\; npm test',
+      'echo `echo x; npm test `',
+      '(cd web; npm test)',
+      'f() { echo x; }; npm test',
+      'echo npm test',
+      'a=b;c npm test',
+      'npm run build',
+      'npm run build test',
+      'npm run "build" test',
+      "npm run 'build' test",
+      'npm install',
+      'npm run test-data:build',
+      'pnpm testing',
+      'grep foo bar',
+      '',
+    ])('does not take %j for a package test script', (otherCommand) => {
+      expect(isTestCommand(otherCommand)).toBe(false);
+    });
+  });
+
+  describe('a package test script behind an earlier step', () => {
+    // What `npm run build && npm test` really printed in a demo project
+    // (npm 10), first with a build that fails, then with a failing test.
+    const buildFailed = [
+      'Exit code 1',
+      '',
+      '> demo@1.0.0 build',
+      '> node build.cjs',
+      '',
+      'ERROR: missing build configuration',
+    ].join('\n');
+    const testFailed = [
+      'Exit code 1',
+      '',
+      '> demo@1.0.0 build',
+      '> node build.cjs',
+      '',
+      'build ok, arguments: []',
+      '',
+      '> demo@1.0.0 test',
+      '> node mark-test.cjs && vitest run',
+      '',
+      ' RUN  v5.1.0 /tmp/demo',
+      '',
+      ' FAIL  tests/sum.test.ts > adds',
+      'AssertionError: expected 3 to be 4 // Object.is equality',
+      '',
+      ' Test Files  1 failed (1)',
+      '      Tests  1 failed (1)',
+    ].join('\n');
+    const laterStep = [
+      'npm run build && npm test',
+      'npm run build &&\n  npm test',
+      'cd web && npm run build && npm test',
+      'set -e; npm run build; npm test',
+    ];
+
+    it.each(laterStep)('says nothing when an earlier step failed before the tests started: %j', (command) => {
+      expect(handlePostToolUseFailure('Bash', { command }, buildFailed, cache, config)).toBeNull();
+      cache.setPhase('tdd+');
+      expect(handlePostToolUseFailure('Bash', { command }, buildFailed, cache, config)).toBeNull();
+    });
+
+    it.each(laterStep)('blocks, or advises during tdd+, when the test script ran and failed: %j', (command) => {
+      const result = handlePostToolUseFailure('Bash', { command }, testFailed, cache, config);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('1 failure(s) found');
+      cache.setPhase('tdd+');
+      expect(handlePostToolUseFailure('Bash', { command }, testFailed, cache, config)?.level).toBe('advise');
+    });
+
+    // Each sign on its own: the line npm prints for the script (with and
+    // without a package name), a runner's FAIL line, a runner's summary line.
+    it.each([
+      ['> demo@1.0.0 test', 'ERROR: could not load the test setup'],
+      ['> test', 'ERROR: could not load the test setup'],
+      ['> @ test /home/me/demo', 'ERROR: could not load the test setup'],
+      [' FAIL  tests/sum.test.ts > adds', 'AssertionError: expected 3 to be 4'],
+      [' Test Files  1 failed (1)', '      Tests  1 failed (1)'],
+      ['Tests:       1 failed, 4 passed, 5 total', ''],
+      ['Test Suites: 1 failed, 1 total', ''],
+      // node:test from Node 23 on, when its output is not a terminal
+      ['ℹ fail 1', 'ERROR: total came back as text'],
+    ])('reads %j as a sign that the test script ran', (sign, detail) => {
+      const output = ['Exit code 1', '', '> demo@1.0.0 build', '> node build.cjs', '', 'build ok', '', sign, detail].join('\n');
+      expect(
+        handlePostToolUseFailure('Bash', { command: 'npm run build && npm test' }, output, cache, config)?.level,
+      ).toBe('block');
+    });
+
+    // Lines that look like a sign and are not one: a count of zero, a TAP test
+    // still marked to do, a build's own verdict, another script's line, a
+    // script whose command starts with the shell's `test`. The error comes
+    // after the line, so reading from that line on would report it.
+    it.each([
+      'Tests:       0 failed, 5 passed, 5 total',
+      'not ok 2 - rounding # TODO not written yet',
+      'BUILD FAILED in 3s',
+      '> demo@1.0.0 test:unit',
+      '> test -d dist || mkdir dist',
+    ])('does not read %j as a sign that the test script ran', (line) => {
+      const output = ['Exit code 1', '', '> demo@1.0.0 build', '> node build.cjs', '', line, 'ERROR: missing build configuration'].join('\n');
+      expect(handlePostToolUseFailure('Bash', { command: 'npm run build && npm test' }, output, cache, config)).toBeNull();
+    });
+
+    // A leading `cd dir &&` only says where the script runs. Whatever the test
+    // script prints is then read as it is for a command that starts with it:
+    // here a type error from a test script that never reached its runner.
+    it.each([
+      'cd web && npm test',
+      'cd "$PROJECT_DIR" && pnpm test',
+      'cd $PROJECT_DIR && npm test',
+      'cd web; yarn test',
+      'cd web\nnpm test',
+      'cd packages && cd api && npm test',
+    ])('reads a test script behind a directory change like one that starts the command: %j', (command) => {
+      const typeError = "Exit code 2\nsrc/total.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.";
+      const plain = handlePostToolUseFailure('Bash', { command: 'npm test' }, typeError, cache, config);
+      expect(plain?.level).toBe('block');
+      expect(handlePostToolUseFailure('Bash', { command }, typeError, cache, config)).toEqual(plain);
+    });
+
+    // `pnpm run build && pnpm test` with pnpm 11.25.0. pnpm names the script
+    // only in its last line, and only when that script failed. These are the
+    // lines it really printed, for a failing build and for a test script that
+    // fails before any runner starts.
+    it('reads the line pnpm prints for a failed test script, and not the one for a failed build', () => {
+      const command = 'pnpm run build && pnpm test';
+      const buildFailedInPnpm = [
+        'Exit code 1',
+        '$ node build.cjs',
+        'ERROR: missing build configuration',
+        '[ELIFECYCLE] Command failed with exit code 1.',
+      ].join('\n');
+      const testScriptFailedInPnpm = [
+        'Exit code 2',
+        '$ node build.cjs',
+        'build ok',
+        '$ node typecheck.cjs && node --test tap/adds.mjs',
+        "src/total.ts(3,7): error TS2322: Type 'string' is not assignable to type 'number'.",
+        '[ELIFECYCLE] Test failed. See above for more details.',
+      ].join('\n');
+      expect(handlePostToolUseFailure('Bash', { command }, buildFailedInPnpm, cache, config)).toBeNull();
+      expect(handlePostToolUseFailure('Bash', { command }, testScriptFailedInPnpm, cache, config)?.level).toBe('block');
+    });
+
+    // `npm run build && npm test` again, with an asset build that counts one
+    // missing file and exits 1. This is what npm really printed.
+    const assetBuildFailed = [
+      'Exit code 1',
+      '',
+      '> demo@1.0.0 build',
+      '> node build-assets.cjs',
+      '',
+      'Asset compilation: 1 failed',
+    ].join('\n');
+
+    it.each(laterStep)('does not take a failed count printed by a build for a test run: %j', (command) => {
+      expect(handlePostToolUseFailure('Bash', { command }, assetBuildFailed, cache, config)).toBeNull();
+    });
+
+    // `npm run build; npm test`, exit 0: the build printed an error, then the
+    // tests ran and passed. This is what npm and vitest really printed.
+    const buildErrorThenGreenTests = [
+      '',
+      '> demo@1.0.0 build',
+      '> node build-config.cjs',
+      '',
+      'ERROR: missing build configuration',
+      '',
+      '> demo@1.0.0 test',
+      '> node mark-test.cjs && vitest run',
+      '',
+      ' RUN  v5.1.0 /tmp/demo',
+      '',
+      ' ✓ tests/pass.test.ts (1 test) 2ms',
+      '',
+      ' Test Files  1 passed (1)',
+      '      Tests  1 passed (1)',
+    ].join('\n');
+
+    it('reads the output from the test script line on, not what an earlier step printed', () => {
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npm run build; npm test' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        buildErrorThenGreenTests,
+      );
+      expect(result).toBeNull();
+    });
+
+    // `cd . && pnpm test` with pnpm 11.25.0 and a failing node:test run. pnpm
+    // prints the script's command, not a line that names the script, so the
+    // TAP result is what shows that tests ran. This is what they really printed
+    // (the middle of the failure detail is left out).
+    const pnpmTapFailed = [
+      'Exit code 1',
+      '$ node mark-test.cjs && node --test tap/adds.mjs',
+      'TAP version 13',
+      '# ERROR: total came back as text',
+      '# Subtest: adds',
+      'not ok 1 - adds',
+      '  ---',
+      "  failureType: 'testCodeFailure'",
+      '  error: |-',
+      '    Expected values to be strictly equal:',
+      '    ',
+      '    3 !== 4',
+      '    ',
+      "  code: 'ERR_ASSERTION'",
+      '  ...',
+      '1..1',
+      '# tests 1',
+      '# pass 0',
+      '# fail 1',
+      '[ELIFECYCLE] Test failed. See above for more details.',
+    ].join('\n');
+
+    it('reports a failing TAP run behind an earlier step just as it does without one', () => {
+      const plain = handlePostToolUseFailure('Bash', { command: 'pnpm test' }, pnpmTapFailed, cache, config);
+      const behindCd = handlePostToolUseFailure('Bash', { command: 'cd . && pnpm test' }, pnpmTapFailed, cache, config);
+      expect(plain?.level).toBe('block');
+      expect(behindCd).toEqual(plain);
+    });
+
+    it.each(['not ok 1 - adds', '    not ok 2 - a nested test', '# fail 1'])(
+      'reads the TAP line %j as a failing test run',
+      (tapLine) => {
+        const output = ['Exit code 1', '$ node --test', '# ERROR: total came back as text', tapLine].join('\n');
+        expect(
+          handlePostToolUseFailure('Bash', { command: 'pnpm run build && pnpm test' }, output, cache, config)?.level,
+        ).toBe('block');
+      },
+    );
+
+    it('does not take a passing TAP run behind an earlier step for a failing one', () => {
+      const output = ['$ node --test', '# ERROR: total came back as text', 'ok 1 - adds', '1..1', '# pass 1', '# fail 0'].join('\n');
+      const result = handlePostToolUse('Bash', { command: 'pnpm run build && pnpm test' }, tracker, cache, config, undefined, output);
+      expect(result).toBeNull();
+    });
+
+    it('reports a failing test after an earlier step without counting that step\'s error line', () => {
+      // The build's line has the shape zero-defect counts as a failure line.
+      const output = [
+        'Exit code 1',
+        '',
+        '> demo@1.0.0 build',
+        '> node build-config.cjs',
+        '',
+        'ERROR missing build configuration',
+        '',
+        '> demo@1.0.0 test',
+        '> node mark-test.cjs && vitest run',
+        '',
+        ' FAIL  tests/sum.test.ts > adds',
+        'AssertionError: expected 3 to be 4 // Object.is equality',
+        '',
+        ' Test Files  1 failed (1)',
+        '      Tests  1 failed (1)',
+      ].join('\n');
+      const result = handlePostToolUseFailure('Bash', { command: 'npm run build; npm test' }, output, cache, config);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('1 failure(s) found');
+    });
+
+    it('takes a failed count as a sign the tests ran when a pipeline cut their start off', () => {
+      // `... | tail -5` exits 0 and drops the "> demo@1.0.0 test" line.
+      const tail = [
+        '',
+        '> demo@1.0.0 build',
+        '> node build.cjs',
+        '',
+        'build ok, arguments: []',
+        ' Test Files  1 failed (1)',
+        '      Tests  1 failed (1)',
+        '   Start at  10:53:39',
+        '   Duration  195ms',
+      ].join('\n');
+      const result = handlePostToolUse(
+        'Bash',
+        { command: 'npm run build && npm test 2>&1 | tail -5' },
+        tracker,
+        cache,
+        config,
+        undefined,
+        tail,
+      );
+      expect(result?.message).toContain('ZERO-DEFECT');
+    });
+
+    it('checks a test script that starts the command whatever its output looks like', () => {
+      const scriptError = 'Exit code 1\nERROR: could not load the test setup';
+      expect(handlePostToolUseFailure('Bash', { command: 'npm test' }, scriptError, cache, config)?.level).toBe('block');
+    });
+
+    // Unchanged here: a command that names a runner is checked as before, even
+    // behind `&&`. Only the package-script form asks for a sign that it ran.
+    it('leaves a command that names a runner as it was', () => {
+      expect(
+        handlePostToolUseFailure('Bash', { command: 'npm run build && npx vitest run' }, buildFailed, cache, config),
+      ).not.toBeNull();
+    });
+  });
+
+  it('checks a failing npm test whose pipeline exits 0', () => {
+    const result = handlePostToolUse(
+      'Bash',
+      { command: 'npm test 2>&1 | tail -5' },
+      tracker,
+      cache,
+      config,
+      undefined,
+      'FAIL tests/a.test.ts\nTests: 1 failed',
+    );
+    expect(result?.message).toContain('ZERO-DEFECT');
   });
 
   it('checks zero-defect on Bash test commands (legacy tool_input.output fallback)', () => {

@@ -283,6 +283,229 @@ describe('initCommand', () => {
     expect(entries[0]).toEqual(own);
   });
 
+  describe('failure hook ownership', () => {
+    // rig's failure handler is the whole command rig generates, with no
+    // condition on it. Never the file name, the path or the command's tail.
+    const RIG_FAILURE_SCRIPT = '"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts"';
+    // What an earlier `rig init` wrote on a machine whose npx lives elsewhere.
+    const EARLIER_RIG_COMMAND = `PATH="/old/node/bin:$PATH" /old/node/bin/npx tsx ${RIG_FAILURE_SCRIPT}`;
+    type HookGroup = { matcher?: string; hooks: Array<{ type: string; command: string; if?: string }> };
+
+    function seedFailureHooks(value: unknown): void {
+      mkdirSync(join(tempDir, '.claude'), { recursive: true });
+      writeFileSync(join(tempDir, '.claude', 'settings.json'), JSON.stringify({ hooks: { PostToolUseFailure: value } }));
+    }
+
+    function readFailureHooks(): HookGroup[] {
+      return JSON.parse(readFileSync(join(tempDir, '.claude', 'settings.json'), 'utf-8')).hooks.PostToolUseFailure;
+    }
+
+    /** The command this run of init generates: PostToolUse runs the same script. */
+    function generatedCommand(): string {
+      const settings = JSON.parse(readFileSync(join(tempDir, '.claude', 'settings.json'), 'utf-8'));
+      return settings.hooks.PostToolUse[0].hooks[0].command;
+    }
+
+    /**
+     * One entry per rig failure handler, exactly as rig writes it (its command
+     * and no other field): the matcher of its group.
+     */
+    function rigFailureMatchers(): Array<string | undefined> {
+      const written = JSON.stringify({ type: 'command', command: generatedCommand() });
+      return readFailureHooks().flatMap(group =>
+        (group.hooks ?? []).filter(hook => JSON.stringify(hook) === written).map(() => group.matcher),
+      );
+    }
+
+    it("keeps a user's failure hook whose script is also named post-tool-use.ts", async () => {
+      const own = { matcher: 'Edit', hooks: [{ type: 'command', command: 'npx tsx ./team/post-tool-use.ts' }] };
+      seedFailureHooks([own]);
+
+      for (let run = 0; run < 2; run++) {
+        await initCommand(tempDir, { force: false });
+        expect(readFailureHooks()).toHaveLength(2);
+        expect(readFailureHooks()[0]).toEqual(own);
+        // Exactly one rig handler, in a group that matches every tool.
+        expect(rigFailureMatchers()).toEqual(['']);
+      }
+    });
+
+    it('leaves a flat failure entry that names post-tool-use.ts in place', async () => {
+      const flat = { matcher: 'Edit', command: 'npx tsx ./team/post-tool-use.ts' };
+      seedFailureHooks([flat]);
+
+      await initCommand(tempDir, { force: false });
+
+      expect(readFailureHooks()).toHaveLength(2);
+      expect(readFailureHooks()[0]).toEqual(flat);
+    });
+
+    it('refreshes only its own unconditional command in a group it shares with other hooks', async () => {
+      const own = { type: 'command', command: 'my-own-hook.sh' };
+      const gitOnly = { type: 'command', if: 'Bash(git *)', command: EARLIER_RIG_COMMAND };
+      seedFailureHooks([{ matcher: 'Bash', hooks: [own, gitOnly, { type: 'command', command: EARLIER_RIG_COMMAND }] }]);
+
+      await initCommand(tempDir, { force: false });
+
+      const groups = readFailureHooks();
+      expect(groups).toHaveLength(1);
+      expect(groups[0].hooks.slice(0, 2)).toEqual([own, gitOnly]);
+      expect(groups[0].hooks[2]).toEqual({ type: 'command', command: generatedCommand() });
+    });
+
+    // rig's command on a handler that does not do what rig's own handler does:
+    // `if` runs it for some calls only, `async` and `asyncRewake` cannot fail
+    // the call it follows, `args` and `shell` run it another way. Any field rig
+    // did not write makes the handler the user's.
+    it.each([
+      { if: 'Bash(git *)' },
+      { async: true },
+      { asyncRewake: true },
+      { args: ['--flag'] },
+      { shell: 'powershell' },
+      { timeout: 5 },
+      { type: 'prompt' },
+    ])('keeps a handler that carries its command with %j and adds its own', async (fields) => {
+      const theirs = {
+        matcher: 'Bash',
+        hooks: [{ type: 'command', command: `npx tsx ${RIG_FAILURE_SCRIPT}`, ...fields }],
+      };
+      seedFailureHooks([theirs]);
+
+      for (let run = 0; run < 2; run++) {
+        await initCommand(tempDir, { force: false });
+        expect(readFailureHooks()).toHaveLength(2);
+        expect(readFailureHooks()[0]).toEqual(theirs);
+        expect(rigFailureMatchers()).toEqual(['']);
+      }
+    });
+
+    // Claude Code's matcher rules: '' and '*' match every tool, a matcher of
+    // names is a list split on | or , and anything else is an unanchored regex.
+    it.each(['', '*', 'Bash', 'Edit|Bash', 'Bash, Edit', '^Bash$', 'Ba.*'])(
+      'reuses its handler under a matcher that reaches Bash: %j',
+      async (matcher) => {
+        seedFailureHooks([{ matcher, hooks: [{ type: 'command', command: EARLIER_RIG_COMMAND }] }]);
+
+        await initCommand(tempDir, { force: false });
+
+        expect(readFailureHooks()).toHaveLength(1);
+        expect(rigFailureMatchers()).toEqual([matcher]);
+      },
+    );
+
+    // The launcher forms rig writes: bare npx, or npx by path behind a PATH
+    // prefix for its directory (which can hold a space, as on Windows).
+    it.each([
+      `npx tsx ${RIG_FAILURE_SCRIPT}`,
+      `PATH="/opt/node/bin:$PATH" /opt/node/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+      `PATH="/c/Program Files/nodejs:$PATH" /c/Program Files/nodejs/npx tsx ${RIG_FAILURE_SCRIPT}`,
+    ])('reuses its handler when an earlier init wrote %j', async (command) => {
+      seedFailureHooks([{ matcher: '', hooks: [{ type: 'command', command }] }]);
+
+      await initCommand(tempDir, { force: false });
+
+      expect(readFailureHooks()).toHaveLength(1);
+      expect(readFailureHooks()[0].hooks).toHaveLength(1);
+      expect(rigFailureMatchers()).toEqual(['']);
+    });
+
+    // `command -v npx` can print more than a clean path. Whatever init turns
+    // into a launcher, the next init has to know it again.
+    it.each(['npx is a function\n/opt/node/bin/npx', '/opt/we"ird/bin/npx'])(
+      'knows its own command again when npx resolved to %j',
+      async (npxPath) => {
+        const exec: ExecFn = (cmd: string) => {
+          if (cmd === 'command -v npx') return `${npxPath}\n`;
+          throw new Error('not found');
+        };
+
+        for (let run = 0; run < 2; run++) {
+          await initCommand(tempDir, { force: false, exec });
+          expect(readFailureHooks()).toHaveLength(1);
+          expect(readFailureHooks()[0].hooks).toHaveLength(1);
+        }
+      },
+    );
+
+    // Hooks that reach Bash and look like rig's at a glance, but are the
+    // user's: another directory, another file, another launcher, or a wrapper
+    // around the script.
+    describe.each(['Bash', ''])('under the matcher %j', (matcher) => {
+      it.each([
+        'npx tsx ./team/post-tool-use.ts',
+        'npx tsx "$HOME/.claude/hooks/scripts/post-tool-use.ts"',
+        'npx tsx "${CLAUDE_PROJECT_DIR}/packages/api/.claude/hooks/scripts/post-tool-use.ts"',
+        'npx tsx "${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts.bak"',
+        'npx tsx .claude/hooks/scripts/post-tool-use.ts',
+        './team/wrap.sh "${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts" --notify',
+        `env TEAM_LOG=1 npx tsx ${RIG_FAILURE_SCRIPT}`,
+        `PATH="/opt/node/bin:$PATH" /usr/local/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+        // A launcher someone picked with a variable, a home shorthand or a
+        // substitution is theirs, even though both halves agree.
+        `PATH="$HOME/.local/bin:$PATH" $HOME/.local/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+        `PATH="/opt/node-$NODE_VERSION/bin:$PATH" /opt/node-$NODE_VERSION/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+        `PATH="~/.local/bin:$PATH" ~/.local/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+        `PATH="/opt/node-*/bin:$PATH" /opt/node-*/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+        `PATH="/opt/\`node-dir\`/bin:$PATH" /opt/\`node-dir\`/bin/npx tsx ${RIG_FAILURE_SCRIPT}`,
+        'npx tsx ${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts',
+      ])("keeps the user's hook %j", async (command) => {
+        const own = { matcher, hooks: [{ type: 'command', command }] };
+        seedFailureHooks([own]);
+
+        for (let run = 0; run < 2; run++) {
+          await initCommand(tempDir, { force: false });
+          expect(readFailureHooks()).toHaveLength(2);
+          expect(readFailureHooks()[0]).toEqual(own);
+          expect(rigFailureMatchers()).toEqual(['']);
+        }
+      });
+    });
+
+    it("keeps a user's post-tool-use.ts hook that sits before rig's in one group", async () => {
+      const own = { type: 'command', command: 'npx tsx ./team/post-tool-use.ts' };
+      seedFailureHooks([{ matcher: 'Bash', hooks: [own, { type: 'command', command: EARLIER_RIG_COMMAND }] }]);
+
+      await initCommand(tempDir, { force: false });
+
+      expect(readFailureHooks()).toHaveLength(1);
+      expect(readFailureHooks()[0].hooks[0]).toEqual(own);
+      expect(rigFailureMatchers()).toEqual(['Bash']);
+    });
+
+    it('reuses its handler in a group with no matcher', async () => {
+      seedFailureHooks([{ hooks: [{ type: 'command', command: EARLIER_RIG_COMMAND }] }]);
+
+      await initCommand(tempDir, { force: false });
+
+      expect(rigFailureMatchers()).toEqual([undefined]);
+    });
+
+    it.each(['Edit', 'Edit|Write', 'Notebook.*', '^Edit$', '['])(
+      'adds a handler for Bash when its command sits under a matcher that does not reach Bash: %j',
+      async (matcher) => {
+        const narrowed = { matcher, hooks: [{ type: 'command', command: EARLIER_RIG_COMMAND }] };
+        seedFailureHooks([narrowed]);
+
+        for (let run = 0; run < 2; run++) {
+          await initCommand(tempDir, { force: false });
+          expect(readFailureHooks()).toHaveLength(2);
+          expect(readFailureHooks()[0]).toEqual(narrowed);
+          expect(rigFailureMatchers()).toEqual(['']);
+        }
+      },
+    );
+
+    it('leaves a failure value that is not a list as it found it', async () => {
+      const notAList = { matcher: 'Edit', command: 'npx tsx ./team/post-tool-use.ts' };
+      seedFailureHooks(notAList);
+
+      await initCommand(tempDir, { force: false });
+
+      expect(readFailureHooks()).toEqual(notAList);
+    });
+  });
+
   it('creates verify-harness skill', async () => {
     await initCommand(tempDir, { force: false });
     expect(existsSync(join(tempDir, '.claude', 'skills', 'verify-harness', 'SKILL.md'))).toBe(true);
