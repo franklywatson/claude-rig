@@ -12,13 +12,13 @@ import { readFileSync } from 'node:fs';
 
 (async () => {
   let handleSessionStart: any;
-  let selectAgentContext: any;
+  let buildSessionStart: any;
   let SessionCache: any;
 
   try {
     const session = await import('{{RIG_DIST_PATH}}/session/start.js');
     handleSessionStart = session.handleSessionStart;
-    selectAgentContext = session.selectAgentContext;
+    buildSessionStart = session.buildSessionStart;
     const cache = await import('{{RIG_DIST_PATH}}/session/cache.js');
     SessionCache = cache.SessionCache;
   } catch {
@@ -39,16 +39,23 @@ import { readFileSync } from 'node:fs';
 
     const cache = new SessionCache(cwd, input.session_id);
 
-    handleSessionStart(cwd, cache).then((output: string) => {
-      console.error(output);
+    // A rig build from before buildSessionStart has only the summary to give.
+    const started = buildSessionStart
+      ? buildSessionStart(cwd, cache)
+      : handleSessionStart(cwd, cache).then((summary: string) => ({ summary }));
+
+    started.then((output: { summary: string; agentContext?: string }) => {
+      console.error(output.summary);
       // stderr on exit 0 never reaches the agent. The lines skill templates
       // read go to it as additionalContext.
-      console.log(JSON.stringify({
-        hookSpecificOutput: {
-          hookEventName: 'SessionStart',
-          additionalContext: selectAgentContext(output),
-        },
-      }));
+      if (output.agentContext) {
+        console.log(JSON.stringify({
+          hookSpecificOutput: {
+            hookEventName: 'SessionStart',
+            additionalContext: output.agentContext,
+          },
+        }));
+      }
       process.exit(0);
     }).catch(() => {
       // Session init failed — don't block the session

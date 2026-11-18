@@ -60,30 +60,36 @@ export interface SessionStartDeps {
 // that window instead of caching a false "failed" for the whole session.
 const GRAPH_WAIT_DEFAULT: WaitForBuildOpts = { deadlineMs: 5000, intervalMs: 250 };
 
-/**
- * The lines of the session-start summary that skill templates read: the
- * header, the superpowers line (verify-harness), the active-rules line (the
- * chain skills), and the agent-teams line (sdd+). The hook sends these to the
- * agent as additionalContext; the full summary stays on stderr.
- */
-export function selectAgentContext(summary: string): string {
-  return summary.split('\n').filter(line =>
-    line === '[rig] Session initialized' ||
-    line.startsWith('  superpowers:') ||
-    line.startsWith('  Active enforcement:') ||
-    line.startsWith('  agent-teams:'),
-  ).join('\n');
+/** What the SessionStart hook emits. */
+export interface SessionStartOutput {
+  /** The full diagnostic summary. The hook writes it to stderr. */
+  summary: string;
+  /**
+   * The lines skill templates read: the header, the superpowers line
+   * (verify-harness), the agent-teams line (sdd+), and the active-rules line
+   * (the chain skills). The hook sends these to the agent as additionalContext.
+   */
+  agentContext: string;
 }
 
 /**
  * SessionStart hook handler. Detects environment and auto-indexes CWD
- * with jcodemunch if available but not yet indexed.
+ * with jcodemunch if available but not yet indexed. Returns the summary.
  */
 export async function handleSessionStart(
   cwd: string,
   cache: SessionCache,
   deps: SessionStartDeps = {},
 ): Promise<string> {
+  return (await buildSessionStart(cwd, cache, deps)).summary;
+}
+
+/** handleSessionStart, returning the agent context alongside the summary. */
+export async function buildSessionStart(
+  cwd: string,
+  cache: SessionCache,
+  deps: SessionStartDeps = {},
+): Promise<SessionStartOutput> {
   const { env, fileCapHit, autoIndex } = await detectAndIndex(
     cwd, deps.exec, deps.existsCheck, deps.statCheck, deps.mcpQuery, deps.registrationLookup,
     deps.envVars,
@@ -174,6 +180,16 @@ export async function handleSessionStart(
     `  jcodemunch: ${describeJcodemunch(env)}`,
     `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
+  // The agent context is collected here, as each of its lines is produced. It
+  // is never picked back out of the summary: a diagnostic there can span lines
+  // (a graph build error carries the tool's stderr) and begin with any text.
+  const agentLines = [lines[0]];
+  const pushForAgent = (line: string): void => {
+    lines.push(line);
+    // One field, one line: a line break inside a field's own value (a plugin
+    // version, a rule level) must not start a new line for the agent.
+    agentLines.push(line.replace(/\s*[\r\n]+\s*/g, ' '));
+  };
 
   if (env.rtkAvailable && detectRtkGlobalHook(deps.readFile, deps.existsCheck ?? existsSync, deps.homeDir)) {
     lines.push(
@@ -190,12 +206,12 @@ export async function handleSessionStart(
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
   }
-  lines.push(
+  pushForAgent(
     `  superpowers: ${env.superpowers?.installed ? `installed${env.superpowers.version ? ` (v${env.superpowers.version})` : ''}` : 'not found'}`,
   );
 
   if (env.agentTeamsAvailable) {
-    lines.push('  agent-teams: available (experimental)');
+    pushForAgent('  agent-teams: available (experimental)');
   }
 
   if (env.jcodemunchAvailable) {
@@ -241,7 +257,7 @@ export async function handleSessionStart(
   const config = await loadConfig(configPath);
   const activeRules = formatActiveRules(config);
   if (activeRules) {
-    lines.push(activeRules);
+    pushForAgent(activeRules);
   }
 
   const suggestion = checkBranchDiscipline((cmd) => execSync(cmd, { encoding: 'utf-8' }), config);
@@ -327,7 +343,7 @@ export async function handleSessionStart(
     cache.setToolsWarned(true);
   }
 
-  return lines.join('\n');
+  return { summary: lines.join('\n'), agentContext: agentLines.join('\n') };
 }
 
 function describeGraphify(info: GraphBuildInfo | undefined): string {

@@ -639,7 +639,10 @@ is emitted when graphify is not installed. `SessionCache` provides
 per-directory graphify data. The hook sends the lines that skill templates read
 (the session header, superpowers status, and the active-rules and agent-teams
 lines when present) to the agent as `additionalContext`. The full summary,
-including the tool lists and warnings, goes to stderr.
+including the tool lists and warnings, goes to stderr. `buildSessionStart()`
+collects the agent lines as each is produced, each kept to one line, instead of
+selecting them from the finished summary, so a multiline diagnostic there
+cannot add to them.
 
 Session start also runs `checkBranchDiscipline` (`src/session/worktree.ts`):
 when the session opens on a branch listed in
