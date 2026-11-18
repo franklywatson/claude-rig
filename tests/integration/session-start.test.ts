@@ -59,6 +59,20 @@ describe('SessionStart hook E2E', () => {
     expect(cache!.updatedAt).toBeGreaterThan(0);
   }, 60000); // cold run: real detection + indexing + graphify/mcp probes
 
+  it('sends the active rules to the agent and keeps the summary on stderr', async () => {
+    const result = await runHook(hookPath, {}, tempDir);
+
+    if (result.exitCode !== 0) return;
+
+    const { hookSpecificOutput } = JSON.parse(result.stdout);
+    expect(hookSpecificOutput.hookEventName).toBe('SessionStart');
+    expect(hookSpecificOutput.additionalContext).toContain('[rig] Session initialized');
+    expect(hookSpecificOutput.additionalContext).toContain('Active enforcement:');
+    expect(hookSpecificOutput.additionalContext).toContain('superpowers:');
+    expect(hookSpecificOutput.additionalContext).not.toContain('rtk:');
+    expect(result.stderr).toContain('Session initialized');
+  }, 60000);
+
   it('detects environment in cache', async () => {
     const result = await runHook(hookPath, {}, tempDir);
 

@@ -12,11 +12,13 @@ import { readFileSync } from 'node:fs';
 
 (async () => {
   let handleSessionStart: any;
+  let selectAgentContext: any;
   let SessionCache: any;
 
   try {
     const session = await import('{{RIG_DIST_PATH}}/session/start.js');
     handleSessionStart = session.handleSessionStart;
+    selectAgentContext = session.selectAgentContext;
     const cache = await import('{{RIG_DIST_PATH}}/session/cache.js');
     SessionCache = cache.SessionCache;
   } catch {
@@ -39,6 +41,14 @@ import { readFileSync } from 'node:fs';
 
     handleSessionStart(cwd, cache).then((output: string) => {
       console.error(output);
+      // stderr on exit 0 never reaches the agent. The lines skill templates
+      // read go to it as additionalContext.
+      console.log(JSON.stringify({
+        hookSpecificOutput: {
+          hookEventName: 'SessionStart',
+          additionalContext: selectAgentContext(output),
+        },
+      }));
       process.exit(0);
     }).catch(() => {
       // Session init failed — don't block the session

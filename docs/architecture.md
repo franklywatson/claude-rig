@@ -520,8 +520,8 @@ community detection algorithm. Each community represents a logical module or
 subsystem, providing a higher-level view of code organization beyond directory
 structure.
 
-**Graph MCP tools** — session-start emits available graphify MCP tools for the
-agent to use directly:
+**Graph MCP tools** — session-start lists the available graphify MCP tools in
+its summary:
 
 - `mcp__graphify__query_graph` — relationship queries between symbols
 - `mcp__graphify__god_nodes` — core abstractions ranked by connection density
@@ -636,7 +636,10 @@ detected — including a pointer to `claude mcp list` and an orphaned-index
 warning when `~/.code-index` holds data but no transport works. A `[HINT]`
 is emitted when graphify is not installed. `SessionCache` provides
 `getGraphifyStats(dir)` and `setGraphifyStats(dir, stats)` accessors for
-per-directory graphify data.
+per-directory graphify data. The hook sends the lines that skill templates read
+(the session header, superpowers status, and the active-rules and agent-teams
+lines when present) to the agent as `additionalContext`. The full summary,
+including the tool lists and warnings, goes to stderr.
 
 Session start also runs `checkBranchDiscipline` (`src/session/worktree.ts`):
 when the session opens on a branch listed in

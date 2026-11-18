@@ -61,6 +61,21 @@ export interface SessionStartDeps {
 const GRAPH_WAIT_DEFAULT: WaitForBuildOpts = { deadlineMs: 5000, intervalMs: 250 };
 
 /**
+ * The lines of the session-start summary that skill templates read: the
+ * header, the superpowers line (verify-harness), the active-rules line (the
+ * chain skills), and the agent-teams line (sdd+). The hook sends these to the
+ * agent as additionalContext; the full summary stays on stderr.
+ */
+export function selectAgentContext(summary: string): string {
+  return summary.split('\n').filter(line =>
+    line === '[rig] Session initialized' ||
+    line.startsWith('  superpowers:') ||
+    line.startsWith('  Active enforcement:') ||
+    line.startsWith('  agent-teams:'),
+  ).join('\n');
+}
+
+/**
  * SessionStart hook handler. Detects environment and auto-indexes CWD
  * with jcodemunch if available but not yet indexed.
  */

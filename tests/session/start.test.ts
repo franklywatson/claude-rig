@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { handleSessionStart, detectAndIndex } from '../../src/session/start.js';
+import { handleSessionStart, detectAndIndex, selectAgentContext } from '../../src/session/start.js';
 import { SessionCache } from '../../src/session/cache.js';
 import type { ExecFn, McpQueryFn } from '../../src/session/environment.js';
 
@@ -24,6 +24,35 @@ describe('handleSessionStart', () => {
   beforeEach(() => {
     cache = new SessionCache();
     vi.resetAllMocks();
+  });
+
+  it.each([false, true])('selects only the agent context when teams enabled is %s', async (teams) => {
+    vi.mocked(execSync).mockImplementation((cmd: string) => {
+      if (cmd === 'which jcodemunch') return '/usr/bin/jcodemunch';
+      if (cmd.includes('list_repos')) return '{"repos":["local/test-project"]}';
+      throw new Error('not found');
+    });
+    const summary = await startSession('/home/user/test-project', cache, {
+      envVars: teams ? { CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS: '1' } : {},
+      // Keep the superpowers line independent of the real plugin registry
+      homeDir: '/home/user',
+      existsCheck: () => false,
+    });
+    expect(summary).toContain('  rtk:');
+    expect(summary).toContain('[WARNING]');
+    expect(summary).toContain('[rig] When spawning subagents');
+    const rules = summary.split('\n').find(line => line.startsWith('  Active enforcement:'));
+    expect(rules).toBeDefined();
+
+    const context = selectAgentContext(summary);
+    const expected = ['[rig] Session initialized', '  superpowers: not found'];
+    if (teams) expected.push('  agent-teams: available (experimental)');
+    expect(context.split('\n')).toEqual([...expected, rules]);
+  });
+
+  it('selects no rules line when the summary has none', () => {
+    const summary = ['[rig] Session initialized', '  rtk: not found', '  superpowers: installed (v7.0.2)'].join('\n');
+    expect(selectAgentContext(summary)).toBe('[rig] Session initialized\n  superpowers: installed (v7.0.2)');
   });
 
   it('detects environment and caches it', async () => {
