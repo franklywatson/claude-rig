@@ -24,7 +24,8 @@ export interface RewriteResult {
    * (permissionDecision:"allow"). rtk exit 0 (Allow) → true; rtk exit 3
    * (Ask/Default — no matching allow rule, rtk-ai/rtk#1155) → false, so the
    * hook emits updatedInput WITHOUT permissionDecision and Claude Code prompts.
-   * Python-env rewrites (venv/uv path resolution) → true (safe path fix).
+   * Python-env rewrites (venv/uv path resolution) → false as well: the
+   * rewrite fixes the path, and the user's permission rules decide the rest.
    */
   autoAllow: boolean;
 }

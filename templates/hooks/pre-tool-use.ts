@@ -46,10 +46,10 @@ import { readFileSync } from 'node:fs';
     const result = handlePreToolUse(input.tool_name, input.tool_input, cache, config);
 
     // Transparent rewrite: output JSON with updatedInput. Auto-allow
-    // (permissionDecision:"allow") only for rewrites safe to auto-approve —
-    // rtk Allow (exit 0) and python-env path rewrites. For rtk Ask/Default
-    // (exit 3) emit updatedInput WITHOUT permissionDecision so Claude Code
-    // prompts the user (matches rtk's own hook; rtk-ai/rtk#1155).
+    // (permissionDecision:"allow") only for an rtk Allow (exit 0). For rtk
+    // Ask/Default (exit 3) and python-env path rewrites emit updatedInput
+    // WITHOUT permissionDecision, so Claude Code's own permission rules decide
+    // (for exit 3 this matches rtk's own hook; rtk-ai/rtk#1155).
     // (Only takes effect in permission modes that consult the hook's decision,
     // i.e. default mode — not bypassPermissions, where updatedInput is ignored.)
     if (result && result.type === 'rewrite') {
