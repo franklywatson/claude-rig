@@ -13,6 +13,130 @@ const FAILURE_LINE_PATTERNS = [
   /\berror TS\d{4}\b/,
 ];
 
+// What only a failed test run prints. The patterns below are tried on whole
+// output, line by line (`m`). Each stays within one line and can match a
+// stretch of text in one way only, so none is slow on long output.
+
+// A failed test in TAP, which node:test prints when its output is piped, with
+// a test number or a description. A result marked TODO or SKIP does not fail
+// the run.
+const TAP_FAILURE =
+  /^[ \t]*not ok(?:[ \t]+\d+(?=[ \t]|$)|[ \t]+-[ \t])(?![^\n]*#[ \t]*(?:TODO|SKIP|todo|skip|Todo|Skip)\b)/m;
+
+// node:test's closing count of failed tests, in TAP and in its spec reporter.
+const NODE_FAILURE_COUNT = /^(?:# fail|ℹ fail) [1-9]/m;
+
+// The whole line pnpm ends with when the `test` script failed. For any other
+// script it prints "Command failed with exit code N".
+const PNPM_TEST_FAILED = /^[ \t]*\[?ELIFECYCLE\]?[^\S\r\n]+Test failed\. See above for more details\.[ \t]*$/m;
+
+// A runner's own FAIL or FAILED line, which goes on to name a file.
+const RUNNER_FAIL_LINE = /^[ \t]*(?:FAIL|FAILED)[ \t][^\n]*?(?:\/|\.[A-Za-z])/m;
+
+// The summary line of vitest or jest, which puts the failed count first.
+const RUNNER_SUMMARY = /^[ \t]*(?:Test Files|Test Suites|Tests):?[ \t]+[1-9]\d* failed(?=,|[ \t]*[|(])/m;
+
+// Color codes, which a tool prints when color is forced on.
+const COLOR_CODES = /\x1b\[[0-9;]*m/g;
+
+const TEST_RUN_SIGNS = [RUNNER_FAIL_LINE, RUNNER_SUMMARY, TAP_FAILURE, NODE_FAILURE_COUNT, PNPM_TEST_FAILED];
+
+// How a command writes a color code (`\033[31m`).
+const COLOR_NOTATION = /\\(?:033|e|x1[bB])\[[0-9;]*m/g;
+
+// What prints a value: `$?`, a variable, a format such as `%d`. A brace ends
+// before the next `$` or `{` and a width does not start with a zero, so that
+// no stretch of text can be matched in two ways.
+const PRINTED_VALUES = /\$\{[^}{$\n]*\}|\$\w+|\$\?|%[-+0#]*(?:[1-9]\d*)?(?:\.\d+)?[a-z]/g;
+
+/**
+ * Text made comparable with what a command says: no colors, quote marks,
+ * backslashes or capitals, white space single (a written-out `\t` or `\n`
+ * too), and every number alike. What prints a value in a command stands as a
+ * number. A command and its output are read the same way, so a backslash that
+ * a plain `echo` prints as it is written makes no difference.
+ */
+export function comparable(text: string): string {
+  return text
+    .replace(COLOR_CODES, '')
+    .replace(COLOR_NOTATION, '')
+    .replace(/\\[tn]/g, ' ')
+    .replace(/[\\"']/g, '')
+    .replace(PRINTED_VALUES, '0')
+    .replace(/\d+/g, '0')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+/**
+ * Whether output shows a test run that failed, in words only a test runner or
+ * a package manager's test script prints. An `ERROR` line, a bare "1 failed"
+ * or a bare "FAILED" is not such a sign: a build prints those too.
+ *
+ * `saidByCommand` is what the command the output came from says itself, made
+ * comparable. A sign the command spells out is not counted: `npm run build &&
+ * npm test || echo "FAILED - see build.log"` prints it whether or not the
+ * tests ran. A runner's FAIL line is known by the word and the one after it,
+ * the other signs by the text they match (`not ok 1`, `Tests: 1 failed`).
+ */
+export function showsFailedTestRun(output: string, saidByCommand = ''): boolean {
+  return output.replace(COLOR_CODES, '').split('\n').some(line =>
+    TEST_RUN_SIGNS.some(sign => {
+      const found = sign.exec(line);
+      if (!found) return false;
+      const words = sign === RUNNER_FAIL_LINE ? line.trim().split(/\s+/).slice(0, 2).join(' ') : found[0];
+      return !saidByCommand.includes(comparable(words));
+    }),
+  );
+}
+
+/**
+ * Whether one line of output reads as a failure to this check: in the words
+ * it has always looked for, or as a sign of a failed test run.
+ */
+export function readsAsFailure(line: string): boolean {
+  return FAILURE_PATTERNS.some(p => p.test(line)) || showsFailedTestRun(line);
+}
+
+// node:test's spec reporter names a failed test with its time, as it runs
+// (`✖ adds (1ms)`) and once more in a closing recap. A test marked TODO
+// carries a note after the time. Other tools use the mark too
+// (`✖ 3 problems`).
+const SPEC_FAILURE = /^✖ [^\n]*\(\d+(?:\.\d+)?ms\)$/;
+
+// What a failed run closes with. The last such line is listed when the output
+// names no failure, or when the lines that named them were cut off.
+const CLOSING_LINE_PATTERNS = [NODE_FAILURE_COUNT, PNPM_TEST_FAILED, RUNNER_SUMMARY];
+
+/**
+ * The lines a message lists. With `testRunSigns`, a failed test run is read
+ * in its own words too: each failure it names, or failing that the line the
+ * run closed with.
+ */
+function failureLines(testOutput: string, testRunSigns: boolean): string[] {
+  const named: string[] = [];
+  const closing: string[] = [];
+  for (const rawLine of testOutput.split('\n')) {
+    // The lines this check has always listed are matched as they arrived.
+    if (FAILURE_LINE_PATTERNS.some(p => p.test(rawLine))) {
+      named.push(rawLine.trim());
+      continue;
+    }
+    if (!testRunSigns) continue;
+    const line = rawLine.replace(COLOR_CODES, '').trim();
+    if (TAP_FAILURE.test(line) || RUNNER_FAIL_LINE.test(line)) {
+      named.push(line);
+    } else if (SPEC_FAILURE.test(line)) {
+      // The spec reporter's closing recap repeats a line already listed.
+      if (!named.includes(line)) named.push(line);
+    } else if (CLOSING_LINE_PATTERNS.some(p => p.test(line))) {
+      closing.push(line);
+    }
+  }
+  return named.length > 0 ? named : closing.slice(-1);
+}
+
 /**
  * Phases whose runs expect failing tests (the RED step of red-green-refactor).
  * Mirrors SCOPED_PHASES in test-scope.ts and post-tool-use.ts — all three list
@@ -73,20 +197,15 @@ export interface ClassifiedFailure {
 /**
  * Classify test failures as regressions (in-branch) or pre-existing.
  */
-export function classifyFailures(testOutput: string, changedFiles: string[]): ClassifiedFailure {
-  const lines = testOutput.split('\n');
-  const failureLines: string[] = [];
-
-  for (const line of lines) {
-    if (FAILURE_LINE_PATTERNS.some(p => p.test(line))) {
-      failureLines.push(line.trim());
-    }
-  }
-
+export function classifyFailures(
+  testOutput: string,
+  changedFiles: string[],
+  testRunSigns = false,
+): ClassifiedFailure {
   const regressions: string[] = [];
   const preExisting: string[] = [];
 
-  for (const line of failureLines) {
+  for (const line of failureLines(testOutput, testRunSigns)) {
     const filePath = extractFilePath(line);
     if (!filePath) {
       // Can't classify without a file path — treat as regression
@@ -115,17 +234,23 @@ export function classifyFailures(testOutput: string, changedFiles: string[]): Cl
  * block returns in verify+ (final verification), where a green suite is
  * mandatory. Mirrors checkTestScope's phase gating. currentPhase is omitted by
  * callers that don't track phase, leaving the strict behavior unchanged.
+ *
+ * With `testRunSigns`, a failed test run is also read in its own words (see
+ * showsFailedTestRun). That is for output known to be a test run's: a
+ * node:test run fails without any of the words this check looks for otherwise.
  */
 export function checkZeroDefect(
   testOutput: string,
   config: HarnessConfig,
   changedFiles?: string[],
   currentPhase?: string | null,
+  testRunSigns = false,
 ): EnforcementViolation | null {
   const tolerance = config.rules.zero_defect?.tolerance ?? 'strict';
   const unrelatedErrors = config.rules.zero_defect?.unrelated_errors ?? 'block';
 
-  const hasFailure = FAILURE_PATTERNS.some(p => p.test(testOutput));
+  const hasFailure =
+    FAILURE_PATTERNS.some(p => p.test(testOutput)) || (testRunSigns && showsFailedTestRun(testOutput));
   if (!hasFailure) return null;
 
   // During tdd+/sdd+, failing tests are expected (RED). Cap the level at
@@ -136,11 +261,11 @@ export function checkZeroDefect(
 
   // No changed files provided — use original behavior
   if (!changedFiles) {
-    return formatViolation(testOutput, effectiveTolerance);
+    return formatViolation(testOutput, effectiveTolerance, testRunSigns);
   }
 
   // Classify failures
-  const { regressions, preExisting } = classifyFailures(testOutput, changedFiles);
+  const { regressions, preExisting } = classifyFailures(testOutput, changedFiles, testRunSigns);
 
   // No regressions — check pre-existing handling
   if (regressions.length === 0) {
@@ -149,7 +274,7 @@ export function checkZeroDefect(
       return formatPreExistingMessage(preExisting);
     }
     // block: fall through to format all as violations
-    return formatViolation(testOutput, effectiveTolerance);
+    return formatViolation(testOutput, effectiveTolerance, testRunSigns);
   }
 
   // Has regressions — always block on those
@@ -169,14 +294,8 @@ export function checkZeroDefect(
   };
 }
 
-function formatViolation(testOutput: string, tolerance: string): EnforcementViolation {
-  const lines = testOutput.split('\n');
-  const failureLines: string[] = [];
-  for (const line of lines) {
-    if (FAILURE_LINE_PATTERNS.some(p => p.test(line))) {
-      failureLines.push(line.trim());
-    }
-  }
+function formatViolation(testOutput: string, tolerance: string, testRunSigns: boolean): EnforcementViolation {
+  const failures = failureLines(testOutput, testRunSigns);
 
   const level = tolerance === 'strict' ? 'block' : 'advise';
   const prefix = level === 'block' ? '[BLOCK]' : '[ADVISE]';
@@ -186,8 +305,8 @@ function formatViolation(testOutput: string, tolerance: string): EnforcementViol
     message: [
       `${prefix} ZERO-DEFECT VIOLATION`,
       '',
-      `${failureLines.length} failure(s) found:`,
-      ...failureLines.slice(0, 10).map(l => `  ${l}`),
+      `${failures.length} failure(s) found:`,
+      ...failures.slice(0, 10).map(l => `  ${l}`),
       '',
       'Zero-defect tolerance: every error, warning, and failure must be addressed.',
       '"This failure is unrelated" is never acceptable.',

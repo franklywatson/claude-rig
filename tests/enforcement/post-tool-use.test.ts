@@ -144,6 +144,9 @@ describe('handlePostToolUse', () => {
       'npm test # the whole suite',
       'npm run lint; npm test',
       'cd web\nnpm test',
+      // A `#` inside a word starts no comment.
+      'curl -s http://localhost:3000/#/health && npm test',
+      'echo build#5; npm test',
     ])('recognizes the package test script in %j', (testCommand) => {
       expect(isTestCommand(testCommand)).toBe(true);
     });
@@ -166,6 +169,9 @@ describe('handlePostToolUse', () => {
       'X=$(echo npm test ; echo ERROR)',
       'echo "a \\" ; npm test "',
       "echo $'a\\'b ; npm test'",
+      "echo $'a\\'b ; npm test '",
+      'gh issue view #12 && npm test',
+      'echo done ;# npm test',
       'git commit -m "make npm test pass"',
       'git commit -m "wip; npm test still red"',
       "git commit -m 'lint && npm test in CI'",
@@ -400,13 +406,14 @@ describe('handlePostToolUse', () => {
       expect(behindCd).toEqual(plain);
     });
 
+    // The TAP line is all there is: no ERROR or FAIL word beside it.
     it.each(['not ok 1 - adds', '    not ok 2 - a nested test', '# fail 1'])(
       'reads the TAP line %j as a failing test run',
       (tapLine) => {
-        const output = ['Exit code 1', '$ node --test', '# ERROR: total came back as text', tapLine].join('\n');
-        expect(
-          handlePostToolUseFailure('Bash', { command: 'pnpm run build && pnpm test' }, output, cache, config)?.level,
-        ).toBe('block');
+        const output = ['Exit code 1', '$ node --test', tapLine].join('\n');
+        const result = handlePostToolUseFailure('Bash', { command: 'pnpm run build && pnpm test' }, output, cache, config);
+        expect(result?.level).toBe('block');
+        expect(result?.message).toContain(`  ${tapLine.trim()}`);
       },
     );
 
@@ -476,6 +483,767 @@ describe('handlePostToolUse', () => {
       expect(
         handlePostToolUseFailure('Bash', { command: 'npm run build && npx vitest run' }, buildFailed, cache, config),
       ).not.toBeNull();
+    });
+  });
+
+  // The fixtures below are what npm 10.9.9, pnpm 11.25.0, Node 22.23.5, tsc and
+  // vitest 5.1.0 really printed in a demo project, with stacks and timings left
+  // out. A fixture that was put together from such lines says so.
+  const typeError = "check.ts(1,7): error TS2322: Type 'string' is not assignable to type 'number'.";
+  const tapPassed = [
+    'TAP version 13',
+    '# Subtest: adds',
+    'ok 1 - adds',
+    '  ---',
+    "  type: 'test'",
+    '  ...',
+    '1..1',
+    '# tests 1',
+    '# pass 1',
+    '# fail 0',
+  ];
+  const tapFailed = [
+    'TAP version 13',
+    '# Subtest: adds',
+    'not ok 1 - adds',
+    '  ---',
+    "  failureType: 'testCodeFailure'",
+    "  error: '4 == 5'",
+    "  code: 'ERR_ASSERTION'",
+    '  ...',
+    '1..1',
+    '# tests 1',
+    '# pass 0',
+    '# fail 1',
+  ];
+  const buildOk = ['', '> demo@1.0.0 build', '> node build-ok.cjs', '', 'build ok'];
+  const nodeTest = ['', '> demo@1.0.0 test', '> node mark-test.cjs && node --test --test-reporter=tap calc.cjs', ''];
+  const failed = (command: string, ...lines: string[]) =>
+    handlePostToolUseFailure('Bash', { command }, lines.join('\n'), cache, config);
+
+  describe('a failing node:test run started through a package script', () => {
+    // `assert.equal(2 + 2, 5)` with the default message: the output holds no
+    // FAIL, ERROR or "N failed" for the check to find.
+    it.each(['npm test', 'cd . && npm test', 'npm run build && npm test'])('blocks and names the test: %j', (command) => {
+      const output = command.includes('build') ? [...buildOk, ...nodeTest, ...tapFailed] : [...nodeTest, ...tapFailed];
+      const result = failed(command, 'Exit code 1', ...output);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('1 failure(s) found');
+      expect(result?.message).toContain('  not ok 1 - adds');
+      cache.setPhase('tdd+');
+      expect(failed(command, 'Exit code 1', ...output)?.level).toBe('advise');
+    });
+
+    it('reports it when the session has changed files recorded', () => {
+      cache.setChangedFiles(['calc.cjs', 'src/other.ts']);
+      const result = failed('npm test', 'Exit code 1', ...nodeTest, ...tapFailed);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('not ok 1 - adds');
+    });
+
+    it.each(['pnpm test', 'cd . && pnpm test', 'pnpm run build && pnpm test'])('blocks through pnpm: %j', (command) => {
+      const result = failed(
+        command,
+        'Exit code 1',
+        '$ node build-ok.cjs',
+        'build ok',
+        '$ node mark-test.cjs && node --test --test-reporter=tap calc.cjs',
+        ...tapFailed,
+        '[ELIFECYCLE] Test failed. See above for more details.',
+      );
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('reports a pnpm test script that exits 1 and prints nothing of its own', () => {
+      const result = failed(
+        'pnpm run build && pnpm test',
+        'Exit code 1',
+        '$ node build-ok.cjs',
+        'build ok',
+        '$ node mark-test.cjs && node -e "process.exit(1)"',
+        '[ELIFECYCLE] Test failed. See above for more details.',
+      );
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  [ELIFECYCLE] Test failed. See above for more details.');
+    });
+
+    it('says nothing about a passing run that has a TODO failure in it', () => {
+      const output = [...buildOk, ...nodeTest, 'ok 1 - adds', 'not ok 2 - rounds # TODO not written yet', '# fail 0', '# todo 1'];
+      const result = handlePostToolUse('Bash', { command: 'npm run build && npm test' }, tracker, cache, config, undefined, output.join('\n'));
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('the lifecycle npm runs around a test script', () => {
+    const pretest = ['', '> demo@1.0.0 pretest', '> node mark-pretest.cjs && tsc --noEmit --skipLibCheck check.ts', ''];
+
+    it('reports a pretest that fails behind an earlier step, as it does for the test script alone', () => {
+      const alone = failed('npm test', 'Exit code 2', ...pretest, typeError);
+      const behindBuild = failed('npm run build && npm test', 'Exit code 2', ...buildOk, ...pretest, typeError);
+      expect(alone?.level).toBe('block');
+      expect(alone?.message).toContain('error TS2322');
+      expect(behindBuild).toEqual(alone);
+    });
+
+    it('reads from the pretest line on, not what the earlier step printed', () => {
+      // Put together: a build that prints an error and goes on, then a pretest
+      // and tests that pass.
+      const output = ['', '> demo@1.0.0 build', '> node build-config.cjs', '', 'ERROR: missing build configuration', ...pretest, ...nodeTest, ...tapPassed];
+      const result = handlePostToolUse('Bash', { command: 'npm run build; npm test' }, tracker, cache, config, undefined, output.join('\n'));
+      expect(result).toBeNull();
+    });
+
+    it('says nothing when pretest was run by name and failed before npm test started', () => {
+      expect(failed('npm run pretest && npm test', 'Exit code 2', ...pretest, typeError)).toBeNull();
+      expect(failed('npm run build && npm run pretest && npm test', 'Exit code 2', ...buildOk, ...pretest, typeError)).toBeNull();
+    });
+
+    it('does not count pretest lines at all once pretest is run by name', () => {
+      // Put together: a workspace run prints one pretest line per package, and
+      // the second package fails. How many lines a step prints is not known.
+      const workspaces = ['', '> web@1.0.0 pretest', '> tsc --noEmit', '', '', '> api@1.0.0 pretest', '> tsc --noEmit', '', typeError];
+      expect(failed('npm run pretest --workspaces && npm test', 'Exit code 2', ...workspaces)).toBeNull();
+      // Put together: the line pnpm printed for a script before version 11.
+      const olderPnpm = ['', '> demo@1.0.0 pretest /home/me/demo', '> tsc --noEmit', '', typeError];
+      expect(failed('pnpm run pretest && pnpm test', 'Exit code 2', ...olderPnpm)).toBeNull();
+      expect(failed('pnpm pretest && pnpm test', 'Exit code 2', ...olderPnpm)).toBeNull();
+      expect(failed('npm --prefix . run pretest && npm test', 'Exit code 2', ...pretest, typeError)).toBeNull();
+    });
+
+    it('still reads the test line after a pretest that was run by name', () => {
+      // Put together: pretest passes by name, then the tests fail.
+      const result = failed('npm run pretest && npm test', 'Exit code 1', '', '> demo@1.0.0 pretest', '> tsc --noEmit', ...nodeTest, ...tapFailed);
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('reads the pretest line of a package with no name', () => {
+      // Put together from the nameless form npm prints (`> test`).
+      const result = failed('npm run build && npm test', 'Exit code 2', '', '> build', '> node build-ok.cjs', '', 'build ok', '', '> pretest', '> tsc --noEmit', '', typeError);
+      expect(result?.level).toBe('block');
+    });
+
+    it.each(['> demo@1.0.0 pretest:lint', '> pretest -x', '> demo@1.0.0 prepretest'])(
+      'does not take %j for the start of the test lifecycle',
+      (line) => {
+        expect(failed('npm run build && npm test', 'Exit code 2', ...buildOk, '', line, '', typeError)).toBeNull();
+      },
+    );
+  });
+
+  describe('a directory change the pattern cannot read', () => {
+    // `cd "$(node locate.cjs)" && pnpm test`: the locator printed an error, cd
+    // failed, and pnpm never started. This is what bash really printed.
+    const cdFailed = ['Exit code 1', 'ERROR: configured workspace is missing', 'bash: line 1: cd: packages/web: No such file or directory'];
+
+    it.each([
+      'cd "$(node locate.cjs)" && pnpm test',
+      'cd "$(git rev-parse --show-toplevel)" && npm test',
+      'cd "`pwd`/web" && npm test',
+      'cd $(pwd) && npm test',
+      'cd `pwd` && npm test',
+      'cd "${ROOT:-$(pwd)}" && npm test',
+      'cd web && cd "$(node locate.cjs)" && npm test',
+    ])('leaves a test script behind a computed directory alone: %j', (command) => {
+      expect(isTestCommand(command)).toBe(false);
+      expect(failed(command, ...cdFailed)).toBeNull();
+    });
+
+    it.each([
+      'cd web && npm test',
+      'cd "/srv/my project/web" && npm test',
+      "cd 'web app' && npm test",
+      'cd "$PROJECT_DIR" && npm test',
+      'cd $PROJECT_DIR/web && npm test',
+      'cd ${PROJECT_DIR}/web && npm test',
+      'cd ~/proj && npm test',
+      'cd ../api; npm test',
+    ])('still reads a test script behind a plain directory change: %j', (command) => {
+      const plain = failed('npm test', 'Exit code 2', typeError);
+      expect(plain?.level).toBe('block');
+      expect(failed(command, 'Exit code 2', typeError)).toEqual(plain);
+    });
+  });
+
+  describe('a line that only quotes what pnpm prints for a failed test script', () => {
+    // `pnpm run build && pnpm test`: tsc, run by the build, quoted the string
+    // in its diagnostic. pnpm's own last line names no test.
+    it('says nothing when the build fails with a diagnostic that quotes the line', () => {
+      const result = failed(
+        'pnpm run build && pnpm test',
+        'Exit code 2',
+        '$ tsc --noEmit --skipLibCheck hint.ts',
+        `hint.ts(1,7): error TS2322: Type '"[ELIFECYCLE] Test failed. See above for more details."' is not assignable to type '"ready"'.`,
+        '[ELIFECYCLE] Command failed with exit code 2.',
+      );
+      expect(result).toBeNull();
+    });
+  });
+
+  describe('steps after a package test script', () => {
+    const passingTest = ['', '> demo@1.0.0 test', '> node mark-test.cjs && node --test --test-reporter=tap calc-ok.cjs', '', ...tapPassed];
+    const failingTest = [...nodeTest, ...tapFailed];
+    const lintFailed = ['', '> demo@1.0.0 lint', '> tsc --noEmit --skipLibCheck check.ts', '', typeError];
+
+    it('says nothing when the tests pass and a later npm script fails', () => {
+      expect(failed('npm run build && npm test && npm run lint', 'Exit code 2', ...buildOk, ...passingTest, ...lintFailed)).toBeNull();
+      expect(failed('npm test && npm run lint', 'Exit code 2', ...passingTest, ...lintFailed)).toBeNull();
+      expect(failed('npm test && npm run lint -- --max-warnings 0', 'Exit code 2', ...passingTest, ...lintFailed)).toBeNull();
+      expect(failed('npm test && CI=1 npm run lint', 'Exit code 2', ...passingTest, ...lintFailed)).toBeNull();
+    });
+
+    it('stops at the line of whichever later npm script started', () => {
+      // `npm test || npm run build; npm run lint`: the tests pass, so the build
+      // is skipped and the lint script is the one that prints a line.
+      expect(failed('npm test || npm run build; npm run lint', 'Exit code 2', ...passingTest, ...lintFailed)).toBeNull();
+      expect(failed('npm test && npm run build && npm run lint', 'Exit code 2', ...passingTest, ...buildOk, ...lintFailed)).toBeNull();
+    });
+
+    it('says nothing when the tests pass and a build that follows them fails', () => {
+      const buildFailedAfter = ['', '> demo@1.0.0 build', '> tsc --noEmit --skipLibCheck check.ts', '', typeError];
+      expect(failed('npm test && npm run build', 'Exit code 2', ...passingTest, ...buildFailedAfter)).toBeNull();
+    });
+
+    it('reports failing tests when the later step never started', () => {
+      const result = failed('npm run build && npm test && npm run lint', 'Exit code 1', ...buildOk, ...failingTest);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('reports the failing tests and not the lint error that follows them', () => {
+      const result = failed('npm test; npm run lint', 'Exit code 2', ...failingTest, ...lintFailed);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('1 failure(s) found');
+      expect(result?.message).toContain('  not ok 1 - adds');
+      expect(result?.message).not.toContain('TS2322');
+    });
+
+    it('stops at the line of a script that runs before the later one', () => {
+      // Put together: a prelint script fails, so the lint line never prints.
+      const prelintFailed = ['', '> demo@1.0.0 prelint', '> tsc --noEmit --skipLibCheck check.ts', '', typeError];
+      expect(failed('npm test && npm run lint', 'Exit code 2', ...passingTest, ...prelintFailed)).toBeNull();
+    });
+
+    it('stops at the later script in a package with no name', () => {
+      // Put together from the nameless form npm prints.
+      const output = ['', '> test', '> node --test', '', ...tapPassed, '', '> lint', '> tsc --noEmit', '', typeError];
+      expect(failed('npm test && npm run lint', 'Exit code 2', ...output)).toBeNull();
+    });
+
+    it('keeps every package of a workspace run in the test output', () => {
+      // Put together: two workspace packages, the second one fails.
+      const twoPackages = (second: string[]) => [
+        '', '> web@1.0.0 test', '> node --test', '', ...tapPassed,
+        '', '> api@1.0.0 test', '> node --test', '', ...second,
+      ];
+      const result = failed('npm test --workspaces && npm run lint', 'Exit code 1', ...twoPackages(tapFailed));
+      expect(result?.message).toContain('  not ok 1 - adds');
+      expect(failed('npm test --workspaces && npm run lint', 'Exit code 2', ...twoPackages(tapPassed), ...lintFailed)).toBeNull();
+    });
+
+    it('does not stop at a line the test script printed itself when failing tests follow it', () => {
+      // Put together: the test script runs the lint script before its tests.
+      const result = failed(
+        'npm test && npm run lint',
+        'Exit code 1',
+        '', '> demo@1.0.0 test', '> npm run lint && node --test', '',
+        '', '> demo@1.0.0 lint', '> eslint .', '',
+        ...tapFailed,
+      );
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('does not take the line of an earlier run of the later script for the end', () => {
+      // Put together: lint runs before and after the tests, and the pretest
+      // script fails in between.
+      const result = failed(
+        'npm run lint && npm test && npm run lint',
+        'Exit code 2',
+        '', '> demo@1.0.0 lint', '> eslint .', '',
+        '', '> demo@1.0.0 pretest', '> tsc --noEmit --skipLibCheck check.ts', '', typeError,
+      );
+      expect(result?.level).toBe('block');
+    });
+
+    it('reads a dot in the later script name as a dot', () => {
+      // Put together: the test script runs `lint-fix` before a type check that
+      // fails. That line is not the line of the later script `lint.fix`.
+      const result = failed(
+        'npm test && npm run lint.fix',
+        'Exit code 2',
+        '', '> demo@1.0.0 test', '> npm run lint-fix && tsc --noEmit', '',
+        '', '> demo@1.0.0 lint-fix', '> eslint --fix .', '',
+        typeError,
+      );
+      expect(result?.level).toBe('block');
+    });
+
+    // A later step that prints no line of its own to stop at. The output is the
+    // test run's only if it shows a failed test run.
+    it.each([
+      'npm test && npx tsc --noEmit',
+      'npm test && node scripts/check-types.js',
+      'npm test; make lint',
+      'npm test && pnpm run lint',
+      'npm test && npm run -s lint',
+      'npm test && npm run lint --silent',
+      'npm test && npm run lint -s',
+      'npm test && npm_config_loglevel=silent npm run lint',
+      'npm test && (cd docs && npm run lint)',
+      'npm test & npm run lint',
+      'npm test && cd "$(node locate.cjs)"',
+      // A later npm script whose own line may never reach the output.
+      'npm test && npm run lint 2>&1 | tail -3',
+      'npm test && npm run lint 2>&1 | grep error',
+      'npm test; npm run lint > lint.log 2>&1; tail -2 lint.log',
+      'npm test && npm run lint --if-present && npm run build',
+      'npm test && npm run lint -q',
+      // A step that looks quiet and runs a command of its own.
+      'npm test && echo "build: $(node build-config.cjs 2>&1)"',
+      'npm test; echo $(npm run lint 2>&1)',
+      'npm test; echo done | node build-config.cjs',
+      'npm test; printf "%s\\n" "`cat build.log`"',
+      'npm test; true | node build-config.cjs',
+      'npm test; exit $(node status.cjs)',
+      // The test script's own step hands its output to another program, or
+      // takes arguments from one.
+      'npm test | node summarize.cjs',
+      'npm test -- $(node select-tests.cjs)',
+      'npm test 2>&1 | tee >(node upload.cjs)',
+      'npm test && npm test | node summarize.cjs',
+      // A step sent to the background before the tests writes while they run.
+      'node late-error.cjs &\nnpm test',
+      // `set -x` makes the shell print every command it runs.
+      'npm test; set -x; echo done',
+      'set -x; npm test; echo done',
+      'set -euxo pipefail\nnpm test',
+      // Not the silent steps they look like.
+      'npm test; exit FAILED',
+      'npm test | grep -r ERROR',
+      'npm test | grep -f patterns.txt',
+      // A heredoc after the script holds lines the pattern cannot tell from steps.
+      "npm test <<'EOF'\nsome input\nEOF",
+      "npm test <<EOF\necho it's\nEOF\nnpm run lint | tail -1; echo 'ok'",
+      // Quoting the pattern cannot follow can hide a step inside a "word".
+      "npm test; echo 'don'\\''t stop'; npm run lint 2>&1 | tail -3; echo 'ok'",
+      "npm test; echo it\\'s done; npm run lint 2>&1 | tail -3; echo it\\'s over",
+      "npm test; echo $'a\\'b'; npm run lint | tail -1",
+      // npm reads its settings from the environment in either case.
+      'npm test && NPM_CONFIG_LOGLEVEL=silent npm run lint',
+      // A program in a pipe that prints text of its own, or changes the text.
+      'npm test | cat - lint.log',
+      'npm test | grep error build.log',
+      'npm test | tr a-z A-Z',
+      'npm test | sed -n 1,20p',
+      'npm test | sort lint.log',
+    ])('asks for a failed test run when the later step cannot be told apart: %j', (command) => {
+      // Put together: the tests pass and the later step prints a type error.
+      expect(failed(command, 'Exit code 2', ...passingTest, typeError)).toBeNull();
+      const result = failed(command, 'Exit code 1', ...failingTest);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('asks for a failed test run when npm printed none of its script lines', () => {
+      // Put together: npm is set to run silently (`loglevel=silent` in .npmrc),
+      // so nothing marks where the tests end and the lint script begins.
+      expect(failed('npm test && npm run lint', 'Exit code 2', ...tapPassed, typeError)).toBeNull();
+      expect(failed('npm test && npm run lint', 'Exit code 1', ...tapFailed)?.level).toBe('block');
+    });
+
+    // `npm run build && npm test && echo PASSED || echo FAILED` is a common way
+    // to end a command. Here the build fails, so the echo is all that runs
+    // after it, and the command exits 0.
+    it.each([
+      ['npm run build && npm test && echo PASSED || echo FAILED', 'FAILED'],
+      ['npm run build && npm test || echo FAILED', 'FAILED'],
+      ['npm run build && npm test || echo "FAIL"', 'FAIL'],
+      ['npm run build && npm test || echo "FAILED $?"', 'FAILED 1'],
+      ['npm run build && npm test && echo PASSED || echo "FAILED - see the output above"', 'FAILED - see the output above'],
+      ['npm run build && npm test || echo "FAIL build or tests"', 'FAIL build or tests'],
+      ['npm run build && npm test || echo "Tests: 1 failed step"', 'Tests: 1 failed step'],
+      // Words that read like a failed test run, whatever pattern is used. A
+      // sign whose words the command holds itself is not trusted, and a line
+      // the command spells out is left out of the output.
+      ['npm run build && npm test && echo ok || echo "not ok"', 'not ok'],
+      ['npm run build && npm test || echo "not ok 1 - build or tests"', 'not ok 1 - build or tests'],
+      ['npm run build && npm test || echo "FAILED - see build.log"', 'FAILED - see build.log'],
+      ['npm run build && npm test || echo "FAILED build/test"', 'FAILED build/test'],
+      ['npm run build && npm test || echo "FAILED $? in src/app.ts"', 'FAILED 1 in src/app.ts'],
+      ['npm run build && npm test || echo FAILED: see dist/build.log >&2', 'FAILED: see dist/build.log'],
+      ['npm run build && npm test || printf "Tests: 1 failed, 0 passed\\n"', 'Tests: 1 failed, 0 passed'],
+      ["npm run build && npm test || printf '%s\\n' 'FAIL tests/sum.test.ts'", 'FAIL tests/sum.test.ts'],
+      ['npm run build && npm test || echo -e "FAILED in src/app.ts\\n"', 'FAILED in src/app.ts'],
+      // The same words printed in other ways.
+      ['npm run build && npm test || { echo "FAILED - see build.log"; exit 1; }', 'FAILED - see build.log'],
+      ['npm run build && npm test || (echo "FAILED - see build.log"; exit 1)', 'FAILED - see build.log'],
+      ['npm run build && npm test || >&2 echo "FAILED - see build.log"', 'FAILED - see build.log'],
+      ['npm run build && npm test || echo "FAILED - see build.log" | tee -a status.txt', 'FAILED - see build.log'],
+      ['npm run build && npm test && echo ok || { echo "not ok 1 - build or tests"; exit 1; }', 'not ok 1 - build or tests'],
+      ["npm run build && npm test || node -e 'console.log(\"FAILED - see build.log\")'", 'FAILED - see build.log'],
+      // Printed differently from how the command spells them: in color, with a
+      // tab, with a home directory filled in, with the quotes taken off.
+      ['npm run build && npm test || echo -e "\\033[31mFAILED\\033[0m - see build.log"', '\x1b[31mFAILED\x1b[0m - see build.log'],
+      ["npm run build && npm test || printf 'FAILED\\tbuild/test\\n'", 'FAILED\tbuild/test'],
+      ['npm run build && npm test || echo FAILED see ~/build.log', 'FAILED see /home/dave/build.log'],
+      ['npm run build && npm test || echo "FAILED \\"build/test\\""', 'FAILED "build/test"'],
+      // Put together from two quoted pieces, or changed on the way out.
+      ['npm run build && npm test || echo "FA""ILED - see build.log"', 'FAILED - see build.log'],
+      ['npm run build && npm test || echo "not" "ok 1 - build or tests"', 'not ok 1 - build or tests'],
+      ['npm run build && npm test || echo "failed - see build.log" | tr a-z A-Z', 'FAILED - SEE BUILD.LOG'],
+      // A variable in single quotes is printed as it is written.
+      ["npm run build && npm test || echo 'FAILED $step build/test'", 'FAILED $step build/test'],
+    ])('does not take what a closing echo prints for a failed test run: %j', (command, echoed) => {
+      const output = ['', '> demo@1.0.0 build', '> node build-config.cjs', '', 'ERROR: missing build configuration', echoed, ''];
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output.join('\n'))).toBeNull();
+      // The same through pnpm, which prints no line for a script.
+      const pnpm = command.replaceAll('npm', 'pnpm');
+      const pnpmOutput = ['$ node build-config.cjs', 'ERROR: missing build configuration', '[ELIFECYCLE] Command failed with exit code 1.', echoed, ''];
+      expect(handlePostToolUse('Bash', { command: pnpm }, tracker, cache, config, undefined, pnpmOutput.join('\n'))).toBeNull();
+    });
+
+    it("does not take an echo before the tests for a failed test run", () => {
+      // The echo prints first, then the build fails and the tests never start.
+      const command = 'echo "FAIL tests/sum.test.ts is the one to watch" && npm run build && npm test';
+      const output = ['FAIL tests/sum.test.ts is the one to watch', '', '> demo@1.0.0 build', '> node build-config.cjs', '', 'ERROR: missing build configuration', ''];
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output.join('\n'))).toBeNull();
+    });
+
+    // A filter, a test name, a comment or a commit message can hold the words
+    // of a sign and print nothing. The sign still counts.
+    it.each([
+      ['npm run build && npm test 2>&1 | grep -E "FAIL|failed"', [' FAIL  tests/sum.test.ts > adds', ' Test Files  1 failed (1)', '      Tests  1 failed (1)']],
+      ['npm run build && npm test 2>&1 | grep FAIL', [' FAIL  tests/sum.test.ts > adds']],
+      ['npm run build && npm test 2>&1 | grep failed', [' Test Files  1 failed (1)', '      Tests  1 failed (1)']],
+      ['npm run build && npm test -- -t "failed login" 2>&1 | tail -2', ['Tests:       1 failed, 1 total', 'Test Suites: 1 failed, 1 total']],
+      ['set -e # fail fast\nnpm run build\nnpm test | tail -3', ['# pass 0', '# fail 1', '# cancelled 0']],
+      ['npm run build && npm test | tail -3 # shows "# fail 1" when a test failed', ['# pass 0', '# fail 1', '# cancelled 0']],
+      ['yarn build && yarn test || echo "FAILED: tests failed"', [' FAIL  tests/sum.test.ts > adds', ' Test Files  1 failed (1)', 'FAILED: tests failed']],
+      ['npm test; git commit -m "fix: FAILED state no longer reported as failed"', [' FAIL  tests/sum.test.ts > adds', ' Test Files  1 failed (1)']],
+      // The test step names the very line a failing run prints: as the
+      // pattern of a filter, or as the test to run.
+      ['npm run build && npm test 2>&1 | grep "FAIL  tests/sum.test.ts"', [' FAIL  tests/sum.test.ts > adds']],
+      ['npm run build && npm test 2>&1 | grep "not ok 1"', ['not ok 1 - adds']],
+      ['npm run build && npm test 2>&1 | grep -E "^ok; | FAIL  tests/sum.test.ts"', [' FAIL  tests/sum.test.ts > adds']],
+      ['npm run build && npm test | tail -6 | grep -v "# fail 0"', ['# pass 0', '# fail 1', '# cancelled 0']],
+      ['npm run build && npm test -- --last-failed tests/test_sum.py::test_adds 2>&1 | tail -2', ['FAILED tests/test_sum.py::test_adds - assert 3 == 4', '1 failed in 0.03s']],
+    ])('still reports failing tests when the command holds the words of a sign and cannot print them: %j', (command, lines) => {
+      const output = [...buildOk, ...lines, ''].join('\n');
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output)?.level).toBe('block');
+    });
+
+    it('does not take a line the test step filters for as words of the command', () => {
+      // The pattern of a filter never reaches the output. Only the test run
+      // does, and here the one line it printed is the whole pattern.
+      const command = 'npm test 2>&1 | grep "FAIL  tests/sum.test.ts > adds"';
+      const result = handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, ' FAIL  tests/sum.test.ts > adds\n');
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('FAIL  tests/sum.test.ts > adds');
+    });
+
+    it('keeps the words of a test step whose arguments run a command', () => {
+      // Put together, through pnpm: the substitution prints a line to stderr
+      // before the tests start, and the tests pass.
+      const command = 'pnpm run build; pnpm test -- "$(echo FAILED tests/sum.test.ts >&2)"';
+      const output = ['$ node build-ok.cjs', 'build ok', 'FAILED tests/sum.test.ts', '$ node --test', ...tapPassed, ''];
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output.join('\n'))).toBeNull();
+    });
+
+    it('keeps the words of a test step that prints through a program of its own', () => {
+      // Put together: the tests pass, and `sed` puts words of the command in
+      // front of every line they print.
+      const command = 'npm run build; npm test | sed "s/^/FAILED build.log: /"';
+      const output = [...buildOk, 'FAILED build.log: ok 1 - adds', 'FAILED build.log: # pass 1', 'FAILED build.log: # fail 0', ''];
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output.join('\n'))).toBeNull();
+    });
+
+    it('keeps the line npm prints for a script when the command holds its text', () => {
+      // Put together, in a package with no name: `> lint.done` in the command
+      // holds the text of npm's `> lint` line.
+      const output = ['', '> test', '> node --test', '', ...tapPassed, '', '> lint', '> tsc --noEmit', '', typeError];
+      expect(failed('npm test; npm run lint; echo done > lint.done', 'Exit code 2', ...output)).toBeNull();
+    });
+
+    it('does not hold the words of a closing echo against tests that a filter left nothing of', () => {
+      // `grep` finds nothing in a passing run and exits 1, so the echo prints 1.
+      const command = 'npm test 2>&1 | grep -E "FAIL|ERROR"; echo "FAILED=$?"';
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, 'FAILED=1\n')).toBeNull();
+    });
+
+    // `npm test; echo "FAILED=$?"` after passing tests prints `FAILED=0`.
+    it.each([
+      ['npm test; code=$?; echo "FAILED=$code"', 'FAILED=0'],
+      ['npm test 2>&1 | tail -20; echo "FAILED: ${PIPESTATUS[0]}"', 'FAILED: 0'],
+      ["npm test; printf 'FAILED=%d\\n' $?", 'FAILED=0'],
+      ["npm test; printf 'FAILED\\t%d\\n' $?", 'FAILED\t0'],
+      ['npm test; echo "no ERROR" "today"', 'no ERROR today'],
+      // Words only a failed test run prints otherwise.
+      ['npm test; echo "not ok 1 - is what a failed test prints"', 'not ok 1 - is what a failed test prints'],
+      // A plain `echo` prints a backslash as it is written.
+      ['npm test; echo "FAILED=$?\\n"', 'FAILED=0\\n'],
+      ["npm test; echo 'no ERROR in C:\\tmp\\new.log'", 'no ERROR in C:\\tmp\\new.log'],
+      ['npm test; echo "FAILED=$?"', 'FAILED=0'],
+      ['npm test && echo "=== no ERROR, nothing FAILED ==="', '=== no ERROR, nothing FAILED ==='],
+      ['npm test; echo "exit code: $? (0 failed is good)"', 'exit code: 0 (0 failed is good)'],
+    ])('does not hold the words of a closing echo against tests that passed: %j', (command, echoed) => {
+      const output = [...passingTest, echoed, ''].join('\n');
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output)).toBeNull();
+      const result = failed(command, 'Exit code 1', ...failingTest, echoed.replace('=0', '=1'));
+      expect(result?.message).toContain('1 failure(s) found');
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('asks for a failed test run when the output was cut in the middle', () => {
+      // Put together: Claude Code leaves a marker where it cut a long output,
+      // and the line of the lint script may be in the part that is gone.
+      const cut = '... [5212 characters truncated] ...';
+      expect(failed('npm test && npm run lint', 'Exit code 2', ...passingTest, cut, typeError)).toBeNull();
+      expect(failed('npm test && npm run lint', 'Exit code 1', ...failingTest, cut)?.level).toBe('block');
+    });
+
+    it('still reports failing tests in front of such an echo', () => {
+      const output = [...buildOk, ...failingTest, 'FAILED', ''];
+      const result = handlePostToolUse(
+        'Bash', { command: 'npm run build && npm test && echo PASSED || echo FAILED' }, tracker, cache, config, undefined, output.join('\n'),
+      );
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  not ok 1 - adds');
+    });
+
+    it('still reports failing tests when the command holds the words of one of their signs', () => {
+      // A failing vitest test behind a build. The braces leave the cut open,
+      // and the command says FAILED itself: the summary line is the sign.
+      const vitestFailed = ['', '> demo@1.0.0 test', '> vitest run', '', ' FAIL  tests/sum.test.ts > adds', 'AssertionError: expected 3 to be 4', '', ' Test Files  1 failed (1)', '      Tests  1 failed (1)'];
+      const inBraces = 'npm run build && npm test || { echo "FAILED - see build.log"; exit 1; }';
+      const vitest = failed(inBraces, 'Exit code 1', ...buildOk, ...vitestFailed, 'FAILED - see build.log');
+      expect(vitest?.level).toBe('block');
+      expect(vitest?.message).toContain('FAIL  tests/sum.test.ts > adds');
+      // A failing node:test run through pnpm, and a command that says "not ok"
+      // itself: node's count of failures is the sign.
+      const notOk = 'pnpm run build && pnpm test && echo ok || { echo "not ok"; exit 1; }';
+      const tap = failed(notOk, 'Exit code 1', '$ node build-ok.cjs', 'build ok', '$ node --test', ...tapFailed, 'not ok');
+      expect(tap?.level).toBe('block');
+      expect(tap?.message).toContain('  not ok 1 - adds');
+    });
+
+    it("does not let the command's own words stand in for failing tests after a later script's line", () => {
+      // Put together: the tests pass, lint fails, and a closing printf prints a
+      // line with a tab in it that reads like a runner's FAIL line.
+      const command = "npm test && npm run lint || printf 'FAILED\\tsrc/lint.log\\n'";
+      expect(failed(command, 'Exit code 2', ...passingTest, ...lintFailed, 'FAILED\tsrc/lint.log')).toBeNull();
+      // The same where the shell fills in a home directory: the line is not
+      // spelled out in the command, but its first words are.
+      const withHome = 'npm test && npm run lint || echo FAILED see ~/lint.log';
+      expect(failed(withHome, 'Exit code 2', ...passingTest, ...lintFailed, 'FAILED see /home/dave/lint.log')).toBeNull();
+    });
+
+    it('asks for a failed test run when the shell prints each command it runs', () => {
+      // Put together from what bash prints under `set -x`: the tests pass, and
+      // the trace line of the closing echo holds its words too.
+      const traced = ['+ npm test', ...passingTest, '+ echo FAILED=0', 'FAILED=0', ''];
+      for (const command of ['set -x; npm test; echo "FAILED=$?"', 'set -o xtrace; npm test; echo "FAILED=$?"']) {
+        expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, traced.join('\n'))).toBeNull();
+      }
+    });
+
+    it('leaves out a closing echo that prints its words in color', () => {
+      const command = 'npm test; echo -e "\\033[32mno ERROR\\033[0m"';
+      const output = [...passingTest, '\x1b[32mno ERROR\x1b[0m', ''].join('\n');
+      expect(handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output)).toBeNull();
+    });
+
+    // Later steps that print nothing to mistake for a failure, or that are a
+    // test run themselves. The test script's output is read as it is alone.
+    it.each([
+      'npm test; echo "exit: $?"',
+      'npm test && echo ok',
+      'npm test || echo failed',
+      'npm test || true',
+      'npm test; exit 1',
+      'npm test # the whole suite',
+      'npm test; # then lint',
+      'npm test 2>&1 | tee out.log | tail -20',
+      'npm test 2>&1 | grep -v "^$" | head -50',
+      'npm test 2>&1 | tail -n 40',
+      'npm test | grep -E "error|FAIL" | head -n 5 | cat',
+      'npm test; code=$?; echo "exit $code"',
+      'npm test; status=$?; set +e; wait; echo "exit: $status"',
+      'npm test && cd ../api && npm test',
+      'cd web && npm test; cd ..',
+      // A comment on a line of its own, before or after the script.
+      'npm test\n# done',
+      'npm test;# done',
+      '# run the tests\nnpm test',
+      "# don't skip this\nnpm test -- -t 'adds'",
+      'npm test # issue #12: "quoted" text',
+    ])('reads a test script whole when nothing else can have written to its output: %j', (command) => {
+      const plain = failed('npm test', 'Exit code 2', typeError);
+      expect(plain?.level).toBe('block');
+      expect(failed(command, 'Exit code 2', typeError)).toEqual(plain);
+    });
+
+    it('through pnpm, tells a failed lint from a failed test by the line pnpm ends with', () => {
+      // Put together from the lines pnpm 11.25.0 prints for each script.
+      const tests = ['$ node --test --test-reporter=tap calc-ok.cjs', ...tapPassed];
+      const lint = ['$ tsc --noEmit --skipLibCheck check.ts', typeError, '[ELIFECYCLE] Command failed with exit code 2.'];
+      expect(failed('pnpm test && pnpm run lint', 'Exit code 2', ...tests, ...lint)).toBeNull();
+      const result = failed('pnpm test && pnpm run lint', 'Exit code 2', '$ tsc --noEmit && node --test', typeError, '[ELIFECYCLE] Test failed. See above for more details.');
+      expect(result?.level).toBe('block');
+    });
+  });
+
+  // Inputs that took seconds with a pattern that could match one stretch of
+  // text in many ways. The command pattern runs on every Bash command.
+  describe('the command and script-line patterns on long input', () => {
+    it('reads a long directory of variables quickly', () => {
+      const started = performance.now();
+      expect(isTestCommand(`cd ${'$NAMEAAAAAAAAAAAAAAAA'.repeat(7)} | cat`)).toBe(false);
+      expect(isTestCommand(`cd ${'$A/'.repeat(2_000)}web && npm test`)).toBe(true);
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it('looks for script lines in a long line quickly', () => {
+      const started = performance.now();
+      expect(failed('npm run build && npm test', `> ${'@'.repeat(50_000)}`)).toBeNull();
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it('leaves a command of many thousand characters alone', () => {
+      // An unclosed quote followed by escaped quotes was slow to pair up.
+      const started = performance.now();
+      expect(isTestCommand(`echo "${'\\"'.repeat(200_000)} && npm test`)).toBe(false);
+      expect(isTestCommand(`npm test -- ${'a '.repeat(10_000)}`)).toBe(false);
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it("looks for the command's own words in a long output quickly", () => {
+      const command = `npm test; echo "${'no ERROR here '.repeat(600)}"`;
+      const output = Array.from({ length: 5_000 }, (_, line) => `no ERROR here ${line} ${'x '.repeat(8)}`);
+      const started = performance.now();
+      failed(command, 'Exit code 1', ...nodeTest, ...tapFailed, ...output, 'a '.repeat(50_000));
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it("looks up lines in the command's own words quickly when they all but occur in it", () => {
+      // Every line was looked up in the whole command, which took seconds
+      // for a long command whose text the lines nearly repeat.
+      const command = `npm test; echo ${'a'.repeat(9_900)}`;
+      const run = (output: string) => handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output);
+      const started = performance.now();
+      expect(run('aab\n'.repeat(25_000))).toBeNull();
+      expect(run('aaaaaaab ERROR\n'.repeat(2_000))?.level).toBe('block');
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it("makes a long line comparable with the command's words quickly", () => {
+      // An unclosed `${` scanned to the end of the line from every start, and
+      // a run of zeros after a `%` could be read as flags or as a width.
+      const started = performance.now();
+      for (const line of [`ERROR ${'${'.repeat(50_000)}`, `ERROR %${'0'.repeat(100_000)}`]) {
+        expect(handlePostToolUse('Bash', { command: 'npm test; echo done' }, tracker, cache, config, undefined, line)?.level).toBe('block');
+      }
+      expect(performance.now() - started).toBeLessThan(1_000);
+    });
+
+    it('reads the output of a command that names a runner as it always was', () => {
+      // What a passing vitest test printed that logs a TAP-like line. Only a
+      // package test script is read for what a failed node:test run prints.
+      const output = ["stdout | tests/log.test.ts > logs", 'not ok 1 - sample line', '', ' Test Files  1 passed (1)', '      Tests  1 passed (1)'];
+      const run = (command: string) => handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, output.join('\n'));
+      expect(run('npx vitest run')).toBeNull();
+      expect(run('npm test')?.level).toBe('block');
+      // The lines a command's own echo prints stay in a runner command's output.
+      const echoed = 'npx vitest run; echo "ERROR in the summary"';
+      expect(handlePostToolUse('Bash', { command: echoed }, tracker, cache, config, undefined, 'ERROR in the summary')?.level).toBe('block');
+    });
+  });
+
+  describe('stdout and stderr delivered apart', () => {
+    const run = (command: string, stdout: string[], stderr: string[]) =>
+      handlePostToolUse('Bash', { command }, tracker, cache, config, undefined, {
+        stdout: stdout.join('\n'),
+        stderr: stderr.join('\n'),
+        interrupted: false,
+      });
+    const buildLine = ['', '> demo@1.0.0 build', '> node build-config.cjs', ''];
+    const buildError = ['ERROR: missing build configuration'];
+
+    // `npm run build; npm test`, exit 0. The build wrote its error to stderr,
+    // then the tests ran and passed. Where that error falls among the lines on
+    // stdout is not known.
+    it('does not hold an error on stderr against tests that passed on stdout', () => {
+      const stdout = [...buildLine, '', '> demo@1.0.0 test', '> node mark-test.cjs && node --test --test-reporter=tap calc-ok.cjs', '', ...tapPassed];
+      expect(run('npm run build; npm test', stdout, buildError)).toBeNull();
+      expect(run('npm run build; npm test || true', stdout, buildError)).toBeNull();
+    });
+
+    // `npm run build; npm test || true`, exit 0, with a failing vitest test.
+    // vitest writes its summary to stdout and the failure itself to stderr.
+    const vitestStdout = [
+      ...buildLine,
+      '', '> demo@1.0.0 test', '> node mark-test.cjs && vitest run', '',
+      ' RUN  v5.1.0 /tmp/demo',
+      '',
+      ' ❯ tests/sum.test.ts (1 test | 1 failed) 6ms',
+      '   × adds 5ms',
+      '',
+      ' Test Files  1 failed (1)',
+      '      Tests  1 failed (1)',
+    ];
+    const vitestStderr = [
+      ...buildError,
+      '',
+      '⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯',
+      '',
+      ' FAIL  tests/sum.test.ts > adds',
+      'AssertionError: expected 3 to be 4 // Object.is equality',
+    ];
+
+    it('reads stderr with the test run when the test run failed', () => {
+      const result = run('npm run build; npm test || true', vitestStdout, vitestStderr);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('FAIL  tests/sum.test.ts > adds');
+    });
+
+    it('takes a failed test run on stderr alone as the sign', () => {
+      // Put together: the summary lines are cut from stdout.
+      const result = run('npm run build; npm test || true', vitestStdout.slice(0, -2), vitestStderr);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('FAIL  tests/sum.test.ts > adds');
+    });
+
+    it('leaves out what the command echoes to stderr itself', () => {
+      // Put together: the tests pass, and a closing echo writes to stderr.
+      const stdout = ['', '> demo@1.0.0 test', '> node --test', '', ...tapPassed];
+      expect(run('npm test; echo "ERROR: 0 problems, see above" >&2', stdout, ['ERROR: 0 problems, see above'])).toBeNull();
+    });
+
+    it("does not take the command's own words on stderr for a failed test run", () => {
+      // Put together: the build's error and a closing printf's line are on
+      // stderr, the passing tests on stdout. The printed line has a tab in it.
+      const stdout = [...buildLine, '', '> demo@1.0.0 test', '> node --test', '', ...tapPassed];
+      const command = "npm run build; npm test; printf 'FAILED\\tbuild/test\\n' >&2";
+      expect(run(command, stdout, [...buildError, 'FAILED\tbuild/test'])).toBeNull();
+      // The same where the shell fills in a home directory: the line is not
+      // spelled out in the command, but its first words are.
+      const withHome = 'npm run build; npm test; echo FAILED see ~/build.log >&2';
+      expect(run(withHome, stdout, [...buildError, 'FAILED see /home/dave/build.log'])).toBeNull();
+    });
+
+    it('still joins both streams for a test script that runs alone', () => {
+      // Put together: the test setup fails and says so on stderr only.
+      const result = run('npm test || true', ['', '> demo@1.0.0 test', '> node run-tests.cjs', ''], ['ERROR: could not load the test setup']);
+      expect(result?.level).toBe('block');
+    });
+
+    // `npm run build; npm test | tail -12`, exit 0, with a failing node:test
+    // run: the pipe cut the test script line from stdout.
+    it('reports a failing run whose start a pipe cut off', () => {
+      const stdout = [...buildLine, '  ...', '1..1', '# tests 1', '# suites 0', '# pass 0', '# fail 1', '# cancelled 0'];
+      const result = run('npm run build; npm test | tail -12', stdout, buildError);
+      expect(result?.level).toBe('block');
+      expect(result?.message).toContain('  # fail 1');
     });
   });
 

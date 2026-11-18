@@ -288,7 +288,7 @@ reference them dynamically instead of hardcoding assumptions.
 
 ### Zero-defect check
 
-Parses test output (vitest, jest, pytest patterns) for failure indicators. Classifies as pass, fail,
+Parses test output (vitest, jest, pytest and node:test patterns) for failure indicators. Classifies as pass, fail,
 or unknown. Supports pre-existing failure classification via `git diff` — failures in untouched
 files are reported separately from regressions based on `zero_defect.unrelated_errors` config.
 
@@ -314,14 +314,49 @@ shell parser: a quoted word is kept as a word but its text is not read
 substitution, a comment, a heredoc, an escape or a subshell is not read
 either.
 
-A test script that starts the command is read whole, and a leading
-`cd dir &&` does not change that. When any other step comes first, as in
-`npm run build && npm test`, that step can stop the command before the tests
-start, and it prints output of its own. The test run is then read from the
-line npm prints for the script (`> name@1.0.0 test`) onward. Where that line
-is missing, the output counts only if it shows a failed test run: a `FAIL`
-line, a failed count in a runner's summary line, a failing TAP result, or the
-line pnpm ends with when the test script failed.
+A command that names a runner is read whole and checked as it always was. The
+rest of this section is about a package manager's test script.
+
+A test script that nothing else in the command can write around is read whole.
+That holds behind a leading `cd dir &&` with a plain directory (not a computed
+one such as `"$(pwd)"`), with its output piped through a filter such as `tail`
+or `grep`, and before later steps that print nothing (`true`, `exit`, a plain
+`cd`, an assignment), that print their own words (`echo`, `printf`), or that
+are a test script themselves. A line that reads as a failure and that the
+command spells out itself is left out before the output is read, so
+`npm test; echo "FAILED=$?"` is no failure after a passing run. The two are
+compared without quote marks, capitals or colors, and with every number,
+variable and `$?` alike.
+
+Otherwise other steps print into the same output, and some of them may not
+have run at all, as in `npm run build && npm test && npm run lint`. The test
+run is then cut out at the lines npm prints for its scripts. It starts at the
+first `pretest` or `test` line (`> name@1.0.0 test`) and ends at the first
+line of an npm script that comes later in the command. A later script that
+printed no line did not start.
+
+That is trusted only while every such line is there and nothing can write
+without one. Where it does not hold (the start cut off by `| tail`, a package
+manager that prints no lines, a later step that is not a plain
+`npm run <script>`, a step in the background, output cut in the middle), what
+is left counts only if it shows a failed test run: a runner's `FAIL` line that
+names a file, a failed count at the head of a vitest or jest summary line, a
+failing TAP result or node:test's count of failures, or the line pnpm ends
+with when the test script failed. A line with such a sign does not count when
+the command holds that line's words itself (the first two words of a `FAIL`
+line, the text the sign matched for the others):
+`npm run build && npm test || echo "FAILED - see build.log"` prints them
+whether or not the tests ran. One word of a sign elsewhere in the command, as
+in `| grep FAIL`, changes nothing. Output that arrives on a separate stderr is
+read with the test run on the same condition, since where its lines fall is
+not known.
+
+In a test script's output a failed node:test run counts as a failure too,
+although it prints neither `FAIL` nor `ERROR`. The check reads its TAP results
+(`not ok 1 - adds`, unless marked TODO or SKIP), its spec reporter's `✖` lines
+and its closing count, and pnpm's closing line for a failed test script. Where
+no line names a failure, the message lists the line the run closed with, a
+runner's summary line included.
 
 **Files:** `src/enforcement/file-tracker.ts`, `src/enforcement/stale-test.ts`, `src/enforcement/test-scope.ts`, `src/enforcement/constitutional.ts`, `src/enforcement/zero-defect.ts`, `src/enforcement/post-tool-use.ts`
 
