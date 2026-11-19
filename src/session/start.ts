@@ -10,7 +10,7 @@ import { checkBranchDiscipline, WORKFLOW_DEFAULTS } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
 import type { WaitForBuildOpts } from '../scout/graph-state.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, DEFAULT_CONFIG } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
 import { detectHeadroom } from './headroom.js';
@@ -60,15 +60,36 @@ export interface SessionStartDeps {
 // that window instead of caching a false "failed" for the whole session.
 const GRAPH_WAIT_DEFAULT: WaitForBuildOpts = { deadlineMs: 5000, intervalMs: 250 };
 
+/** What the SessionStart hook emits. */
+export interface SessionStartOutput {
+  /** The full diagnostic summary. The hook writes it to stderr. */
+  summary: string;
+  /**
+   * The lines skill templates read: the header, the superpowers line
+   * (verify-harness), the agent-teams line (sdd+), and the active-rules line
+   * (the chain skills). The hook sends these to the agent as additionalContext.
+   */
+  agentContext: string;
+}
+
 /**
  * SessionStart hook handler. Detects environment and auto-indexes CWD
- * with jcodemunch if available but not yet indexed.
+ * with jcodemunch if available but not yet indexed. Returns the summary.
  */
 export async function handleSessionStart(
   cwd: string,
   cache: SessionCache,
   deps: SessionStartDeps = {},
 ): Promise<string> {
+  return (await buildSessionStart(cwd, cache, deps)).summary;
+}
+
+/** handleSessionStart, returning the agent context alongside the summary. */
+export async function buildSessionStart(
+  cwd: string,
+  cache: SessionCache,
+  deps: SessionStartDeps = {},
+): Promise<SessionStartOutput> {
   const { env, fileCapHit, autoIndex } = await detectAndIndex(
     cwd, deps.exec, deps.existsCheck, deps.statCheck, deps.mcpQuery, deps.registrationLookup,
     deps.envVars,
@@ -159,6 +180,16 @@ export async function handleSessionStart(
     `  jcodemunch: ${describeJcodemunch(env)}`,
     `  graphify: ${describeGraphify(env.graphBuildInfo)}`,
   ];
+  // The agent context is collected here, as each of its lines is produced. It
+  // is never picked back out of the summary: a diagnostic there can span lines
+  // (a graph build error carries the tool's stderr) and begin with any text.
+  const agentLines = [lines[0]];
+  const pushForAgent = (line: string): void => {
+    lines.push(line);
+    // One field, one line: a line break inside a field's own value (a plugin
+    // version, a rule level) must not start a new line for the agent.
+    agentLines.push(line.replace(/\s*[\r\n]+\s*/g, ' '));
+  };
 
   if (env.rtkAvailable && detectRtkGlobalHook(deps.readFile, deps.existsCheck ?? existsSync, deps.homeDir)) {
     lines.push(
@@ -175,12 +206,12 @@ export async function handleSessionStart(
   if (env.headroomInitialized) {
     lines.push('  headroom: proxy configured (context-layer compression)');
   }
-  lines.push(
+  pushForAgent(
     `  superpowers: ${env.superpowers?.installed ? `installed${env.superpowers.version ? ` (v${env.superpowers.version})` : ''}` : 'not found'}`,
   );
 
   if (env.agentTeamsAvailable) {
-    lines.push('  agent-teams: available (experimental)');
+    pushForAgent('  agent-teams: available (experimental)');
   }
 
   if (env.jcodemunchAvailable) {
@@ -226,7 +257,7 @@ export async function handleSessionStart(
   const config = await loadConfig(configPath);
   const activeRules = formatActiveRules(config);
   if (activeRules) {
-    lines.push(activeRules);
+    pushForAgent(activeRules);
   }
 
   const suggestion = checkBranchDiscipline((cmd) => execSync(cmd, { encoding: 'utf-8' }), config);
@@ -312,7 +343,7 @@ export async function handleSessionStart(
     cache.setToolsWarned(true);
   }
 
-  return lines.join('\n');
+  return { summary: lines.join('\n'), agentContext: agentLines.join('\n') };
 }
 
 function describeGraphify(info: GraphBuildInfo | undefined): string {
@@ -356,13 +387,20 @@ function hasOrphanedIndexData(homeDir: string, readdir: (path: string) => string
   }
 }
 
+// The active-rules line reaches the agent as session context, and
+// `.harness.yaml` is project-controlled (a cloned repo supplies its own). Only
+// rule names rig defines and the two active levels are ever echoed; an unknown
+// key, free text, or a non-string value is dropped rather than passed along.
+const KNOWN_CONSTITUTIONAL_RULES = new Set(Object.keys(DEFAULT_CONFIG.rules.constitutional ?? {}));
+const ACTIVE_LEVELS = new Set<string>(['block', 'advise']);
+
 function formatActiveRules(config: HarnessConfig): string | null {
   const active: string[] = [];
 
   const constitutional = config.rules.constitutional;
   if (constitutional) {
     for (const [rule, level] of Object.entries(constitutional)) {
-      if (level && level !== 'silent') {
+      if (KNOWN_CONSTITUTIONAL_RULES.has(rule) && typeof level === 'string' && ACTIVE_LEVELS.has(level)) {
         active.push(`${rule} (${level})`);
       }
     }
@@ -373,7 +411,7 @@ function formatActiveRules(config: HarnessConfig): string | null {
   // sessions started on feature branches (where the protected-branch hint
   // does not fire).
   const branchLevel = config.rules.workflow?.branch_discipline ?? WORKFLOW_DEFAULTS.branch_discipline;
-  if (branchLevel !== 'silent') {
+  if (typeof branchLevel === 'string' && ACTIVE_LEVELS.has(branchLevel)) {
     active.push(`branch_discipline (${branchLevel})`);
   }
 

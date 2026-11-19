@@ -1,7 +1,8 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, unlinkSync, readdirSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, unlinkSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
 import { tmpdir, homedir } from 'node:os';
+import { pathToFileURL } from 'node:url';
 import { initCommand } from '../../src/cli/init.js';
 import { runHook, readSessionCache } from '../helpers/hook-runner.js';
 import { sessionCachePath } from '../../src/session/cache.js';
@@ -58,6 +59,50 @@ describe('SessionStart hook E2E', () => {
     expect(cache).not.toBeNull();
     expect(cache!.updatedAt).toBeGreaterThan(0);
   }, 60000); // cold run: real detection + indexing + graphify/mcp probes
+
+  it('sends the active rules to the agent and keeps the summary on stderr', async () => {
+    const result = await runHook(hookPath, {}, tempDir);
+
+    // No early return on a non-zero exit here: a hook that crashes sends the
+    // agent nothing, which is the failure this test exists to catch.
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.signal).toBeNull();
+    expect(result.stdout).not.toBe('');
+
+    const { hookSpecificOutput } = JSON.parse(result.stdout);
+    expect(hookSpecificOutput.hookEventName).toBe('SessionStart');
+    expect(hookSpecificOutput.additionalContext).toContain('[rig] Session initialized');
+    expect(hookSpecificOutput.additionalContext).toContain('Active enforcement:');
+    expect(hookSpecificOutput.additionalContext).toContain('superpowers:');
+    expect(hookSpecificOutput.additionalContext).not.toContain('rtk:');
+    expect(result.stderr).toContain('Session initialized');
+  }, 60000);
+
+  it('still prints the summary when the installed rig build predates the agent context', async () => {
+    // A hook regenerated from newer templates can meet an older build, which
+    // exports handleSessionStart only. Stand one in for the import base.
+    const olderBuild = join(tempDir, 'older-build');
+    mkdirSync(join(olderBuild, 'session'), { recursive: true });
+    writeFileSync(join(olderBuild, 'package.json'), '{ "type": "module" }\n');
+    writeFileSync(
+      join(olderBuild, 'session', 'start.js'),
+      "export async function handleSessionStart() { return '[rig] Session initialized (older build)'; }\n",
+    );
+    writeFileSync(join(olderBuild, 'session', 'cache.js'), 'export class SessionCache {}\n');
+    const hook = readFileSync(hookPath, 'utf-8');
+    const importBase = hook.match(/import\('(.+)\/session\/start\.js'\)/)![1];
+    // A file URL, not the bare path: a temp directory can hold a space, a `#`
+    // or a drive letter, and the import sits inside single quotes.
+    const olderBuildUrl = pathToFileURL(olderBuild).href.replace(/'/g, '%27');
+    const olderHookPath = join(tempDir, '.claude', 'hooks', 'scripts', 'session-start-older.ts');
+    writeFileSync(olderHookPath, hook.split(importBase).join(olderBuildUrl));
+
+    const result = await runHook(olderHookPath, {}, tempDir);
+
+    expect(result.exitCode, result.stderr).toBe(0);
+    expect(result.stderr).toContain('[rig] Session initialized (older build)');
+    expect(result.stdout).toBe('');
+  }, 60000);
 
   it('detects environment in cache', async () => {
     const result = await runHook(hookPath, {}, tempDir);
