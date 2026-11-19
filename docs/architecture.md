@@ -310,12 +310,11 @@ Parses test output (vitest, jest, pytest patterns) for failure indicators. Class
 or unknown. Supports pre-existing failure classification via `git diff` — failures in untouched
 files are reported separately from regressions based on `zero_defect.unrelated_errors` config.
 
-Standalone test commands such as `npm test` and `npx vitest run` use the same
-output filter. Passing test titles, command echoes, source excerpts and complete
-Vitest console blocks can quote diagnostics. Rig filters these reporter lines.
-On a successful call, a literal `FAIL` line needs a failed test result or a
-nonzero failure count from the reporter. On a failed call, rig can report a
-named failure even when the output ends before the summary.
+When rig checks a standalone test command, it filters reporter titles, command
+echoes and numbered source excerpts before looking for diagnostics. For example,
+a test titled `handles error TS2322` can pass without triggering zero-defect.
+Failed `npm test` and `npx vitest run` calls use the same filter and file policy.
+On successful calls, the existing hook checks commands that name a runner.
 
 The check is **phase-aware**, mirroring test scope control: during `tdd+`/`sdd+`
 a failing run is the expected RED step of red-green-refactor — indistinguishable

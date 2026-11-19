@@ -1,35 +1,21 @@
 import { stripVTControlCharacters } from 'node:util';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
 
-// These lines name passing/skipped tests, label a captured stream, or echo a
-// command. Test titles and arguments can contain entire diagnostics.
-const RESULT_METADATA = /^(?:[✓✔↓]\s|ok \d+\b|# Subtest: |PASS(?:\s|$)|[$>] |\d+\s*\|)/;
-const CONSOLE_HEADER = /^(?:stdout|stderr) \| /;
-const RESULT_TOTAL = /^(?:Test Files|Test Suites|Tests):?[ \t]+(?=\d)/;
-const FAILED_COUNT = /\b[1-9]\d* failed\b/;
+// Reporter titles, source excerpts and command echoes can quote a diagnostic.
+const RESULT_METADATA = /^(?:[✓✔↓]\s|ok \d+\b|# Subtest: |PASS\s|[$>] |(?:stdout|stderr) \| |\d+\s*\|)/;
+const FAILED_CASE_TITLE = /^[✗×✕✖]\s/;
 
-export function filterTestOutput(output: string, event: 'success' | 'failure'): string {
-  // Vitest delimits captured console output with a header and a blank line.
-  // Keep the body of a truncated block when its end cannot be identified.
-  const blocks = stripVTControlCharacters(output).split(/\r?\n[ \t]*\r?\n/);
-  const lines: string[] = [];
-  for (const [index, block] of blocks.entries()) {
-    for (const raw of block.split('\n')) {
-      const line = raw.trimStart();
-      if (CONSOLE_HEADER.test(line)) {
-        if (index < blocks.length - 1) break;
-      } else if (!RESULT_METADATA.test(line)) {
-        lines.push(line);
-      }
-    }
+export function filterTestOutput(output: string, event: 'success' | 'failure') {
+  const diagnostics: string[] = [];
+  const context: string[] = [];
+  for (const raw of output.split('\n')) {
+    const plain = stripVTControlCharacters(raw).trimStart();
+    if (RESULT_METADATA.test(plain)) continue;
+    // A failed case name is useful in the fallback, even when it quotes an error.
+    if (event === 'failure') context.push(plain);
+    if (!FAILED_CASE_TITLE.test(plain)) diagnostics.push(event === 'failure' ? plain : raw);
   }
-  if (event === 'failure') return lines.join('\n');
-
-  // On exit 0, a passing test can print a literal "FAIL path" to its console.
-  // Keep those rows when the reporter also gives a failed case or failed count.
-  const failed = lines.some(line => /^[✗×✕✖]\s/.test(line) || (RESULT_TOTAL.test(line) && FAILED_COUNT.test(line)));
-  if (failed) return lines.join('\n');
-  return lines.filter(line => !/^FAIL(?:\s|$)/.test(line) && !RESULT_TOTAL.test(line)).join('\n');
+  return { diagnostics, context };
 }
 
 const FAILURE_PATTERNS = [

@@ -93,14 +93,11 @@ describe('PostToolUse hook E2E', () => {
     }, HOOK_TIMEOUT);
   });
 
-  it.each(['npm test', 'npx vitest run'])('stays quiet when a passing %s prints a FAIL line', async command => {
+  it('stays quiet when a passing npm test prints a FAIL line', async () => {
     const result = await runHook(hookPath, {
       session_id: SESSION_ID, hook_event_name: 'PostToolUse', tool_name: 'Bash',
-      tool_input: { command },
-      tool_response: {
-        stdout: 'stdout | tests/x.test.ts > reports error TS2322\nFAIL src/x.ts (fixture output)\nTests: 1 passed',
-        stderr: '  ✓ reports error TS2322',
-      },
+      tool_input: { command: 'npm test' },
+      tool_response: { stdout: 'FAIL src/x.ts (fixture output)\nTests: 1 passed', stderr: '' },
     }, tempDir);
     expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
   }, HOOK_TIMEOUT);
