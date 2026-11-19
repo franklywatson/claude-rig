@@ -1,4 +1,4 @@
-import { resolve } from 'node:path';
+import { normalize, resolve } from 'node:path';
 import { FileTracker } from './file-tracker.js';
 import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
@@ -237,23 +237,60 @@ function skillToPhase(skill: unknown): string | null {
 
 const BASH_GRAPHIFY_UPDATE = /\bgraphify(?:y)?\s+update\s+(?:"([^"]+)"|'([^']+)'|(\S+))/;
 
+// Characters a tool-supplied path must not contain to be placed inside a
+// double-quoted shell argument. Inside double quotes /bin/sh gives meaning to
+// " $ ` and \; cmd.exe gives meaning to " and %, and to ! when delayed
+// expansion is enabled, and a newline ends its command line. The other ASCII
+// control characters are rejected with it to keep the rule simple. Backslash, space,
+// & | ; ' ( ) and non-ASCII stay out of this set on purpose: real paths contain
+// them (Windows separators, "R&D", accented names). The two backslash cases
+// that matter are checked separately below.
+const UNSAFE_PATH_CHARS = /["$`%!\u0000-\u001f\u007f]/;
+
+/**
+ * Whether a tool-supplied directory path can be placed inside the
+ * double-quoted stats-capture commands (`test -f "<p>"`, `graphify update
+ * "<p>"`, and the report/benchmark reads) without changing what they run or
+ * which directory they name. A path is rejected when it is not a non-empty
+ * string, contains a character in {@link UNSAFE_PATH_CHARS}, ends with a
+ * backslash, contains a doubled backslash outside Windows, or starts with `-`
+ * as given or once normalized (so it cannot be read as a command option). For
+ * a rejected path the optional stats capture is skipped and no command runs.
+ */
+export function isShellQuotablePath(
+  path: unknown,
+  platform: NodeJS.Platform = process.platform,
+): path is string {
+  if (typeof path !== 'string' || path.length === 0) return false;
+  // Next to the closing quote a backslash would escape it.
+  if (path.endsWith('\\')) return false;
+  // /bin/sh reads a doubled backslash inside double quotes as one, which would
+  // name a different directory. cmd.exe keeps both (UNC paths start with two).
+  if (platform !== 'win32' && path.includes('\\\\')) return false;
+  // The commands receive the path both as given and joined (normalized).
+  if (path.startsWith('-') || normalize(path).startsWith('-')) return false;
+  return !UNSAFE_PATH_CHARS.test(path);
+}
+
 /**
  * Extract an external (non-CWD) directory path from jcodemunch tool calls or
- * a Bash `graphify update <dir>` command. Returns null for CWD paths or
- * unrecognized tools. The source distinguishes the just-built Bash case
- * (read report directly) from MCP indexing (may need a build first).
+ * a Bash `graphify update <dir>` command. Returns null for CWD paths,
+ * unrecognized tools, or a path that cannot be placed inside the
+ * double-quoted capture commands ({@link isShellQuotablePath}). The source
+ * distinguishes the just-built Bash case (read report directly) from MCP
+ * indexing (may need a build first).
  */
 function extractExternalDirectory(
   tool: string,
   args: Record<string, unknown>,
 ): { dir: string; source: 'mcp' | 'bash' } | null {
-  let directory: string | undefined;
+  let directory: unknown;
   let source: 'mcp' | 'bash' = 'mcp';
 
   if (tool === 'mcp__jcodemunch__index_folder') {
-    directory = (args.path as string) ?? (args.folder_path as string);
+    directory = args.path ?? args.folder_path;
   } else if (tool === 'mcp__jcodemunch__resolve_repo') {
-    directory = args.path as string;
+    directory = args.path;
   } else if (tool === 'Bash' && typeof args.command === 'string') {
     const match = args.command.match(BASH_GRAPHIFY_UPDATE);
     if (match) {
@@ -262,7 +299,7 @@ function extractExternalDirectory(
     }
   }
 
-  if (!directory) return null;
+  if (!isShellQuotablePath(directory)) return null;
   const cwd = process.cwd();
   if (directory.startsWith(cwd)) return null;
   return { dir: directory, source };
