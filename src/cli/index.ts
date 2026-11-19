@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { initCommand } from './init.js';
+import { initCommand, RigInstallPathError } from './init.js';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -29,7 +29,17 @@ program
   .action(async (options) => {
     const projectDir = resolve(options.dir);
     console.log(`Initializing rig in ${projectDir}...`);
-    await initCommand(projectDir, { force: options.force, broadPermissions: options.broadPermissions });
+    try {
+      await initCommand(projectDir, { force: options.force, broadPermissions: options.broadPermissions });
+    } catch (err) {
+      // A known, user-fixable problem gets a one-line message. Anything else
+      // keeps its stack trace so an unexpected failure stays debuggable.
+      if (err instanceof RigInstallPathError) {
+        console.error(`rig init failed: ${err.message}`);
+        process.exit(1);
+      }
+      throw err;
+    }
     console.log('Done. Start a new Claude Code session to activate.');
   });
 

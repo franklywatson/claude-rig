@@ -1,10 +1,25 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { initCommand, hookImportBase } from '../../src/cli/init.js';
+import ts from 'typescript';
+import { initCommand, hookImportBase, commentSafe, RigInstallPathError } from '../../src/cli/init.js';
 import type { ExecFn } from '../../src/session/environment.js';
+
+describe('commentSafe', () => {
+  it.each([
+    ['/usr/local/bin/rtk', '/usr/local/bin/rtk'],
+    ['my-project', 'my-project'],
+    ['/opt/rtk*/bin/rtk', '/opt/rtk*\\/bin/rtk'],
+    ['a*/b*/c', 'a*\\/b*\\/c'],
+    ['line1\nline2', 'line1 line2'],
+    ['a\r\n\r\nb', 'a b'],
+    ['x*/\ny', 'x*\\/ y'],
+  ])('commentSafe(%j) -> %j', (input, expected) => {
+    expect(commentSafe(input)).toBe(expected);
+  });
+});
 
 describe('initCommand', () => {
   let tempDir: string;
@@ -315,6 +330,29 @@ describe('initCommand', () => {
     }
   });
 
+  it('refuses to generate hooks when rig\'s dist path contains "?", writing nothing', async () => {
+    // tsx decodes the %3F of the rendered file URL back into a query string, so
+    // hooks generated for such an install would silently fail open.
+    const badDist = '/opt/qu?est/rig/dist';
+    await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
+      .rejects.toThrow(badDist);
+    await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
+      .rejects.toThrow(/without a "\?"/);
+    // A dedicated type, so the CLI can print it as one line and leave every
+    // other init error with its stack trace.
+    await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
+      .rejects.toBeInstanceOf(RigInstallPathError);
+    // Rejected before any file or directory is written.
+    expect(readdirSync(tempDir)).toEqual([]);
+  });
+
+  it('renders hooks against an injected dist path that has no "?"', async () => {
+    const goodDist = '/opt/rig install/dist';
+    await initCommand(tempDir, { force: false, rigDistDir: goodDist });
+    const hook = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'pre-tool-use.ts'), 'utf-8');
+    expect(hook).toContain(hookImportBase(goodDist));
+  });
+
   it('generates hook scripts that use constructors with cwd, not load/save', async () => {
     await initCommand(tempDir, { force: false });
 
@@ -538,6 +576,29 @@ console.log('stale old hook');
       }
     });
 
+    it('generates parsable hooks, with the path still shown, when the rtk path contains "*/"', async () => {
+      const rtkPath = '/opt/rtk*/bin/rtk';
+      const exec: ExecFn = (cmd: string) => {
+        if (cmd === 'which rtk') return `${rtkPath}\n`;
+        if (cmd === 'which jcodemunch') throw new Error('not found');
+        return '';
+      };
+      await initCommand(tempDir, { force: false, exec });
+
+      const hooksDir = join(tempDir, '.claude', 'hooks', 'scripts');
+      for (const hookFile of ['pre-tool-use.ts', 'post-tool-use.ts', 'session-start.ts']) {
+        const content = readFileSync(join(hooksDir, hookFile), 'utf-8');
+        const { diagnostics } = ts.transpileModule(content, {
+          reportDiagnostics: true,
+          compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+        });
+        expect(diagnostics?.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')) ?? []).toEqual([]);
+        if (hookFile !== 'post-tool-use.ts') {
+          expect(content).toContain('/opt/rtk*\\/bin/rtk');
+        }
+      }
+    });
+
     it('omits rtk path when rtk is not available', async () => {
       const exec: ExecFn = () => { throw new Error('not found'); };
       await initCommand(tempDir, { force: false, exec });
@@ -750,6 +811,44 @@ console.log('stale old hook');
       expect(deny).toContain('Read(**/secrets/**)');
       expect(deny).toContain('Edit(**/secrets/**)');
       expect(deny).toContain('Bash(rm *)');
+    });
+
+    it('re-init removes the dead one-slash Read allow entries, with or without --broad-permissions', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      const seed = {
+        permissions: {
+          allow: [
+            'Read(/tmp/rig-session-*.json)', // stale: project-relative, never matched
+            'Read(/private/tmp/rig-session-*.json)', // stale
+            'Read(//tmp/rig-session-*.json)', // correct absolute form, must survive
+            'Read(/tmp/other)', // user's own entry, must survive
+            'Bash(git status)', // user's own entry, must survive
+          ],
+          deny: [],
+        },
+      };
+      const survivors = [
+        'Read(//tmp/rig-session-*.json)',
+        'Read(/tmp/other)',
+        'Bash(git status)',
+      ];
+
+      for (const broadPermissions of [false, true]) {
+        writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(seed));
+        await initCommand(tempDir, { force: false, broadPermissions, exec: noTools });
+        const first = readFileSync(join(claudeDir, 'settings.json'), 'utf-8');
+        const allow: string[] = JSON.parse(first).permissions.allow;
+
+        expect(allow).not.toContain('Read(/tmp/rig-session-*.json)');
+        expect(allow).not.toContain('Read(/private/tmp/rig-session-*.json)');
+        for (const entry of survivors) expect(allow).toContain(entry);
+        expect(allow.filter((e) => e === 'Read(//tmp/rig-session-*.json)')).toHaveLength(1);
+
+        // Idempotent: a second run changes nothing.
+        await initCommand(tempDir, { force: false, broadPermissions, exec: noTools });
+        expect(readFileSync(join(claudeDir, 'settings.json'), 'utf-8')).toBe(first);
+      }
     });
 
     // ── --broad-permissions flag ──

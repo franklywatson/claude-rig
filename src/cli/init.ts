@@ -16,6 +16,8 @@ interface InitOptions {
   force: boolean;
   broadPermissions?: boolean;
   exec?: ExecFn;
+  /** Test seam: rig's dist directory. Defaults to the directory this module runs from. */
+  rigDistDir?: string;
 }
 
 /**
@@ -24,23 +26,53 @@ interface InitOptions {
  * a drive-letter path is not a valid import specifier and its backslashes are
  * read as string escapes, and on any install path containing `#` or `%`.
  * A `?` in the path is not covered: tsx decodes `%3F` back into a query
- * string, the import fails, and the hook then fails open (same as before this
- * change). The apostrophe is escaped because the templates embed this in a
- * single-quoted string.
+ * string, the import fails, and the hook then fails open. `initCommand`
+ * therefore refuses to generate hooks for such an install path
+ * ({@link RigInstallPathError}). The apostrophe is escaped because the
+ * templates embed this in a single-quoted string.
  */
 export function hookImportBase(distDir: string): string {
   return pathToFileURL(distDir).href.replace(/'/g, '%27');
 }
 
+/**
+ * Make a value safe to render into a generated hook's `/** ... *\/` header
+ * comment: neutralize `*\/` (which would end the comment early and leave the
+ * rest of the line as code) and collapse line breaks so the value stays on its
+ * comment line. Applied at the render context, not inside renderTemplate.
+ */
+export function commentSafe(value: string): string {
+  return value.replace(/\*\//g, '*\\/').replace(/[\r\n]+/g, ' ');
+}
+
+/**
+ * Raised when rig's own install location cannot produce working hooks. The CLI
+ * reports it as a one-line message; any other init error keeps its stack.
+ */
+export class RigInstallPathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RigInstallPathError';
+  }
+}
+
 export async function initCommand(projectDir: string, options: InitOptions): Promise<void> {
+  const rigDistDir = options.rigDistDir ?? resolve(__dirname, '..');
+  if (rigDistDir.includes('?')) {
+    throw new RigInstallPathError(
+      `rig is installed at a path containing "?": ${rigDistDir}. ` +
+      'Generated hooks would silently fail to load under tsx. ' +
+      'Move or reinstall rig somewhere without a "?" in its path, then run rig init again.',
+    );
+  }
   const claudeDir = join(projectDir, '.claude');
   const projectName = basename(projectDir);
   const generatedDate = new Date().toISOString().split('T')[0];
-  const rigDistPath = hookImportBase(resolve(__dirname, '..'));
+  const rigDistPath = hookImportBase(rigDistDir);
 
   // Build render context with environment-aware variables
   const renderContext: Record<string, string> = {
-    PROJECT_NAME: projectName,
+    PROJECT_NAME: commentSafe(projectName),
     GENERATED_DATE: generatedDate,
     RIG_DIST_PATH: rigDistPath,
   };
@@ -50,7 +82,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
     const env = await detectEnvironment(projectDir, options.exec);
     rtkAvailable = env.rtkAvailable;
     if (env.rtkAvailable && env.rtkPath) {
-      renderContext.RTK_PATH = env.rtkPath;
+      renderContext.RTK_PATH = commentSafe(env.rtkPath);
     }
     if (env.jcodemunchAvailable) {
       renderContext.JCODEMUNCH_AVAILABLE = 'true';
@@ -268,6 +300,16 @@ const STALE_DENY_ENTRIES = [
   'Write(**/*.key)',
 ];
 
+// Written by earlier rig versions under --broad-permissions. In project settings a
+// Read rule with one leading slash is relative to the settings source
+// (<project>/tmp/...), so these never matched the session cache; the
+// two-slash (absolute) forms in REQUIRED_PERMISSIONS replace them. Only these
+// exact strings are removed, so a user's own entries are never touched.
+const STALE_ALLOW_ENTRIES = [
+  'Read(/tmp/rig-session-*.json)',
+  'Read(/private/tmp/rig-session-*.json)',
+];
+
 function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean, broadPermissions: boolean): void {
   const settingsPath = join(claudeDir, 'settings.json');
   let settings: Record<string, unknown> = {};
@@ -383,6 +425,8 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
 
   // Migration: drop stale Write(**/...) deny entries from prior rig installs.
   permissions.deny = permissions.deny.filter((entry) => !STALE_DENY_ENTRIES.includes(entry));
+  // Migration: drop the dead one-slash Read allow entries (any init run).
+  permissions.allow = permissions.allow.filter((entry) => !STALE_ALLOW_ENTRIES.includes(entry));
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 }
