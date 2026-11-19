@@ -303,6 +303,18 @@ describe('initCommand', () => {
     expect(fileURLToPath(base)).toBe(dir);
   });
 
+  it('renders an import base that is importable under a path with a space and %', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'rig sp%ace-'));
+    try {
+      mkdirSync(join(root, 'dist'), { recursive: true });
+      writeFileSync(join(root, 'dist', 'm.js'), 'export const ok = 1;\n');
+      const mod = await import(`${hookImportBase(join(root, 'dist'))}/m.js`);
+      expect(mod.ok).toBe(1);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it('generates hook scripts that use constructors with cwd, not load/save', async () => {
     await initCommand(tempDir, { force: false });
 

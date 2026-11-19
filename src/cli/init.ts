@@ -22,8 +22,10 @@ interface InitOptions {
  * The rig dist directory as the base of the generated hooks' import
  * specifiers. A file URL loads where a bare path does not: on Windows, where
  * a drive-letter path is not a valid import specifier and its backslashes are
- * read as string escapes, and on any install path containing `#`, `%` or `?`.
- * The apostrophe is escaped because the templates embed this in a
+ * read as string escapes, and on any install path containing `#` or `%`.
+ * A `?` in the path is not covered: tsx decodes `%3F` back into a query
+ * string, the import fails, and the hook then fails open (same as before this
+ * change). The apostrophe is escaped because the templates embed this in a
  * single-quoted string.
  */
 export function hookImportBase(distDir: string): string {
