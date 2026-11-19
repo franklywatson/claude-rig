@@ -1,11 +1,13 @@
 // A literal shell argument. Quotes allow spaces in paths, test names and filters.
 // Shell expansions and redirects outside the supported grammar are ambiguous.
-const word = String.raw`(?:[^\s;&|<>()$\x60\\"'#]+|'[^']*'|"[^"$\x60\\]*")`;
+const word = String.raw`(?:[^\s;&|<>()$\x60\\"'#]|\\.|'[^']*'|"(?:[^"$\x60\\]|\\.)*")+`;
 const prefix = new RegExp(String.raw`^(?:cd\s+${word}\s*&&\s*)?(?:[A-Za-z_]\w*=(?:${word})?\s+)*`);
+// Direct executables may live in a project venv or node_modules/.bin.
+const directory = String.raw`(?:[\w.@+/\-]*/)?`;
 const testCommands = [
-  String.raw`(?:npx\s+)?(?:vitest|jest|pytest|mocha)`,
+  String.raw`(?:npx\s+|${directory})(?:vitest|jest|pytest|mocha)`,
   String.raw`(?:npm|pnpm|yarn|bun)(?:\s+(?:-w|--prefix)\s+${word})?\s+(?:run\s+)?test(?::[\w:-]+)?`,
-  String.raw`npm\s+t|(?:go|cargo)\s+test|python\s+-m\s+(?:pytest|unittest)`,
+  String.raw`npm\s+t|(?:go|cargo)\s+test|${directory}python\s+-m\s+(?:pytest|unittest)`,
 ].join('|');
 const args = String.raw`(?:\s+${word})*`;
 const singleStep = new RegExp(String.raw`^(?:${testCommands})${args}(?:\s+2>&1)?(?:\s*\|\s*(?:tail|head|grep|tee)${args})?$`);

@@ -333,25 +333,38 @@ function registerFailureHook(hooks: Record<string, unknown>, npxCommand: string)
   const groups = hooks.PostToolUseFailure ??= [];
   if (!Array.isArray(groups)) return;
 
-  for (const group of groups) {
-    if (!Array.isArray(group?.hooks) || !matcherReaches(group.matcher, 'Bash')) continue;
-    for (const [index, hook] of group.hooks.entries()) {
-      if (hook?.type !== 'command' || typeof hook.command !== 'string') continue;
-      if (hook.command === command || EARLIER_RIG_FAILURE_COMMAND.test(hook.command)) {
-        hook.command = command;
-        if (group.matcher !== 'Bash') {
-          // Narrow an older registration without changing when its siblings run.
-          if (group.hooks.length === 1) group.matcher = 'Bash';
-          else {
-            group.hooks.splice(index, 1);
-            groups.push({ ...group, matcher: 'Bash', hooks: [hook] });
-          }
-        }
-        return;
-      }
+  const isRigHook = (hook: Record<string, unknown> | null) =>
+    hook?.type === 'command' && typeof hook.command === 'string' &&
+    (hook.command === command || EARLIER_RIG_FAILURE_COMMAND.test(hook.command));
+  const installed = groups.filter(group => Array.isArray(group?.hooks) &&
+    matcherReaches(group.matcher, 'Bash') && group.hooks.some(isRigHook));
+  if (!installed.length) {
+    groups.push({ matcher: 'Bash', hooks: [{ type: 'command', command }] });
+    return;
+  }
+
+  // Earlier init could append a plain group after a user customized the hook.
+  // Remove only redundant groups that consist entirely of the generated fields.
+  const plain = installed.filter(group => (group.matcher === '' || group.matcher === 'Bash') &&
+    Object.keys(group).length === 2 && group.hooks.length === 1 && Object.keys(group.hooks[0]).length === 2);
+  const keepPlain = installed.length === plain.length ? plain[0] : undefined;
+  for (const group of installed) {
+    if (plain.includes(group) && group !== keepPlain) {
+      groups.splice(groups.indexOf(group), 1);
+      continue;
+    }
+    const rigHooks = group.hooks.filter(isRigHook);
+    for (const hook of rigHooks) hook.command = command;
+    if (group.matcher === 'Bash') continue;
+
+    if (group.hooks.length === rigHooks.length) {
+      group.matcher = 'Bash';
+    } else {
+      // Narrow the rig hooks without changing when their siblings run.
+      group.hooks = group.hooks.filter((hook: unknown) => !rigHooks.includes(hook));
+      groups.push({ ...group, matcher: 'Bash', hooks: rigHooks });
     }
   }
-  groups.push({ matcher: 'Bash', hooks: [{ type: 'command', command }] });
 }
 
 function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean, broadPermissions: boolean): void {

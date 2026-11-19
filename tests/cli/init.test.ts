@@ -280,7 +280,7 @@ describe('initCommand', () => {
     const command = `npx tsx ${script}`;
     const old = `PATH="/old/node/bin:$PATH" /old/node/bin/npx tsx ${script}`;
     const exec: ExecFn = () => '';
-    function seed(groups: unknown[]) {
+    function seed(groups: unknown) {
       mkdirSync(join(tempDir, '.claude'), { recursive: true });
       writeFileSync(join(tempDir, '.claude/settings.json'), JSON.stringify({ hooks: { PostToolUseFailure: groups } }));
     }
@@ -295,6 +295,15 @@ describe('initCommand', () => {
           { type: 'command', command: 'npx tsx ./team/post-tool-use.ts' },
           { type: 'command', command: `${command} --notify` },
           { type: 'command', command: `PATH="$HOME/bin:$PATH" $HOME/bin/npx tsx ${script}` },
+          ...[
+            'npx tsx "$HOME/.claude/hooks/scripts/post-tool-use.ts"',
+            'npx tsx "${CLAUDE_PROJECT_DIR}/packages/api/.claude/hooks/scripts/post-tool-use.ts"',
+            'npx tsx "${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts.bak"',
+            'npx tsx .claude/hooks/scripts/post-tool-use.ts',
+            `env TEAM_LOG=1 ${command}`, `./team/wrap.sh ${script} --notify`,
+            `PATH="/opt/node/bin:$PATH" /other/bin/npx tsx ${script}`,
+            `PATH="/opt/node-*/bin:$PATH" /opt/node-*/bin/npx tsx ${script}`,
+          ].map(command => ({ type: 'command', command })),
           { type: 'prompt', command },
         ] },
         { matcher: 'Edit', command: 'npx tsx ./team/post-tool-use.ts' },
@@ -304,19 +313,38 @@ describe('initCommand', () => {
         await initCommand(tempDir, { force, exec });
         expect(groups()).toEqual([...userGroups, { matcher: 'Bash', hooks: [{ type: 'command', command }] }]);
       }
+      const nonArray = { matcher: 'Edit', command: 'custom.sh' };
+      seed(nonArray);
+      await initCommand(tempDir, { force: false, exec });
+      expect(groups()).toEqual(nonArray);
     });
 
     it('refreshes the launcher once and preserves hook options and sibling matchers', async () => {
       const sibling = { type: 'command', command: 'notify.sh' };
-      const rig = { type: 'command', command: old, timeout: 30 };
+      const rig = { type: 'command', command: old, timeout: 30, if: 'Bash(npm *)' };
+      const plainCopy = { matcher: '', hooks: [{ type: 'command', command }] };
       for (const matcher of [undefined, '', '*', 'Edit|Bash', 'Read, Bash', '^Ba.*', 'Bash']) {
-        seed([{ matcher, hooks: [sibling, rig] }]);
+        const customized = { matcher, hooks: [sibling, rig] };
+        // #242 could append a plain group when the user's hook had a timeout.
+        seed(matcher === 'Bash' ? [plainCopy, customized] : [customized, plainCopy]);
         await initCommand(tempDir, { force: false, exec });
+        const expected = matcher === 'Bash'
+          ? [{ matcher, hooks: [sibling, { ...rig, command }] }]
+          : [{ matcher, hooks: [sibling] }, { matcher: 'Bash', hooks: [{ ...rig, command }] }];
+        expect(groups(), String(matcher)).toEqual(expected);
         await initCommand(tempDir, { force: true, exec });
-        const refreshed = { ...rig, command };
-        expect(groups(), String(matcher)).toEqual(matcher === 'Bash'
-          ? [{ matcher, hooks: [sibling, refreshed] }]
-          : [{ matcher, hooks: [sibling] }, { matcher: 'Bash', hooks: [refreshed] }]);
+        expect(groups(), String(matcher)).toEqual(expected);
+      }
+      const priorLauncher = `PATH="/c/Program Files/nodejs:$PATH" /c/Program Files/nodejs/npx tsx ${script}`;
+      const other = { type: 'command', command: priorLauncher, if: 'Bash(go *)', shell: 'bash', async: true };
+      seed([{ matcher: '*', hooks: [sibling, rig] }, { matcher: '', hooks: [other] }, plainCopy]);
+      for (const force of [false, true]) {
+        await initCommand(tempDir, { force, exec });
+        expect(groups()).toEqual([
+          { matcher: '*', hooks: [sibling] },
+          { matcher: 'Bash', hooks: [{ ...other, command }] },
+          { matcher: 'Bash', hooks: [{ ...rig, command }] },
+        ]);
       }
     });
   });
