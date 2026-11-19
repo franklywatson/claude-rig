@@ -101,9 +101,8 @@ When the tool exists in the project's `.venv/bin`, or `uv` is installed, rig
 rewrites these commands to `.venv/bin/<tool> ...` or `uv run <command>`. rig
 does not approve the rewritten command itself, and Claude Code matches your
 allow rules against the rewritten form, so a rule such as `Bash(pytest:*)`
-does not match it. When `uv` itself is not in the venv, a command that already
-starts with `uv` is wrapped as well: `uv run pytest` arrives as
-`uv run uv run pytest`, and a rule has to match that form too. In auto mode,
+does not match it. Tools that manage their own environment (`uv`, `poetry`,
+`hatch`, `tox`, `nox`) are never wrapped in `uv run`. In auto mode,
 Claude Code's hooks reference says the rewritten call can be denied instead of
 prompting.
 

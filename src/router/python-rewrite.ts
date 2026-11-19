@@ -12,6 +12,13 @@ const PYTHON_BINARIES = [
 ];
 
 /**
+ * Tools that create and manage their own environment. Wrapping them in
+ * `uv run` is wrong (`uv run uv run pytest`, `uv run poetry install`), so the
+ * `uv run` fallback never applies; a `.venv/bin/<tool>` binary still resolves.
+ */
+const SELF_MANAGING_BINARIES = ['uv', 'poetry', 'hatch', 'tox', 'nox'];
+
+/**
  * Check if the command's binary is a known Python tool.
  * This is the signal that we're in a Python context —
  * not whether .py files appear in arguments.
@@ -25,7 +32,8 @@ export function isPythonBinary(command: string): boolean {
  * Try to rewrite a Bash command using Python environment detection.
  * Resolution chain:
  * 1. .venv/bin/<binary> exists → rewrite to relative venv path
- * 2. uv available → rewrite to `uv run <command>`
+ * 2. uv available → rewrite to `uv run <command>`, except for tools that
+ *    manage their own environment (uv, poetry, hatch, tox, nox)
  * 3. Neither → return null (pass through)
  *
  * Only triggers when the binary is a known Python tool.
@@ -54,8 +62,8 @@ export function tryPythonRewrite(
     }
   }
 
-  // Try uv run
-  if (uvAvailable) {
+  // Try uv run (self-managing tools bring their own environment)
+  if (uvAvailable && !SELF_MANAGING_BINARIES.includes(binary)) {
     return `uv run ${command}`;
   }
 

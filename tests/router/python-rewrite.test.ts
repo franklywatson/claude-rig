@@ -191,4 +191,37 @@ describe('tryPythonRewrite', () => {
     );
     expect(result).toBe('.venv/bin/pytest --version');
   });
+
+  describe('tools that manage their own environment', () => {
+    const selfManaging = ['uv', 'poetry', 'hatch', 'tox', 'nox'];
+
+    it.each(selfManaging)('never wraps %s in uv run when only uv is available', (tool) => {
+      const pyEnv = makePythonEnv({ venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv' });
+      expect(tryPythonRewrite(`${tool} run pytest`, cwd, pyEnv, () => false)).toBeNull();
+    });
+
+    it.each(selfManaging)('never wraps %s in uv run when the venv lacks its binary', (tool) => {
+      const pyEnv = makePythonEnv({ venvPath: '/project/.venv', uvAvailable: true, uvPath: '/usr/bin/uv' });
+      expect(tryPythonRewrite(`${tool} install`, cwd, pyEnv, () => false)).toBeNull();
+    });
+
+    it.each(selfManaging)('still resolves %s through .venv/bin when the venv has its binary', (tool) => {
+      const pyEnv = makePythonEnv({ venvPath: '/project/.venv', uvAvailable: true, uvPath: '/usr/bin/uv' });
+      const result = tryPythonRewrite(
+        `${tool} install`,
+        cwd,
+        pyEnv,
+        (p) => p === `/project/.venv/bin/${tool}`,
+      );
+      expect(result).toBe(`.venv/bin/${tool} install`);
+    });
+
+    it.each(['pytest tests/', 'python -m pytest', 'pip install requests', 'ruff check .'])(
+      'still wraps %s in uv run',
+      (command) => {
+        const pyEnv = makePythonEnv({ venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv' });
+        expect(tryPythonRewrite(command, cwd, pyEnv, () => false)).toBe(`uv run ${command}`);
+      },
+    );
+  });
 });
