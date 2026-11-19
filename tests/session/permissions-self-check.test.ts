@@ -83,11 +83,28 @@ describe('checkPermissionsReadiness', () => {
     );
     expect(result.status).toBe('missing');
     if (result.status === 'missing') {
-      expect(result.missing).toContain('Read(/tmp/rig-session-*.json)');
+      expect(result.missing).toContain('Read(//tmp/rig-session-*.json)');
       expect(result.missing).toContain('Bash(ls /tmp/rig-session-*)');
       expect(result.missing).not.toContain('mcp__jcodemunch__*');
       expect(result.fixCommand).toBe('rig init --broad-permissions');
     }
+  });
+
+  it('reports only the two corrected Read rules for an install that has the earlier ones', () => {
+    // What `rig init --broad-permissions` wrote before the Read rules were
+    // made absolute: the same list with one leading slash on those two.
+    const earlier = REQUIRED_PERMISSIONS.map((rule) => rule.replace('Read(//', 'Read(/'));
+    const result = checkPermissionsReadiness(
+      PROJECT,
+      makeReader(JSON.stringify({ permissions: { allow: earlier } })),
+      makeExists([SETTINGS_PATH]),
+      HOME,
+    );
+    expect(result).toEqual({
+      status: 'missing',
+      missing: ['Read(//tmp/rig-session-*.json)', 'Read(//private/tmp/rig-session-*.json)'],
+      fixCommand: 'rig init --broad-permissions',
+    });
   });
 
   it('lists ALL required entries as missing when allow list is empty', () => {
@@ -204,13 +221,22 @@ describe('REQUIRED_PERMISSIONS contract', () => {
   });
 
   it('includes the session cache Read tool permission', () => {
-    expect(REQUIRED_PERMISSIONS).toContain('Read(/tmp/rig-session-*.json)');
+    expect(REQUIRED_PERMISSIONS).toContain('Read(//tmp/rig-session-*.json)');
   });
 
   it('includes the macOS-resolved /private/tmp Read permission', () => {
     // /tmp -> /private/tmp on macOS; the Read tool resolves symlinks before
     // matching, so we need both forms to avoid permission prompts cross-platform.
-    expect(REQUIRED_PERMISSIONS).toContain('Read(/private/tmp/rig-session-*.json)');
+    expect(REQUIRED_PERMISSIONS).toContain('Read(//private/tmp/rig-session-*.json)');
+  });
+
+  it('writes no Read rule with a single leading slash', () => {
+    // In a Read rule one leading slash is relative to the settings source
+    // (the project directory for project settings), so Read(/tmp/...) means
+    // <project>/tmp/. An absolute path needs two.
+    const readRules = REQUIRED_PERMISSIONS.filter((rule) => rule.startsWith('Read('));
+    expect(readRules.length).toBeGreaterThan(0);
+    for (const rule of readRules) expect(rule).not.toMatch(/^Read\(\/(?!\/)/);
   });
 
   it('includes both MCP wildcards', () => {
