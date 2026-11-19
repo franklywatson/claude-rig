@@ -752,6 +752,44 @@ console.log('stale old hook');
       expect(deny).toContain('Bash(rm *)');
     });
 
+    it('re-init removes the dead one-slash Read allow entries, with or without --broad-permissions', async () => {
+      const claudeDir = join(tempDir, '.claude');
+      mkdirSync(claudeDir, { recursive: true });
+      const seed = {
+        permissions: {
+          allow: [
+            'Read(/tmp/rig-session-*.json)', // stale: project-relative, never matched
+            'Read(/private/tmp/rig-session-*.json)', // stale
+            'Read(//tmp/rig-session-*.json)', // correct absolute form, must survive
+            'Read(/tmp/other)', // user's own entry, must survive
+            'Bash(git status)', // user's own entry, must survive
+          ],
+          deny: [],
+        },
+      };
+      const survivors = [
+        'Read(//tmp/rig-session-*.json)',
+        'Read(/tmp/other)',
+        'Bash(git status)',
+      ];
+
+      for (const broadPermissions of [false, true]) {
+        writeFileSync(join(claudeDir, 'settings.json'), JSON.stringify(seed));
+        await initCommand(tempDir, { force: false, broadPermissions, exec: noTools });
+        const first = readFileSync(join(claudeDir, 'settings.json'), 'utf-8');
+        const allow: string[] = JSON.parse(first).permissions.allow;
+
+        expect(allow).not.toContain('Read(/tmp/rig-session-*.json)');
+        expect(allow).not.toContain('Read(/private/tmp/rig-session-*.json)');
+        for (const entry of survivors) expect(allow).toContain(entry);
+        expect(allow.filter((e) => e === 'Read(//tmp/rig-session-*.json)')).toHaveLength(1);
+
+        // Idempotent: a second run changes nothing.
+        await initCommand(tempDir, { force: false, broadPermissions, exec: noTools });
+        expect(readFileSync(join(claudeDir, 'settings.json'), 'utf-8')).toBe(first);
+      }
+    });
+
     // ── --broad-permissions flag ──
 
     it('--broad-permissions adds required MCP and session-cache allow permissions', async () => {

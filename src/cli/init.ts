@@ -268,6 +268,16 @@ const STALE_DENY_ENTRIES = [
   'Write(**/*.key)',
 ];
 
+// Written by earlier rig versions under --broad-permissions. In project settings a
+// Read rule with one leading slash is relative to the settings source
+// (<project>/tmp/...), so these never matched the session cache; the
+// two-slash (absolute) forms in REQUIRED_PERMISSIONS replace them. Only these
+// exact strings are removed, so a user's own entries are never touched.
+const STALE_ALLOW_ENTRIES = [
+  'Read(/tmp/rig-session-*.json)',
+  'Read(/private/tmp/rig-session-*.json)',
+];
+
 function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean, broadPermissions: boolean): void {
   const settingsPath = join(claudeDir, 'settings.json');
   let settings: Record<string, unknown> = {};
@@ -383,6 +393,8 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
 
   // Migration: drop stale Write(**/...) deny entries from prior rig installs.
   permissions.deny = permissions.deny.filter((entry) => !STALE_DENY_ENTRIES.includes(entry));
+  // Migration: drop the dead one-slash Read allow entries (any init run).
+  permissions.allow = permissions.allow.filter((entry) => !STALE_ALLOW_ENTRIES.includes(entry));
 
   writeFileSync(settingsPath, JSON.stringify(settings, null, 2) + '\n');
 }

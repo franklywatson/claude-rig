@@ -16,7 +16,9 @@ add no allow entries.
 Earlier versions wrote the two `Read` entries with one leading slash. In project
 settings Claude Code reads that form as a path inside the project, so those entries
 did not match the session cache. The entries below use two slashes, which is an
-absolute path. The one-slash entries can be deleted.
+absolute path. Re-running `rig init` removes the one-slash entries from
+`.claude/settings.json`; it does so with or without `--broad-permissions`, and
+only for those two exact strings.
 
 ### Diagnosis
 
