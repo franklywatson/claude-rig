@@ -310,6 +310,50 @@ const STALE_ALLOW_ENTRIES = [
   'Read(/private/tmp/rig-session-*.json)',
 ];
 
+// Claude Code treats simple names as a list and other matchers as regexes.
+function matcherReaches(matcher: unknown, tool: string): boolean {
+  if (matcher === undefined || matcher === '' || matcher === '*') return true;
+  if (typeof matcher !== 'string') return false;
+  if (/^[A-Za-z0-9_\- ,|]+$/.test(matcher)) {
+    return matcher.split(/[|,]/).some(name => name.trim() === tool);
+  }
+  try {
+    return new RegExp(matcher).test(tool);
+  } catch {
+    return false;
+  }
+}
+
+// Earlier installs may use bare npx or a literal npx path from another machine.
+const EARLIER_RIG_FAILURE_COMMAND =
+  /^(?:npx|PATH="(\/[^"$`\\\n*?[{]*):\$PATH" \1\/npx) tsx "\$\{CLAUDE_PROJECT_DIR\}\/\.claude\/hooks\/scripts\/post-tool-use\.ts"$/;
+
+function registerFailureHook(hooks: Record<string, unknown>, npxCommand: string): void {
+  const command = `${npxCommand} "\${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts"`;
+  const groups = hooks.PostToolUseFailure ??= [];
+  if (!Array.isArray(groups)) return;
+
+  for (const group of groups) {
+    if (!Array.isArray(group?.hooks) || !matcherReaches(group.matcher, 'Bash')) continue;
+    for (const [index, hook] of group.hooks.entries()) {
+      if (hook?.type !== 'command' || typeof hook.command !== 'string') continue;
+      if (hook.command === command || EARLIER_RIG_FAILURE_COMMAND.test(hook.command)) {
+        hook.command = command;
+        if (group.matcher !== 'Bash') {
+          // Narrow an older registration without changing when its siblings run.
+          if (group.hooks.length === 1) group.matcher = 'Bash';
+          else {
+            group.hooks.splice(index, 1);
+            groups.push({ ...group, matcher: 'Bash', hooks: [hook] });
+          }
+        }
+        return;
+      }
+    }
+  }
+  groups.push({ matcher: 'Bash', hooks: [{ type: 'command', command }] });
+}
+
 function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable: boolean, broadPermissions: boolean): void {
   const settingsPath = join(claudeDir, 'settings.json');
   let settings: Record<string, unknown> = {};
@@ -384,6 +428,8 @@ function updateSettingsJson(claudeDir: string, npxCommand: string, rtkAvailable:
       });
     }
   }
+
+  registerFailureHook(hooks, npxCommand);
 
   // ── Permissions ──
 

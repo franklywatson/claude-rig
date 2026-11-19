@@ -13,6 +13,14 @@ const FAILURE_LINE_PATTERNS = [
   /\berror TS\d{4}\b/,
 ];
 
+export function isNamedFailureLine(line: string): boolean {
+  return FAILURE_LINE_PATTERNS.some(pattern => pattern.test(line));
+}
+
+export function clipDiagnostic(line: string): string {
+  return line.length > 300 ? `${line.slice(0, 299)}…` : line;
+}
+
 /**
  * Phases whose runs expect failing tests (the RED step of red-green-refactor).
  * Mirrors SCOPED_PHASES in test-scope.ts and post-tool-use.ts — all three list
@@ -78,7 +86,7 @@ export function classifyFailures(testOutput: string, changedFiles: string[]): Cl
   const failureLines: string[] = [];
 
   for (const line of lines) {
-    if (FAILURE_LINE_PATTERNS.some(p => p.test(line))) {
+    if (isNamedFailureLine(line)) {
       failureLines.push(line.trim());
     }
   }
@@ -173,7 +181,7 @@ function formatViolation(testOutput: string, tolerance: string): EnforcementViol
   const lines = testOutput.split('\n');
   const failureLines: string[] = [];
   for (const line of lines) {
-    if (FAILURE_LINE_PATTERNS.some(p => p.test(line))) {
+    if (isNamedFailureLine(line)) {
       failureLines.push(line.trim());
     }
   }
@@ -187,7 +195,7 @@ function formatViolation(testOutput: string, tolerance: string): EnforcementViol
       `${prefix} ZERO-DEFECT VIOLATION`,
       '',
       `${failureLines.length} failure(s) found:`,
-      ...failureLines.slice(0, 10).map(l => `  ${l}`),
+      ...failureLines.slice(0, 10).map(l => `  ${clipDiagnostic(l)}`),
       '',
       'Zero-defect tolerance: every error, warning, and failure must be addressed.',
       '"This failure is unrelated" is never acceptable.',
@@ -206,7 +214,7 @@ function formatRegressionsMessage(regressions: string[], tolerance: string): Enf
       `${prefix} REGRESSION(S) DETECTED`,
       '',
       `${regressions.length} regression(s) in files you changed:`,
-      ...regressions.slice(0, 10).map(l => `  ${l}`),
+      ...regressions.slice(0, 10).map(l => `  ${clipDiagnostic(l)}`),
       '',
       'These failures are in your branch. Fix them before proceeding.',
     ].join('\n'),
@@ -222,7 +230,7 @@ function formatPreExistingMessage(preExisting: string[]): EnforcementViolation {
       '[ADVISE] PRE-EXISTING FAILURE(S)',
       '',
       `${preExisting.length} pre-existing failure(s) in untouched files:`,
-      ...preExisting.slice(0, 10).map(l => `  ${l}`),
+      ...preExisting.slice(0, 10).map(l => `  ${clipDiagnostic(l)}`),
       '',
       'These failures existed before your changes. Consider fixing them separately.',
     ].join('\n'),

@@ -239,6 +239,13 @@ invocations of the chain skills (`tdd-plus`, `sdd-plus`, etc.) set the current
 phase (`setPhase`). Hooks run as separate processes, so the session cache is
 the only channel that crosses invocations.
 
+Claude Code sends failed Bash calls to `PostToolUseFailure`. The same script
+reads the payload's `error` field and checks single test commands for zero-defect
+violations. A failure without a named diagnostic reports the last five non-empty
+lines. The failure handler reads the cached phase and changed files without
+recording a tool use. Compound commands such as `npm test && npm run lint` are
+skipped because either step could have failed.
+
 A fourth check, `checkTestScope` (`src/enforcement/test-scope.ts`), runs in
 the **PreToolUse** hook rather than this pipeline: its output is a scoped-run
 redirect, which is only actionable before the full suite executes (see "Test

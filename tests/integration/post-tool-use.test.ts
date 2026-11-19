@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { mkdtempSync, rmSync, existsSync, writeFileSync, unlinkSync } from 'node:fs';
+import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
@@ -42,11 +42,65 @@ describe('PostToolUse hook E2E', () => {
     // (tempDir, SESSION_ID) — remove the exact paths so /tmp doesn't
     // accumulate fixtures. Never glob-delete: real sessions own sibling
     // cache files.
-    for (const path of [sessionCachePath(tempDir, SESSION_ID), sessionCachePath(tempDir)]) {
+    for (const path of [SESSION_ID, undefined, 'failed-tdd'].map(id => sessionCachePath(tempDir, id))) {
       if (existsSync(path)) unlinkSync(path);
     }
     rmSync(tempDir, { recursive: true, force: true });
   });
+
+  describe('PostToolUseFailure', () => {
+    const failedTest = {
+      session_id: 'failed-test', hook_event_name: 'PostToolUseFailure', is_interrupt: false,
+      tool_name: 'Bash', tool_input: { command: 'npx vitest run' },
+      error: 'Exit code 1\nFAIL tests/foo.test.ts\nTests: 1 failed',
+    };
+
+    it.each(['npx vitest run', 'npm test'])('blocks a failed %s', async command => {
+      const result = await runHook(hookPath, { ...failedTest, tool_input: { command } }, tempDir);
+      expect(result.exitCode).toBe(2);
+      expect(result.stderr).toContain('FAIL tests/foo.test.ts');
+      expect(result.stdout).toBe('');
+      expect(existsSync(sessionCachePath(tempDir, failedTest.session_id))).toBe(false);
+    }, HOOK_TIMEOUT);
+
+    it.each([
+      ['Bash', { command: 'npm run build && npm test' }, 'ERROR src/build.ts'],
+      ['Bash', { command: 'npm test && npm run lint' }, 'ERROR src/lint.ts'],
+      ['Bash', { command: 'ls /nope' }, 'No such file or directory'],
+      ['Edit', { file_path: 'src/foo.ts', new_string: 'b' }, 'Edit failed'],
+      ['Write', { file_path: 'src/foo.ts', content: 'b' }, 'Write failed'],
+      ['Read', { file_path: 'src/foo.ts' }, 'Read failed'],
+    ])('stays quiet for %s %j', async (tool_name, tool_input, error) => {
+      const result = await runHook(hookPath, { ...failedTest, tool_name, tool_input, error }, tempDir);
+      expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
+      expect(existsSync(sessionCachePath(tempDir, failedTest.session_id))).toBe(false);
+    }, HOOK_TIMEOUT);
+
+    it('returns a tdd+ advisory on the failure event and preserves the session cache', async () => {
+      const session_id = 'failed-tdd';
+      const skill = await runHook(hookPath, {
+        session_id, hook_event_name: 'PostToolUse', tool_name: 'Skill', tool_input: { skill: 'tdd-plus' },
+      }, tempDir);
+      expect(skill.exitCode).toBe(0);
+      const path = sessionCachePath(tempDir, session_id);
+      const before = readFileSync(path, 'utf8');
+      const result = await runHook(hookPath, { ...failedTest, session_id }, tempDir);
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout).hookSpecificOutput).toEqual({
+        hookEventName: 'PostToolUseFailure', additionalContext: expect.stringContaining('[ADVISE] ZERO-DEFECT'),
+      });
+      expect(readFileSync(path, 'utf8')).toBe(before);
+    }, HOOK_TIMEOUT);
+  });
+
+  it('stays quiet when a passing npm test prints a FAIL line', async () => {
+    const result = await runHook(hookPath, {
+      session_id: SESSION_ID, hook_event_name: 'PostToolUse', tool_name: 'Bash',
+      tool_input: { command: 'npm test' },
+      tool_response: { stdout: 'FAIL src/x.ts (fixture output)\nTests: 1 passed', stderr: '' },
+    }, tempDir);
+    expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
+  }, HOOK_TIMEOUT);
 
   it('exits 0 for non-test source file edit', async () => {
     const result = await runHook(hookPath, {
