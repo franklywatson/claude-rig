@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resolve } from 'node:path';
 import { handlePostToolUse, isShellQuotablePath, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
 import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
@@ -468,6 +469,43 @@ describe('handlePostToolUse', () => {
 
     expect(run('darwin').some(c => c.includes('graphify update'))).toBe(true);
     expect(run('win32')).toEqual([]);
+  });
+
+  describe('project-vs-external classification of a directory', () => {
+    const report = '- 10 nodes · 20 edges · 3 communities detected';
+    const exec = (cmd: string) => {
+      if (cmd.includes('test -f')) throw new Error('not found');
+      if (cmd.includes('graphify update')) return '';
+      if (cmd.includes('GRAPH_REPORT.md')) return report;
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    beforeEach(() => {
+      vi.spyOn(process, 'cwd').mockReturnValue('/work/proj');
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it.each([
+      ['the project directory itself', '/work/proj'],
+      ['a child of the project', '/work/proj/packages/a'],
+      ['a relative path, which resolves inside the project', 'src'],
+      ['a relative path with a dot segment', './src/../lib'],
+    ])('does not capture stats for %s', (_label, dir) => {
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: dir }, tracker, cache, config, exec);
+      expect(cache.getGraphifyStats(resolve('/work/proj', dir))).toBeUndefined();
+    });
+
+    it.each([
+      ['a sibling sharing the project path as a prefix', '/work/proj-other'],
+      ['a parent of the project', '/work'],
+      ['an unrelated directory', '/elsewhere/proj'],
+      ['a relative path that escapes the project', '../proj-other'],
+    ])('captures stats for %s', (_label, dir) => {
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: dir }, tracker, cache, config, exec);
+      expect(cache.getGraphifyStats(resolve('/work/proj', dir))?.nodes).toBe(10);
+    });
   });
 
   describe('RIG_DEBUG diagnostics for a rejected external directory', () => {

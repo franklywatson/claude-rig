@@ -1,4 +1,4 @@
-import { normalize, resolve } from 'node:path';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { FileTracker } from './file-tracker.js';
 import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
@@ -280,7 +280,9 @@ function extractExternalDirectory(
     }
     return null;
   }
-  const cwd = process.cwd();
-  if (directory.startsWith(cwd)) return null;
+  // Path-aware, not a string prefix: /work/proj-other is not inside /work/proj,
+  // and a relative path resolves against cwd.
+  const rel = relative(process.cwd(), resolve(directory));
+  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return null;
   return { dir: directory, source };
 }
