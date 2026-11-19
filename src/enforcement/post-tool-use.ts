@@ -1,4 +1,4 @@
-import { isAbsolute, relative, resolve } from 'node:path';
+import { isAbsolute, relative, resolve, sep } from 'node:path';
 import { FileTracker } from './file-tracker.js';
 import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
@@ -282,7 +282,10 @@ function extractExternalDirectory(
   }
   // Path-aware, not a string prefix: /work/proj-other is not inside /work/proj,
   // and a relative path resolves against cwd.
+  // `..` must be a whole path segment: a directory literally named `..foo`
+  // inside the project is still inside it.
   const rel = relative(process.cwd(), resolve(directory));
-  if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return null;
+  const escapes = rel === '..' || rel.startsWith(`..${sep}`);
+  if (rel === '' || (!escapes && !isAbsolute(rel))) return null;
   return { dir: directory, source };
 }

@@ -492,6 +492,8 @@ describe('handlePostToolUse', () => {
       ['a child of the project', '/work/proj/packages/a'],
       ['a relative path, which resolves inside the project', 'src'],
       ['a relative path with a dot segment', './src/../lib'],
+      ['a child whose name merely starts with two dots', '/work/proj/..foo'],
+      ['a relative child whose name merely starts with two dots', '..foo/bar'],
     ])('does not capture stats for %s', (_label, dir) => {
       handlePostToolUse('mcp__jcodemunch__index_folder', { path: dir }, tracker, cache, config, exec);
       expect(cache.getGraphifyStats(resolve('/work/proj', dir))).toBeUndefined();
