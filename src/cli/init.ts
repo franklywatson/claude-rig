@@ -1,7 +1,7 @@
 import { execSync } from 'node:child_process';
 import { mkdirSync, existsSync, readFileSync, writeFileSync, unlinkSync, readdirSync } from 'node:fs';
 import { join, resolve, basename } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { renderTemplate } from './renderer.js';
 import { GRAPHIFY_OUT_DIR } from '../constants.js';
 import { DEFAULT_CONFIG } from '../config.js';
@@ -18,11 +18,25 @@ interface InitOptions {
   exec?: ExecFn;
 }
 
+/**
+ * The rig dist directory as the base of the generated hooks' import
+ * specifiers. A file URL loads where a bare path does not: on Windows, where
+ * a drive-letter path is not a valid import specifier and its backslashes are
+ * read as string escapes, and on any install path containing `#` or `%`.
+ * A `?` in the path is not covered: tsx decodes `%3F` back into a query
+ * string, the import fails, and the hook then fails open (same as before this
+ * change). The apostrophe is escaped because the templates embed this in a
+ * single-quoted string.
+ */
+export function hookImportBase(distDir: string): string {
+  return pathToFileURL(distDir).href.replace(/'/g, '%27');
+}
+
 export async function initCommand(projectDir: string, options: InitOptions): Promise<void> {
   const claudeDir = join(projectDir, '.claude');
   const projectName = basename(projectDir);
   const generatedDate = new Date().toISOString().split('T')[0];
-  const rigDistPath = resolve(__dirname, '..');
+  const rigDistPath = hookImportBase(resolve(__dirname, '..'));
 
   // Build render context with environment-aware variables
   const renderContext: Record<string, string> = {
