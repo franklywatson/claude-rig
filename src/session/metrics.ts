@@ -1,6 +1,7 @@
 import type { GraphifyProjectStats, MetricsBaseline } from '../types.js';
 import { basename } from 'node:path';
 import { graphJsonPath, graphReportPath } from '../constants.js';
+import { isShellQuotablePath } from '../shell-path.js';
 
 export type ExecFn = (cmd: string, opts?: { timeout?: number }) => string;
 
@@ -109,13 +110,18 @@ export function captureGraphifyStatsViaReport(
 
 /**
  * Build graphify graph for an external directory (if not already built)
- * and capture its stats. Returns null if graphify is unavailable or build fails.
+ * and capture its stats. Returns null if graphify is unavailable or build fails,
+ * or without running any command when the directory cannot be placed inside a
+ * double-quoted shell command. (The session-cwd captures above stay unguarded:
+ * cwd is not a tool-supplied value.)
  */
 export function captureExternalGraphifyStats(
   directory: string,
   exec: ExecFn,
   onWarn?: (msg: string) => void,
 ): GraphifyProjectStats | null {
+  if (!isShellQuotablePath(directory)) return null;
+
   const graphPath = graphJsonPath(directory);
 
   // Check if graph already exists

@@ -581,10 +581,15 @@ session start. External directory stats are captured when `mcp__jcodemunch__inde
 is called on a non-CWD directory — the post-tool-use hook triggers a graphify build
 if needed and stores the results. The capture places the directory inside
 double-quoted shell commands, so it is skipped for a path that contains a double
-quote, `$`, a backtick, `%`, `!` or an ASCII control character, ends with a backslash,
-contains a doubled backslash (outside Windows), or starts with `-` as given or
-once normalized. The same check applies to `mcp__jcodemunch__resolve_repo` and
-to the directory text matched from a Bash `graphify update <dir>`.
+quote, `$`, a backtick or an ASCII control character (or, on Windows, `%` or `!`),
+ends with a backslash, contains a doubled backslash (outside Windows), or starts
+with `-` as given or once normalized. The same check (`isShellQuotablePath`,
+`src/shell-path.ts`) applies to `mcp__jcodemunch__resolve_repo`, to the directory
+text matched from a Bash `graphify update <dir>`, and to the other entry points
+that take a tool- or model-supplied directory (`ensureIndexed`, `ensureGraphBuilt`,
+`captureExternalGraphifyStats`). Session-cwd commands are not guarded: the
+working directory is not a tool-supplied value. With `RIG_DEBUG` set, a path
+rejected for the PostToolUse capture is named in one stderr line.
 The `/savings` skill reports all projects.
 
 **Entry point detection:** Derives from filename patterns: `index.*`, `main.*`, `cli.*`, `app.*`, `server.*`.

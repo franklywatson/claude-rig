@@ -440,6 +440,10 @@ export async function detectAndIndex(
     const execFn: ExecFn = exec ??
       ((cmd, opts) => execSync(cmd, { encoding: 'utf-8', ...opts } as Parameters<typeof execSync>[1]) as string);
 
+    // `cwd` is interpolated into shell commands below without the
+    // isShellQuotablePath guard: it is the session's own directory, not a
+    // tool-supplied value, and rejecting an oddly named project directory
+    // would silently disable indexing.
     if (transport?.kind === 'cli') {
       try {
         const indexResult = execFn(

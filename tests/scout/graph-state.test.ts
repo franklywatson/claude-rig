@@ -184,6 +184,17 @@ describe('ensureGraphReady', () => {
     };
   }
 
+  it.each([
+    ['a command substitution', '/external/$(touch pwned)'],
+    ['a backtick', '/external/`touch pwned`'],
+  ])('runs no build for a directory containing %s', (_label, dir) => {
+    const env = makeEnv({ state: 'absent' });
+    const result = ensureGraphReady(dir, env, mockExec as any, () => false, () => undefined);
+
+    expect(mockExec).not.toHaveBeenCalled();
+    expect(result!.state).toBe('failed');
+  });
+
   it('returns null when no graphify CLI detected (no graphBuildInfo)', () => {
     const env = makeEnv(undefined);
     const result = ensureGraphReady('/project', env, mockExec as any, () => true, () => ({ size: 5000 }));

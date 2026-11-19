@@ -1,4 +1,5 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { resolve } from 'node:path';
 import { handlePostToolUse, isShellQuotablePath, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
 import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
@@ -414,16 +415,16 @@ describe('handlePostToolUse', () => {
 
   it.each<[string, string, Record<string, unknown>]>([
     ['index_folder path', 'mcp__jcodemunch__index_folder', { path: '/external/a$b' }],
-    ['index_folder folder_path', 'mcp__jcodemunch__index_folder', { folder_path: '/external/a%b' }],
+    ['index_folder folder_path', 'mcp__jcodemunch__index_folder', { folder_path: '/external/a`b' }],
     ['index_folder path that is not a string', 'mcp__jcodemunch__index_folder', { path: 42 }],
     ['index_folder path ending in a backslash', 'mcp__jcodemunch__index_folder', { path: 'C:\\external\\proj\\' }],
     ['index_folder path starting with a hyphen', 'mcp__jcodemunch__index_folder', { path: '-x/../external' }],
     ['resolve_repo path', 'mcp__jcodemunch__resolve_repo', { path: '/external/a"b' }],
     ['double-quoted Bash graphify update', 'Bash', { command: 'graphify update "/external/a$b"' }],
     ['single-quoted Bash graphify update', 'Bash', { command: "graphify update '/external/a\"b'" }],
-    ['unquoted Bash graphify update', 'Bash', { command: 'graphify update /external/a%b' }],
+    ['unquoted Bash graphify update', 'Bash', { command: 'graphify update /external/a$(id)b' }],
     ['unquoted Bash operand that ends in a backslash', 'Bash', { command: 'graphify update /external/my\\ dir' }],
-    ['index_folder path with an exclamation mark', 'mcp__jcodemunch__index_folder', { path: '/external/a!b' }],
+    ['index_folder path with a command substitution', 'mcp__jcodemunch__index_folder', { path: '/external/$(touch pwned)' }],
   ])('runs no capture command when the path is not shell-quotable: %s', (_label, tool, args) => {
     const calls: string[] = [];
     const exec = (cmd: string) => { calls.push(cmd); return ''; };
@@ -441,6 +442,120 @@ describe('handlePostToolUse', () => {
 
     // Skipped where the hook's shell is /bin/sh, captured where it is cmd.exe.
     expect(calls.length === 0).toBe(process.platform !== 'win32');
+  });
+
+  it('captures stats for a path with % or ! outside Windows, skips it on win32', () => {
+    const report = '- 10 nodes · 20 edges · 3 communities detected';
+    const run = (platform: NodeJS.Platform): string[] => {
+      const calls: string[] = [];
+      const exec = (cmd: string) => {
+        calls.push(cmd);
+        if (cmd.includes('test -f')) throw new Error('not found');
+        if (cmd.includes('graphify update')) return '';
+        if (cmd.includes('GRAPH_REPORT.md')) return report;
+        throw new Error(`unexpected: ${cmd}`);
+      };
+      const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+      Object.defineProperty(process, 'platform', { value: platform });
+      try {
+        handlePostToolUse(
+          'mcp__jcodemunch__index_folder', { path: '/external/100% done!' }, tracker, cache, config, exec,
+        );
+      } finally {
+        Object.defineProperty(process, 'platform', original);
+      }
+      return calls;
+    };
+
+    expect(run('darwin').some(c => c.includes('graphify update'))).toBe(true);
+    expect(run('win32')).toEqual([]);
+  });
+
+  describe('project-vs-external classification of a directory', () => {
+    const report = '- 10 nodes · 20 edges · 3 communities detected';
+    const exec = (cmd: string) => {
+      if (cmd.includes('test -f')) throw new Error('not found');
+      if (cmd.includes('graphify update')) return '';
+      if (cmd.includes('GRAPH_REPORT.md')) return report;
+      throw new Error(`unexpected: ${cmd}`);
+    };
+
+    beforeEach(() => {
+      vi.spyOn(process, 'cwd').mockReturnValue('/work/proj');
+    });
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it.each([
+      ['the project directory itself', '/work/proj'],
+      ['a child of the project', '/work/proj/packages/a'],
+      ['a relative path, which resolves inside the project', 'src'],
+      ['a relative path with a dot segment', './src/../lib'],
+      ['a child whose name merely starts with two dots', '/work/proj/..foo'],
+      ['a relative child whose name merely starts with two dots', '..foo/bar'],
+    ])('does not capture stats for %s', (_label, dir) => {
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: dir }, tracker, cache, config, exec);
+      expect(cache.getGraphifyStats(resolve('/work/proj', dir))).toBeUndefined();
+    });
+
+    it.each([
+      ['a sibling sharing the project path as a prefix', '/work/proj-other'],
+      ['a parent of the project', '/work'],
+      ['an unrelated directory', '/elsewhere/proj'],
+      ['a relative path that escapes the project', '../proj-other'],
+    ])('captures stats for %s', (_label, dir) => {
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: dir }, tracker, cache, config, exec);
+      expect(cache.getGraphifyStats(resolve('/work/proj', dir))?.nodes).toBe(10);
+    });
+  });
+
+  describe('RIG_DEBUG diagnostics for a rejected external directory', () => {
+    let errSpy: ReturnType<typeof vi.spyOn>;
+    const originalDebug = process.env.RIG_DEBUG;
+
+    beforeEach(() => {
+      errSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+    });
+    afterEach(() => {
+      errSpy.mockRestore();
+      if (originalDebug === undefined) delete process.env.RIG_DEBUG;
+      else process.env.RIG_DEBUG = originalDebug;
+    });
+
+    const exec = () => '';
+
+    it('emits one stderr line naming the rejected path when RIG_DEBUG is set', () => {
+      process.env.RIG_DEBUG = '1';
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: '/external/a$(id)b' }, tracker, cache, config, exec);
+
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      expect(String(errSpy.mock.calls[0][0])).toContain('/external/a$(id)b');
+    });
+
+    it('truncates a very long rejected path', () => {
+      process.env.RIG_DEBUG = '1';
+      const long = `/external/$${'x'.repeat(1000)}`;
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: long }, tracker, cache, config, exec);
+
+      expect(errSpy).toHaveBeenCalledTimes(1);
+      expect(String(errSpy.mock.calls[0][0]).length).toBeLessThan(400);
+    });
+
+    it('is silent when RIG_DEBUG is not set', () => {
+      delete process.env.RIG_DEBUG;
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: '/external/a$(id)b' }, tracker, cache, config, exec);
+
+      expect(errSpy).not.toHaveBeenCalled();
+    });
+
+    it('is silent for the project directory and for unrecognized tools', () => {
+      process.env.RIG_DEBUG = '1';
+      handlePostToolUse('mcp__jcodemunch__index_folder', { path: process.cwd() }, tracker, cache, config, exec);
+      handlePostToolUse('Bash', { command: 'ls' }, tracker, cache, config, exec);
+
+      expect(errSpy).not.toHaveBeenCalled();
+    });
   });
 
   it('still captures stats for a safe external path with a space and ampersand', () => {
@@ -748,16 +863,31 @@ describe('isShellQuotablePath', () => {
     ['a backslash that is not last', 'C:\\ext\\project'],
     ['a non-ASCII letter', '/ext/caf\u00e9'],
     ['a hyphen that is not leading', '/ext/-inner/-x'],
+    ['a percent sign, outside Windows', '/Users/x/100% done'],
+    ['an exclamation mark, outside Windows', '/ext/hello!'],
   ])('allows %s', (_label, path) => {
-    expect(isShellQuotablePath(path)).toBe(true);
+    expect(isShellQuotablePath(path, 'linux')).toBe(true);
+    expect(isShellQuotablePath(path, 'darwin')).toBe(true);
+  });
+
+  // % and ! only mean something to cmd.exe (variable and delayed expansion).
+  it.each([
+    ['a percent sign', 'C:\\ext\\a%PATH%b'],
+    ['an exclamation mark', 'C:\\ext\\a!b'],
+  ])('rejects %s on win32 only', (_label, path) => {
+    expect(isShellQuotablePath(path, 'win32')).toBe(false);
+    expect(isShellQuotablePath(path, 'linux')).toBe(true);
+  });
+
+  it('is exported from src/shell-path.ts as the same function', async () => {
+    const mod = await import('../../src/shell-path.js');
+    expect(mod.isShellQuotablePath).toBe(isShellQuotablePath);
   });
 
   it.each([
     ['a double quote', '/ext/a"b'],
     ['a dollar sign', '/ext/a$b'],
     ['a backtick', '/ext/a`b'],
-    ['a percent sign', '/ext/a%b'],
-    ['an exclamation mark', '/ext/a!b'],
     ['a newline', '/ext/a\nb'],
     ['a carriage return', '/ext/a\rb'],
     ['a tab', '/ext/a\tb'],
