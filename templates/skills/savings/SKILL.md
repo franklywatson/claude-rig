@@ -47,7 +47,7 @@ Report token savings from rtk and jcodemunch usage during this session.
      the session cache (such as `Read(//tmp/rig-session-*.json)`) are opt-in.
      `rig init --broad-permissions` adds them together with its broader shell
      patterns, or they can be added to `permissions.allow` by hand. The `ls`
-     listing can still prompt: it needs read access to `/tmp` itself.
+     listing may still prompt: it needs read access to `/tmp` itself.
 3. Compute the rtk session delta: `current total_saved - baseline totalSaved`.
    If the delta is NEGATIVE, do not report it as a (negative) saving: rtk
    >= 0.49 can claw back savings (recalls, recomputes), so the all-time total

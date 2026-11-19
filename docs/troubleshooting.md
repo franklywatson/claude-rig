@@ -56,7 +56,7 @@ above, add them to `permissions.allow` by hand.
 
 With these entries, in a session where you have trusted the folder, reading a
 cache file with the Read tool or `cat` no longer prompts. Listing with
-`ls /tmp/rig-session-*.json` can still prompt, because a listing needs read
+`ls /tmp/rig-session-*.json` may still prompt, because a listing needs read
 access to `/tmp` itself and rig does not pre-authorize that. Approve that prompt,
 or add a wider rule yourself (for example `Read(//tmp/**)`) if you accept Claude
 reading everything in `/tmp`.
