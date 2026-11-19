@@ -7,6 +7,114 @@ import { SessionCache } from '../../src/session/cache.js';
 import type { HarnessConfig } from '../../src/types.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 
+describe('standalone package and direct runner output', () => {
+  const commands = ['npm test', 'npx vitest run'];
+
+  function results(output: string, event: 'success' | 'failure', cache = new SessionCache(), config = DEFAULT_CONFIG) {
+    return commands.map(command => event === 'failure'
+      ? handlePostToolUseFailure('Bash', { command }, output, cache, config)
+      : handlePostToolUse('Bash', { command }, new FileTracker(), cache, config, undefined, output));
+  }
+
+  const metadata = [
+    '  \x1b[32m✓\x1b[0m explains error TS2322', '✔ quotes FAIL', '↓ skips ERROR',
+    'PASS tests/ERROR.test.ts', '# Subtest: handles ERROR', 'ok 1 - handles 2 failed',
+    '$ vitest -t ERROR', '> vitest run -t "error TS2322"', 'stdout | test.ts > expects ERROR',
+    'stderr | test.ts > explains error TS2322',
+    "    2| it('reports error TS2322', () => {",
+  ];
+
+  it.each(metadata)('ignores the reporter or command echo %j', line => {
+    expect(results(line, 'success')).toEqual([null, null]);
+    const [pkg, direct] = results(line, 'failure');
+    expect(pkg).toEqual(direct);
+    expect(pkg?.message.split('\n')).toEqual(['[BLOCK] ZERO-DEFECT: test command exited non-zero']);
+  });
+
+  it.each(['success', 'failure'] as const)('keeps the genuine diagnostic on %s', event => {
+    const output = [...metadata, '\x1b[31mFAIL\x1b[0m tests/red.test.ts', 'Tests  1 failed | 3 passed (4)'].join('\n');
+    const [pkg, direct] = results(output, event);
+    expect(pkg).toEqual(direct);
+    expect(pkg?.level).toBe('block');
+    expect(pkg?.message).toContain('1 failure(s) found:\n  FAIL tests/red.test.ts');
+    expect(pkg?.message).not.toContain('TS2322');
+  });
+
+  it('treats a printed FAIL line alone as insufficient on a successful call', () => {
+    for (const footer of ['', '\nTests: 1 passed']) {
+      expect(results('FAIL src/x.ts (fixture output)' + footer, 'success')).toEqual([null, null]);
+    }
+    const [pkg, direct] = results('FAIL tests/red.test.ts', 'failure');
+    expect(pkg).toEqual(direct);
+    expect(pkg?.message).toContain('FAIL tests/red.test.ts');
+  });
+
+  it.each(['success', 'failure'] as const)('ignores a captured console block beside a real failure on %s', event => {
+    const output = [
+      'RUN v5', '', 'stdout | tests/green.test.ts > handles error TS2322', 'FAIL src/printed.ts',
+      '', '× tests/red.test.ts > detects a change', 'Tests  1 failed | 1 passed (2)',
+      '', 'FAIL tests/red.test.ts', "    2| it('handles error TS2322', () => {",
+    ].join('\r\n');
+    const [pkg, direct] = results(output, event);
+    expect(pkg).toEqual(direct);
+    expect(pkg?.message).toContain('1 failure(s) found:\n  FAIL tests/red.test.ts');
+    expect(pkg?.message).not.toContain('printed.ts');
+    expect(pkg?.message).not.toContain('TS2322');
+  });
+
+  it('retains a diagnostic after a truncated console header on nonzero exit', () => {
+    const [pkg, direct] = results('stderr | tests/red.test.ts\nERROR src/setup.ts', 'failure');
+    expect(pkg).toEqual(direct);
+    expect(pkg?.message).toContain('ERROR src/setup.ts');
+  });
+
+  it.each(['success', 'failure'] as const)('retains a compiler diagnostic outside reporter metadata on %s', event => {
+    const output = 'Tests  2 passed (2)\nsrc/setup.ts(4,1): error TS2322: Type mismatch';
+    const [pkg, direct] = results(output, event);
+    expect(pkg).toEqual(direct);
+    expect(pkg?.message).toContain('1 failure(s) found:\n  src/setup.ts(4,1): error TS2322');
+  });
+
+  it('keeps stderr diagnostics separate from captured console text in stdout', () => {
+    const response = {
+      stdout: 'Tests: 1 failed\nstdout | tests/green.test.ts\nFAIL src/printed.ts',
+      stderr: 'FAIL tests/red.test.ts\n\nAssertionError: expected 1 to be 2',
+    };
+    for (const command of commands) {
+      const result = handlePostToolUse('Bash', { command }, new FileTracker(), new SessionCache(), DEFAULT_CONFIG, undefined, response);
+      expect(result?.message).toContain('1 failure(s) found:\n  FAIL tests/red.test.ts');
+      expect(result?.message).not.toContain('src/printed.ts');
+    }
+  });
+
+  it('preserves the existing verdicts for compound commands', () => {
+    const output = 'FAIL tests/red.test.ts\nTests: 1 failed';
+    for (const command of ['npx vitest run || true', 'npm test || true']) {
+      const cache = new SessionCache();
+      const existing = handlePostToolUse('Bash', { command }, new FileTracker(), cache, DEFAULT_CONFIG, undefined, output);
+      expect(existing?.level ?? null).toBe(command.startsWith('npx') ? 'block' : null);
+      expect(handlePostToolUseFailure('Bash', { command }, output, cache, DEFAULT_CONFIG)).toBeNull();
+    }
+  });
+
+  it('filters before the nonzero fallback and preserves the scoped phase', () => {
+    const cache = new SessionCache();
+    cache.setPhase('tdd+');
+    const [pkg, direct] = results(['1 failing', ...metadata].join('\n'), 'failure', cache);
+    expect(pkg).toEqual(direct);
+    expect(pkg).toEqual({ level: 'advise', message: '[ADVISE] ZERO-DEFECT: test command exited non-zero\n1 failing' });
+  });
+
+  it('applies the changed-file policy to the real named failure', () => {
+    const cache = new SessionCache();
+    cache.setChangedFiles(['src/feature.ts']);
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.rules.zero_defect!.unrelated_errors = 'silent';
+    const output = '✓ src/feature.ts(1,1): error TS2322\nFAIL tests/other.test.ts\nTests: 1 failed';
+    expect(results(output, 'failure', cache, config)).toEqual([null, null]);
+  });
+});
+
 describe('handlePostToolUseFailure', () => {
   it.each([['npm test', '1 failing'], ['bun test', '(fail)'], ['npx jest', 'No tests found'],
     ['npx vitest run', '1 failed']])('reports an unnamed failure from %s: %s', (command, summary) => {

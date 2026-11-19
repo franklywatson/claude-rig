@@ -93,13 +93,27 @@ describe('PostToolUse hook E2E', () => {
     }, HOOK_TIMEOUT);
   });
 
-  it('stays quiet when a passing npm test prints a FAIL line', async () => {
+  it.each(['npm test', 'npx vitest run'])('stays quiet when a passing %s prints a FAIL line', async command => {
     const result = await runHook(hookPath, {
       session_id: SESSION_ID, hook_event_name: 'PostToolUse', tool_name: 'Bash',
-      tool_input: { command: 'npm test' },
-      tool_response: { stdout: 'FAIL src/x.ts (fixture output)\nTests: 1 passed', stderr: '' },
+      tool_input: { command },
+      tool_response: {
+        stdout: 'stdout | tests/x.test.ts > reports error TS2322\nFAIL src/x.ts (fixture output)\nTests: 1 passed',
+        stderr: '  ✓ reports error TS2322',
+      },
     }, tempDir);
     expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
+  }, HOOK_TIMEOUT);
+
+  it.each(['npm test', 'npx vitest run'])('reports only the genuine failure from %s', async command => {
+    const result = await runHook(hookPath, {
+      session_id: SESSION_ID, hook_event_name: 'PostToolUseFailure', tool_name: 'Bash',
+      tool_input: { command }, is_interrupt: false,
+      error: 'Exit code 1\n✓ reports error TS2322\n\x1b[31mFAIL\x1b[0m tests/red.test.ts\nTests: 1 failed',
+    }, tempDir);
+    expect(result.exitCode).toBe(2);
+    expect(result.stderr).toContain('1 failure(s) found:\n  FAIL tests/red.test.ts');
+    expect(result.stderr).not.toContain('TS2322');
   }, HOOK_TIMEOUT);
 
   it('exits 0 for non-test source file edit', async () => {

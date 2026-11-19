@@ -4,7 +4,7 @@ import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests, staleSetKey } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
-import { checkZeroDefect, clipDiagnostic, isNamedFailureLine } from './zero-defect.js';
+import { checkZeroDefect, clipDiagnostic, filterTestOutput, isNamedFailureLine } from './zero-defect.js';
 import { isSingleTestCommand } from './test-command.js';
 import {
   incrementMetric,
@@ -30,6 +30,7 @@ export { isShellQuotablePath };
 export function extractBashOutput(
   toolResponse: unknown,
   args: Record<string, unknown>,
+  streamSeparator = '\n',
 ): string | undefined {
   if (typeof toolResponse === 'string' && toolResponse.length > 0) {
     return toolResponse;
@@ -39,7 +40,7 @@ export function extractBashOutput(
     const parts = [response.stdout, response.stderr].filter(
       (v): v is string => typeof v === 'string' && v.length > 0,
     );
-    if (parts.length > 0) return parts.join('\n');
+    if (parts.length > 0) return parts.join(streamSeparator);
   }
   const legacy = args.output;
   return typeof legacy === 'string' && legacy.length > 0 ? legacy : undefined;
@@ -84,8 +85,9 @@ export function handlePostToolUseFailure(
 
   const changed = cache.getChangedFiles();
   const phase = cache.getCurrentPhase();
-  const violation = checkZeroDefect(error, config, changed.length ? changed : undefined, phase);
-  const lines = error.split('\n');
+  const output = filterTestOutput(error, 'failure');
+  const violation = checkZeroDefect(output, config, changed.length ? changed : undefined, phase);
+  const lines = output.split('\n');
   // A named but unrelated failure may intentionally be silent.
   if (lines.some(isNamedFailureLine)) return violation;
 
@@ -186,17 +188,17 @@ function runPostToolChecks(
   }
 
   // Zero-defect check on test command output
-  if (tool === 'Bash') {
-    const command = args.command as string;
-    const output = extractBashOutput(toolResponse, args);
-
-    if (command && output) {
-      // Check if this was a test run
-      const isTestCommand = /vitest|jest|pytest|mocha/.test(command);
-      if (isTestCommand) {
+  if (tool === 'Bash' && typeof args.command === 'string') {
+    const command = args.command;
+    const singleStep = isSingleTestCommand(command);
+    // Other runner invocations keep the existing PostToolUse check.
+    if (singleStep || /vitest|jest|pytest|mocha/.test(command)) {
+      // A console block in stdout ends before the separately captured stderr.
+      const output = extractBashOutput(toolResponse, args, singleStep ? '\n\n' : '\n');
+      if (output) {
         const changedFiles = cache.getChangedFiles();
         const zeroDefect = checkZeroDefect(
-          output,
+          singleStep ? filterTestOutput(output, 'success') : output,
           config,
           changedFiles.length > 0 ? changedFiles : undefined,
           cache.getCurrentPhase(),
