@@ -3,6 +3,7 @@ import { basename } from 'node:path';
 import { existsSync, statSync } from 'node:fs';
 import type { Environment } from '../types.js';
 import { ensureGraphReady } from './graph-state.js';
+import { isShellQuotablePath } from '../shell-path.js';
 
 interface IndexResult {
   alreadyIndexed: boolean;
@@ -23,6 +24,10 @@ export function ensureIndexed(directory: string, env: Environment): IndexResult 
   if (existing) {
     return { alreadyIndexed: true, repo: existing };
   }
+
+  // The directory may come from a tool call or model: never place an
+  // unquotable path inside the double-quoted command below.
+  if (!isShellQuotablePath(directory)) return null;
 
   // Index it
   try {

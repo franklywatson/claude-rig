@@ -731,6 +731,16 @@ describe('captureGraphifyStatsViaReport', () => {
 });
 
 describe('captureExternalGraphifyStats', () => {
+  it.each([
+    ['a command substitution', '/external/$(touch pwned)'],
+    ['a backtick', '/external/`touch pwned`'],
+  ])('runs no command for a directory containing %s', (_label, dir) => {
+    const exec = vi.fn(() => '');
+
+    expect(captureExternalGraphifyStats(dir, exec)).toBeNull();
+    expect(exec).not.toHaveBeenCalled();
+  });
+
   it('triggers graphify build and captures stats for external dir', () => {
     const report = [
       '# Graph Report - /external/meridian',

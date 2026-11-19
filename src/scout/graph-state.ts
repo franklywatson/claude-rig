@@ -1,5 +1,6 @@
 import type { Environment, GraphBuildInfo } from '../types.js';
 import { graphJsonPath, GRAPH_JSON_REL, GRAPHIFY_PLACEHOLDER_THRESHOLD } from '../constants.js';
+import { isShellQuotablePath } from '../shell-path.js';
 
 const BUILD_TIMEOUT = 120_000; // ms
 
@@ -33,6 +34,11 @@ export function determineGraphState(
 /**
  * Trigger a graphify build for the given directory.
  * Returns building state on success, failed on error.
+ *
+ * Unguarded on purpose: session start passes the session's own cwd, which is
+ * not a tool-supplied value, and rejecting an oddly named project directory
+ * would silently disable the graph build. Callers that take a directory from
+ * a tool or model (see {@link ensureGraphReady}) check it first.
  */
 export function triggerBuild(
   directory: string,
@@ -117,6 +123,11 @@ export function ensureGraphReady(
       return info;
 
     case 'absent': {
+      // The directory may come from a tool call or model (scout, cross-repo):
+      // never place an unquotable path inside the double-quoted build command.
+      if (!isShellQuotablePath(directory)) {
+        return { state: 'failed', errorReason: 'directory path is not shell-quotable' };
+      }
       const build = triggerBuild(directory, exec);
       // A failed trigger carries the error reason — don't discard it for a
       // pointless disk check that would report a generic failure.

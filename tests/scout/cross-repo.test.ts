@@ -182,6 +182,32 @@ describe('ensureIndexed', () => {
   });
 });
 
+describe('ensureIndexed with an unsafe directory', () => {
+  beforeEach(() => {
+    vi.resetAllMocks();
+  });
+
+  it.each([
+    ['a command substitution', '/external/$(touch pwned)'],
+    ['a backtick', '/external/`touch pwned`'],
+  ])('runs no command for a directory containing %s', (_label, dir) => {
+    const env: Environment = {
+      rtkAvailable: false,
+      rtkPath: null,
+      jcodemunchAvailable: true,
+      jcodemunchCwdIndexed: false,
+      jcodemunchCwdRepo: null,
+      jcodemunchKnownRepos: [],
+      graphifyAvailable: false,
+      graphifyGraphPath: null,
+      detectedAt: Date.now(),
+    };
+
+    expect(ensureIndexed(dir, env)).toBeNull();
+    expect(execSync).not.toHaveBeenCalled();
+  });
+});
+
 describe('ensureGraphBuilt', () => {
   const graphifyEnv: Environment = {
     rtkAvailable: false,
@@ -210,6 +236,22 @@ describe('ensureGraphBuilt', () => {
 
   beforeEach(() => {
     vi.resetAllMocks();
+  });
+
+  it.each([
+    ['a command substitution', '/external/$(touch pwned)'],
+    ['a backtick', '/external/`touch pwned`'],
+  ])('runs no build for a directory containing %s', (_label, dir) => {
+    const absentEnv: Environment = {
+      ...graphifyEnv,
+      graphBuildInfo: { state: 'absent' },
+    };
+    const exec = vi.fn(() => '');
+
+    const result = ensureGraphBuilt(dir, absentEnv, exec as any, () => false, () => undefined);
+
+    expect(exec).not.toHaveBeenCalled();
+    expect(result).toEqual({ status: 'build_failed' });
   });
 
   it('returns status ready when graph.json exists at target', () => {
