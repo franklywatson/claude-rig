@@ -45,10 +45,11 @@ const defaultWriteDiag = (line: string): void => {
  *   2           deny rule matched — pass through (never use stdout)
  *   3 + stdout  "Ask" verdict — rewrite valid, but must not be auto-allowed
  *
- * rig emits each rewrite as updatedInput. For exit 0 (Allow) and python-env
- * rewrites it pairs permissionDecision:"allow" (auto-approve); for exit 3
- * (Ask/Default) it emits updatedInput WITHOUT permissionDecision so Claude
- * Code prompts the user — matching rtk's own hook (process_claude_payload).
+ * rig emits each rewrite as updatedInput. For exit 0 (Allow) it pairs
+ * permissionDecision:"allow" (auto-approve). For exit 3 (Ask/Default) and for
+ * python-env rewrites it emits updatedInput WITHOUT permissionDecision, so
+ * Claude Code's own permission rules decide. For exit 3 that matches rtk's
+ * own hook (process_claude_payload).
  * rtk 0.36+ maps unrated commands (notably all git commands) to Default→exit 3,
  * so exit-3 rewrites are common and must NOT be auto-allowed (rtk-ai/rtk#1155).
  * Rewrites only take effect in permission modes that consult the hook's
@@ -277,7 +278,9 @@ export function handlePreToolUse(
     if (pythonEnv) {
       const rewritten = tryPythonRewrite(args.command, effectiveCwd, pythonEnv, resolvedOptions.existsCheck);
       if (rewritten) {
-        return { type: 'rewrite', command: rewritten, original: args.command, autoAllow: true };
+        // A path fix, not an approval: `pip install` and `python -c` resolve
+        // here too, so Claude Code's own permission rules decide.
+        return { type: 'rewrite', command: rewritten, original: args.command, autoAllow: false };
       }
     }
   }

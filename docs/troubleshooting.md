@@ -73,6 +73,34 @@ invocation, no restart needed. To see each config layer as it loads, run any
 hook with `RIG_DEBUG=1`; skipped layers (absent, unreadable, or not a rules
 document) are named on stderr.
 
+## Permission prompts for Python commands
+
+### Symptom
+
+`pytest`, `python`, `pip` or another Python tool asks for permission, even
+though you have an allow rule for it, or it did not ask before you updated rig.
+
+### Cause
+
+When the tool exists in the project's `.venv/bin`, or `uv` is installed, rig
+rewrites these commands to `.venv/bin/<tool> ...` or `uv run <command>`. rig
+does not approve the rewritten command itself, and Claude Code matches your
+allow rules against the rewritten form, so a rule such as `Bash(pytest:*)`
+does not match it. When `uv` itself is not in the venv, a command that already
+starts with `uv` is wrapped as well: `uv run pytest` arrives as
+`uv run uv run pytest`, and a rule has to match that form too. In auto mode,
+Claude Code's hooks reference says the rewritten call can be denied instead of
+prompting.
+
+### Fix
+
+Add an allow rule that matches the rewritten form, for example
+`Bash(.venv/bin/pytest:*)` or `Bash(uv run pytest:*)`, or approve the prompt
+when it appears. If it offers a "don't ask again" option, check the pattern
+that option would save: it can cover every use of that tool, so approve once
+instead if that is broader than you want. Keep the rule you already have: it
+still applies to commands rig does not rewrite.
+
 ## Graphify MCP not available
 
 ### What's happening

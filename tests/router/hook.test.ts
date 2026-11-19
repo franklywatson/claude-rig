@@ -289,7 +289,7 @@ describe('handlePreToolUse', () => {
       { existsCheck: (p) => p === '/project/.venv/bin/pytest' },
     );
     expect(result).not.toBeNull();
-    expect(result).toEqual({ type: 'rewrite', command: '.venv/bin/pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v', autoAllow: true });
+    expect(result).toEqual({ type: 'rewrite', command: '.venv/bin/pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v', autoAllow: false });
   });
 
   it('rewrites to uv run when no venv but uv available and .py file in args', () => {
@@ -304,7 +304,39 @@ describe('handlePreToolUse', () => {
       { existsCheck: () => false },
     );
     expect(result).not.toBeNull();
-    expect(result).toEqual({ type: 'rewrite', command: 'uv run pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v', autoAllow: true });
+    expect(result).toEqual({ type: 'rewrite', command: 'uv run pytest tests/test_foo.py -v', original: 'pytest tests/test_foo.py -v', autoAllow: false });
+  });
+
+  it.each([
+    ['a venv binary', { venvPath: '/project/.venv', uvAvailable: false, uvPath: null }, '.venv/bin/pip install requests'],
+    ['uv run', { venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv' }, 'uv run pip install requests'],
+  ])('leaves the permission decision to Claude Code when rewriting through %s', (_label, pythonEnv, command) => {
+    // The rewrite resolves the binary. It does not also approve the command:
+    // an install or a `python -c` would then run without a prompt.
+    cache.setEnvironment(makeEnv());
+    cache.setPythonEnv({ ...pythonEnv, detectedAt: Date.now() });
+    const result = handlePreToolUse('Bash', { command: 'pip install requests' }, cache, config, '/project', { existsCheck: () => true });
+    expect(result).toEqual({ type: 'rewrite', command, original: 'pip install requests', autoAllow: false });
+  });
+
+  it.each([
+    'python -c "print(1)"',
+    'python3 scripts/report.py',
+    'pip3 install requests',
+    'pytest tests/test_foo.py',
+    'ruff check .',
+    'uv sync',
+    'poetry install',
+  ])('approves no python-env rewrite, whichever tool it is: %s', (command) => {
+    for (const pythonEnv of [
+      { venvPath: '/project/.venv', uvAvailable: false, uvPath: null },
+      { venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv' },
+    ]) {
+      cache.setEnvironment(makeEnv());
+      cache.setPythonEnv({ ...pythonEnv, detectedAt: Date.now() });
+      const result = handlePreToolUse('Bash', { command }, cache, config, '/project', { existsCheck: () => true });
+      expect(result).toMatchObject({ type: 'rewrite', original: command, autoAllow: false });
+    }
   });
 
   it('does not rewrite when no .py file in command', () => {

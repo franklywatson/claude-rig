@@ -49,7 +49,7 @@ PreToolUse Hook (handlePreToolUse)
      |
   +--------------------------------------+
   | Step 2: Python env rewrite           |
-  |   .py file in args?                  |
+  |   first word a known Python tool?    |
   |   .venv/bin/<cmd> exists? -> rewrite |
   |   uv available? -> uv run <cmd>      |
   +--------------------------------------+
@@ -122,15 +122,25 @@ is general-purpose-native, so without this gate the typed agents are silently by
 
 ### Python environment detection
 
-When a Bash command references a `.py` file, the router resolves the command
-binary through the Python environment. No hardcoded tool names — the `.py`
-file in args is the trigger.
+When the first word of a non-compound Bash command is a known Python tool, the router
+resolves that binary through the Python environment. The tools are listed in
+`PYTHON_BINARIES` (`src/router/python-rewrite.ts`): `python`, `pip`, `pytest`,
+`ruff`, `uv` and others.
 
 Resolution chain:
 
-1. `.venv/bin/<binary>` exists → rewrite to absolute venv path
+1. `.venv/bin/<binary>` exists → rewrite to that venv path, relative to the
+   working directory
 2. `uv` available → rewrite to `uv run <command>`
 3. Neither → pass through (no rewrite)
+
+The rewrite resolves the binary and grants nothing: it is emitted as
+`updatedInput` without `permissionDecision`, so Claude Code's own permission
+rules decide whether the rewritten command runs or prompts. Allow rules are
+matched against the rewritten command, so an allow rule has to match that form
+(for example `Bash(.venv/bin/pytest:*)` or `Bash(uv run pytest:*)`). In auto
+mode, Claude Code's hooks reference says a call whose input a hook changed
+without a decision can be denied instead.
 
 Python environment is detected at session start (`detectPythonEnv`) and cached
 in `SessionCache`. Detection checks for `.venv/` directory and `which uv`.

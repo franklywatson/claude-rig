@@ -265,6 +265,28 @@ describe('PreToolUse hook E2E', () => {
         timeout: 300000,
         run_in_background: true,
       });
+      expect(parsed.hookSpecificOutput).not.toHaveProperty('permissionDecision');
+    }, HOOK_TIMEOUT);
+
+    it('emits a python-env rewrite without a permission decision', async () => {
+      // With no permissionDecision, Claude Code applies its own permission
+      // rules to the rewritten command.
+      const writer = new SessionCache(tempDir, sessionId);
+      writer.setEnvironment(makeEnv());
+      writer.setPythonEnv({ venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv', detectedAt: Date.now() });
+
+      const result = await runHook(hookPath, {
+        session_id: sessionId,
+        tool_name: 'Bash',
+        tool_input: { command: 'pip install requests' },
+      }, tempDir);
+
+      expect(result.exitCode).toBe(0);
+      const jsonLine = result.stdout.split('\n').find(l => l.trim().startsWith('{'));
+      expect(jsonLine).toBeDefined();
+      const { hookSpecificOutput } = JSON.parse(jsonLine as string);
+      expect(hookSpecificOutput.updatedInput).toEqual({ command: 'uv run pip install requests' });
+      expect(hookSpecificOutput).not.toHaveProperty('permissionDecision');
     }, HOOK_TIMEOUT);
   });
 
