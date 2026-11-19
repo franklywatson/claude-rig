@@ -10,7 +10,7 @@ import { checkBranchDiscipline, WORKFLOW_DEFAULTS } from './worktree.js';
 import { captureMetricsBaseline, captureGraphifyStatsViaReport } from './metrics.js';
 import { triggerBuild, waitForBuild } from '../scout/graph-state.js';
 import type { WaitForBuildOpts } from '../scout/graph-state.js';
-import { loadConfig } from '../config.js';
+import { loadConfig, DEFAULT_CONFIG } from '../config.js';
 import { checkGraphifyMcpReadiness } from './graphify-self-check.js';
 import { checkPermissionsReadiness } from './permissions-self-check.js';
 import { detectHeadroom } from './headroom.js';
@@ -387,13 +387,20 @@ function hasOrphanedIndexData(homeDir: string, readdir: (path: string) => string
   }
 }
 
+// The active-rules line reaches the agent as session context, and
+// `.harness.yaml` is project-controlled (a cloned repo supplies its own). Only
+// rule names rig defines and the two active levels are ever echoed; an unknown
+// key, free text, or a non-string value is dropped rather than passed along.
+const KNOWN_CONSTITUTIONAL_RULES = new Set(Object.keys(DEFAULT_CONFIG.rules.constitutional ?? {}));
+const ACTIVE_LEVELS = new Set<string>(['block', 'advise']);
+
 function formatActiveRules(config: HarnessConfig): string | null {
   const active: string[] = [];
 
   const constitutional = config.rules.constitutional;
   if (constitutional) {
     for (const [rule, level] of Object.entries(constitutional)) {
-      if (level && level !== 'silent') {
+      if (KNOWN_CONSTITUTIONAL_RULES.has(rule) && typeof level === 'string' && ACTIVE_LEVELS.has(level)) {
         active.push(`${rule} (${level})`);
       }
     }
@@ -404,7 +411,7 @@ function formatActiveRules(config: HarnessConfig): string | null {
   // sessions started on feature branches (where the protected-branch hint
   // does not fire).
   const branchLevel = config.rules.workflow?.branch_discipline ?? WORKFLOW_DEFAULTS.branch_discipline;
-  if (branchLevel !== 'silent') {
+  if (typeof branchLevel === 'string' && ACTIVE_LEVELS.has(branchLevel)) {
     active.push(`branch_discipline (${branchLevel})`);
   }
 
