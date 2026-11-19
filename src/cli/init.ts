@@ -27,8 +27,9 @@ interface InitOptions {
  * read as string escapes, and on any install path containing `#` or `%`.
  * A `?` in the path is not covered: tsx decodes `%3F` back into a query
  * string, the import fails, and the hook then fails open. `initCommand`
- * therefore refuses to generate hooks for such an install path. The apostrophe is escaped because the templates embed this in a
- * single-quoted string.
+ * therefore refuses to generate hooks for such an install path
+ * ({@link RigInstallPathError}). The apostrophe is escaped because the
+ * templates embed this in a single-quoted string.
  */
 export function hookImportBase(distDir: string): string {
   return pathToFileURL(distDir).href.replace(/'/g, '%27');
@@ -44,10 +45,21 @@ export function commentSafe(value: string): string {
   return value.replace(/\*\//g, '*\\/').replace(/[\r\n]+/g, ' ');
 }
 
+/**
+ * Raised when rig's own install location cannot produce working hooks. The CLI
+ * reports it as a one-line message; any other init error keeps its stack.
+ */
+export class RigInstallPathError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'RigInstallPathError';
+  }
+}
+
 export async function initCommand(projectDir: string, options: InitOptions): Promise<void> {
   const rigDistDir = options.rigDistDir ?? resolve(__dirname, '..');
   if (rigDistDir.includes('?')) {
-    throw new Error(
+    throw new RigInstallPathError(
       `rig is installed at a path containing "?": ${rigDistDir}. ` +
       'Generated hooks would silently fail to load under tsx. ' +
       'Move or reinstall rig somewhere without a "?" in its path, then run rig init again.',

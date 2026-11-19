@@ -4,7 +4,7 @@ import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import ts from 'typescript';
-import { initCommand, hookImportBase, commentSafe } from '../../src/cli/init.js';
+import { initCommand, hookImportBase, commentSafe, RigInstallPathError } from '../../src/cli/init.js';
 import type { ExecFn } from '../../src/session/environment.js';
 
 describe('commentSafe', () => {
@@ -338,6 +338,10 @@ describe('initCommand', () => {
       .rejects.toThrow(badDist);
     await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
       .rejects.toThrow(/without a "\?"/);
+    // A dedicated type, so the CLI can print it as one line and leave every
+    // other init error with its stack trace.
+    await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
+      .rejects.toBeInstanceOf(RigInstallPathError);
     // Rejected before any file or directory is written.
     expect(readdirSync(tempDir)).toEqual([]);
   });

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { initCommand } from './init.js';
+import { initCommand, RigInstallPathError } from './init.js';
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -32,9 +32,13 @@ program
     try {
       await initCommand(projectDir, { force: options.force, broadPermissions: options.broadPermissions });
     } catch (err) {
-      // A clear one-line message, not a stack trace.
-      console.error(`rig init failed: ${err instanceof Error ? err.message : String(err)}`);
-      process.exit(1);
+      // A known, user-fixable problem gets a one-line message. Anything else
+      // keeps its stack trace so an unexpected failure stays debuggable.
+      if (err instanceof RigInstallPathError) {
+        console.error(`rig init failed: ${err.message}`);
+        process.exit(1);
+      }
+      throw err;
     }
     console.log('Done. Start a new Claude Code session to activate.');
   });
