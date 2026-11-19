@@ -3,8 +3,23 @@ import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
-import { initCommand, hookImportBase } from '../../src/cli/init.js';
+import ts from 'typescript';
+import { initCommand, hookImportBase, commentSafe } from '../../src/cli/init.js';
 import type { ExecFn } from '../../src/session/environment.js';
+
+describe('commentSafe', () => {
+  it.each([
+    ['/usr/local/bin/rtk', '/usr/local/bin/rtk'],
+    ['my-project', 'my-project'],
+    ['/opt/rtk*/bin/rtk', '/opt/rtk*\\/bin/rtk'],
+    ['a*/b*/c', 'a*\\/b*\\/c'],
+    ['line1\nline2', 'line1 line2'],
+    ['a\r\n\r\nb', 'a b'],
+    ['x*/\ny', 'x*\\/ y'],
+  ])('commentSafe(%j) -> %j', (input, expected) => {
+    expect(commentSafe(input)).toBe(expected);
+  });
+});
 
 describe('initCommand', () => {
   let tempDir: string;
@@ -554,6 +569,29 @@ console.log('stale old hook');
       for (const hookFile of ['pre-tool-use.ts', 'session-start.ts']) {
         const content = readFileSync(join(hooksDir, hookFile), 'utf-8');
         expect(content).toContain('/usr/local/bin/rtk');
+      }
+    });
+
+    it('generates parsable hooks, with the path still shown, when the rtk path contains "*/"', async () => {
+      const rtkPath = '/opt/rtk*/bin/rtk';
+      const exec: ExecFn = (cmd: string) => {
+        if (cmd === 'which rtk') return `${rtkPath}\n`;
+        if (cmd === 'which jcodemunch') throw new Error('not found');
+        return '';
+      };
+      await initCommand(tempDir, { force: false, exec });
+
+      const hooksDir = join(tempDir, '.claude', 'hooks', 'scripts');
+      for (const hookFile of ['pre-tool-use.ts', 'post-tool-use.ts', 'session-start.ts']) {
+        const content = readFileSync(join(hooksDir, hookFile), 'utf-8');
+        const { diagnostics } = ts.transpileModule(content, {
+          reportDiagnostics: true,
+          compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
+        });
+        expect(diagnostics?.map((d) => ts.flattenDiagnosticMessageText(d.messageText, '\n')) ?? []).toEqual([]);
+        if (hookFile !== 'post-tool-use.ts') {
+          expect(content).toContain('/opt/rtk*\\/bin/rtk');
+        }
       }
     });
 

@@ -34,6 +34,16 @@ export function hookImportBase(distDir: string): string {
   return pathToFileURL(distDir).href.replace(/'/g, '%27');
 }
 
+/**
+ * Make a value safe to render into a generated hook's `/** ... *\/` header
+ * comment: neutralize `*\/` (which would end the comment early and leave the
+ * rest of the line as code) and collapse line breaks so the value stays on its
+ * comment line. Applied at the render context, not inside renderTemplate.
+ */
+export function commentSafe(value: string): string {
+  return value.replace(/\*\//g, '*\\/').replace(/[\r\n]+/g, ' ');
+}
+
 export async function initCommand(projectDir: string, options: InitOptions): Promise<void> {
   const rigDistDir = options.rigDistDir ?? resolve(__dirname, '..');
   if (rigDistDir.includes('?')) {
@@ -50,7 +60,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
 
   // Build render context with environment-aware variables
   const renderContext: Record<string, string> = {
-    PROJECT_NAME: projectName,
+    PROJECT_NAME: commentSafe(projectName),
     GENERATED_DATE: generatedDate,
     RIG_DIST_PATH: rigDistPath,
   };
@@ -60,7 +70,7 @@ export async function initCommand(projectDir: string, options: InitOptions): Pro
     const env = await detectEnvironment(projectDir, options.exec);
     rtkAvailable = env.rtkAvailable;
     if (env.rtkAvailable && env.rtkPath) {
-      renderContext.RTK_PATH = env.rtkPath;
+      renderContext.RTK_PATH = commentSafe(env.rtkPath);
     }
     if (env.jcodemunchAvailable) {
       renderContext.JCODEMUNCH_AVAILABLE = 'true';
