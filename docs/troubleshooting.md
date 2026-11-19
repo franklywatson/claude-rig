@@ -96,10 +96,10 @@ prompting.
 
 Add an allow rule that matches the rewritten form, for example
 `Bash(.venv/bin/pytest:*)` or `Bash(uv run pytest:*)`, or approve the prompt
-when it appears. Its "don't ask again" option saves a rule: check the pattern
-it shows, which can cover every use of that tool, and approve once instead if
-that is broader than you want. Keep the
-rule you already have: it still applies to commands rig does not rewrite.
+when it appears. If it offers a "don't ask again" option, check the pattern
+that option would save: it can cover every use of that tool, so approve once
+instead if that is broader than you want. Keep the rule you already have: it
+still applies to commands rig does not rewrite.
 
 ## Graphify MCP not available
 
