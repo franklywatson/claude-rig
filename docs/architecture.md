@@ -131,7 +131,9 @@ Resolution chain:
 
 1. `.venv/bin/<binary>` exists → rewrite to that venv path, relative to the
    working directory
-2. `uv` available → rewrite to `uv run <command>`
+2. `uv` available → rewrite to `uv run <command>`, except for tools that
+   manage their own environment (`uv`, `poetry`, `hatch`, `tox`, `nox`), which
+   are never wrapped
 3. Neither → pass through (no rewrite)
 
 The rewrite resolves the binary and grants nothing: it is emitted as

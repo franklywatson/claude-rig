@@ -328,14 +328,21 @@ describe('handlePreToolUse', () => {
     'uv sync',
     'poetry install',
   ])('approves no python-env rewrite, whichever tool it is: %s', (command) => {
-    for (const pythonEnv of [
-      { venvPath: '/project/.venv', uvAvailable: false, uvPath: null },
-      { venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv' },
-    ]) {
+    // Tools that manage their own environment are never wrapped in `uv run`,
+    // so with no venv binary there is no python-env rewrite for them at all.
+    const selfManaging = /^(uv|poetry|hatch|tox|nox)\b/.test(command);
+    for (const [pythonEnv, hasRewrite] of [
+      [{ venvPath: '/project/.venv', uvAvailable: false, uvPath: null }, true],
+      [{ venvPath: null, uvAvailable: true, uvPath: '/usr/bin/uv' }, !selfManaging],
+    ] as const) {
       cache.setEnvironment(makeEnv());
       cache.setPythonEnv({ ...pythonEnv, detectedAt: Date.now() });
       const result = handlePreToolUse('Bash', { command }, cache, config, '/project', { existsCheck: () => true });
-      expect(result).toMatchObject({ type: 'rewrite', original: command, autoAllow: false });
+      if (hasRewrite) {
+        expect(result).toMatchObject({ type: 'rewrite', original: command, autoAllow: false });
+      } else {
+        expect(result).toBeNull();
+      }
     }
   });
 
