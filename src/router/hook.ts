@@ -52,9 +52,9 @@ const defaultWriteDiag = (line: string): void => {
  * own hook (process_claude_payload).
  * rtk 0.36+ maps unrated commands (notably all git commands) to Default→exit 3,
  * so exit-3 rewrites are common and must NOT be auto-allowed (rtk-ai/rtk#1155).
- * Rewrites only take effect in permission modes that consult the hook's
- * decision (default mode) — not bypassPermissions, where updatedInput is
- * ignored and the original command runs unmodified.
+ * A probe on Claude Code 2.1.328 showed updatedInput is applied in default and
+ * bypassPermissions modes alike (see docs/architecture.md, "rtk rewrite
+ * diagnostics"); other permission modes were not tested.
  *
  * Anything outside the protocol — exit 3 without output, other exit codes,
  * signals, ENOENT — is appended as a JSON line to the diagnostic log so

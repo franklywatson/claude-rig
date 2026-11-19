@@ -50,8 +50,8 @@ import { readFileSync } from 'node:fs';
     // Ask/Default (exit 3) and python-env path rewrites emit updatedInput
     // WITHOUT permissionDecision, so Claude Code's own permission rules decide
     // (for exit 3 this matches rtk's own hook; rtk-ai/rtk#1155).
-    // (Only takes effect in permission modes that consult the hook's decision,
-    // i.e. default mode — not bypassPermissions, where updatedInput is ignored.)
+    // (updatedInput was applied in default and bypassPermissions modes when
+    // probed on Claude Code 2.1.328; other permission modes were not tested.)
     if (result && result.type === 'rewrite') {
       // updatedInput replaces the whole tool input, so carry the unchanged
       // fields (timeout, run_in_background, description) alongside the command.

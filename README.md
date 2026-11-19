@@ -41,8 +41,8 @@ to reach for, and what each is saving you. Rig carries it instead:
 Rig installs the cockpit into a Claude Code project:
 
 - **Tool Router** -- intercepts shell commands via PreToolUse hooks, transparently rewrites
-  `grep`/`find`/`cat`/`git` to rtk when available (via `updatedInput` paired with `permissionDecision: "allow"`,
-  default permission mode only — `bypassPermissions` ignores the rewrite);
+  `grep`/`find`/`cat`/`git` to rtk when available (via `updatedInput` paired with `permissionDecision: "allow"`;
+  the rewrite was applied in both default and `bypassPermissions` modes when tested on Claude Code 2.1.328);
   advises on native Read/Grep/Glob when jcodemunch is indexed;
   diverts high-value Bash reads/searches (big-file `cat`, identifier `grep`) to jcodemunch instead of rtk
   (`tool_routing.jcodemunch_divert`); blocks `sed -i` and rtk code-reading (`rtk read`/`rtk smart`) on code files
