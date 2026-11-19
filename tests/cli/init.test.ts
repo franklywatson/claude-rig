@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, rmSync, existsSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -313,6 +313,25 @@ describe('initCommand', () => {
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
+  });
+
+  it('refuses to generate hooks when rig\'s dist path contains "?", writing nothing', async () => {
+    // tsx decodes the %3F of the rendered file URL back into a query string, so
+    // hooks generated for such an install would silently fail open.
+    const badDist = '/opt/qu?est/rig/dist';
+    await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
+      .rejects.toThrow(badDist);
+    await expect(initCommand(tempDir, { force: false, rigDistDir: badDist }))
+      .rejects.toThrow(/without a "\?"/);
+    // Rejected before any file or directory is written.
+    expect(readdirSync(tempDir)).toEqual([]);
+  });
+
+  it('renders hooks against an injected dist path that has no "?"', async () => {
+    const goodDist = '/opt/rig install/dist';
+    await initCommand(tempDir, { force: false, rigDistDir: goodDist });
+    const hook = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'pre-tool-use.ts'), 'utf-8');
+    expect(hook).toContain(hookImportBase(goodDist));
   });
 
   it('generates hook scripts that use constructors with cwd, not load/save', async () => {

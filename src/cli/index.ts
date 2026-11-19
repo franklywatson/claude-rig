@@ -29,7 +29,13 @@ program
   .action(async (options) => {
     const projectDir = resolve(options.dir);
     console.log(`Initializing rig in ${projectDir}...`);
-    await initCommand(projectDir, { force: options.force, broadPermissions: options.broadPermissions });
+    try {
+      await initCommand(projectDir, { force: options.force, broadPermissions: options.broadPermissions });
+    } catch (err) {
+      // A clear one-line message, not a stack trace.
+      console.error(`rig init failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
     console.log('Done. Start a new Claude Code session to activate.');
   });
 

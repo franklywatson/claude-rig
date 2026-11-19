@@ -16,6 +16,8 @@ interface InitOptions {
   force: boolean;
   broadPermissions?: boolean;
   exec?: ExecFn;
+  /** Test seam: rig's dist directory. Defaults to the directory this module runs from. */
+  rigDistDir?: string;
 }
 
 /**
@@ -24,8 +26,8 @@ interface InitOptions {
  * a drive-letter path is not a valid import specifier and its backslashes are
  * read as string escapes, and on any install path containing `#` or `%`.
  * A `?` in the path is not covered: tsx decodes `%3F` back into a query
- * string, the import fails, and the hook then fails open (same as before this
- * change). The apostrophe is escaped because the templates embed this in a
+ * string, the import fails, and the hook then fails open. `initCommand`
+ * therefore refuses to generate hooks for such an install path. The apostrophe is escaped because the templates embed this in a
  * single-quoted string.
  */
 export function hookImportBase(distDir: string): string {
@@ -33,10 +35,18 @@ export function hookImportBase(distDir: string): string {
 }
 
 export async function initCommand(projectDir: string, options: InitOptions): Promise<void> {
+  const rigDistDir = options.rigDistDir ?? resolve(__dirname, '..');
+  if (rigDistDir.includes('?')) {
+    throw new Error(
+      `rig is installed at a path containing "?": ${rigDistDir}. ` +
+      'Generated hooks would silently fail to load under tsx. ' +
+      'Move or reinstall rig somewhere without a "?" in its path, then run rig init again.',
+    );
+  }
   const claudeDir = join(projectDir, '.claude');
   const projectName = basename(projectDir);
   const generatedDate = new Date().toISOString().split('T')[0];
-  const rigDistPath = hookImportBase(resolve(__dirname, '..'));
+  const rigDistPath = hookImportBase(rigDistDir);
 
   // Build render context with environment-aware variables
   const renderContext: Record<string, string> = {
