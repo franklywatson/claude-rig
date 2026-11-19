@@ -172,9 +172,13 @@ map to Default→exit 3, so exit-3 is the common case — auto-allowing it would
 defeat rtk's least-privilege default). In both cases the emitted
 `updatedInput` carries the original tool input's unchanged fields
 (`description`, `timeout`, `run_in_background`) alongside the rewritten
-`command` — it replaces the whole input object. This only takes
-effect in default permission mode; in `bypassPermissions` the `updatedInput`
-is ignored and the original command runs unmodified. Exits 1 and 2 fall through silently to
+`command` — it replaces the whole input object. A probe hook on Claude Code
+2.1.328 showed that `updatedInput` is applied in both default and
+`bypassPermissions` modes (the original command does not run), with or without
+a `permissionDecision`. In `bypassPermissions` a rewrite therefore runs without
+any prompt; in default mode a rewrite with no decision prompts, or is refused
+in a headless run. Other permission modes were not tested. In the probe the
+model still described the original command as the one it ran. Exits 1 and 2 fall through silently to
 rig's own rules by design (stdout is never used on exit 2).
 Anything outside the protocol (exit 3 without output, other exit codes,
 signals, ENOENT) is appended as a JSON line to
