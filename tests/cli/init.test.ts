@@ -275,6 +275,80 @@ describe('initCommand', () => {
     expect(settings.hooks.SessionStart.length).toBe(1);
   });
 
+  describe('PostToolUseFailure registration', () => {
+    const script = '"${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts"';
+    const command = `npx tsx ${script}`;
+    const old = `PATH="/old/node/bin:$PATH" /old/node/bin/npx tsx ${script}`;
+    const exec: ExecFn = () => '';
+    function seed(groups: unknown) {
+      mkdirSync(join(tempDir, '.claude'), { recursive: true });
+      writeFileSync(join(tempDir, '.claude/settings.json'), JSON.stringify({ hooks: { PostToolUseFailure: groups } }));
+    }
+    function groups() {
+      return JSON.parse(readFileSync(join(tempDir, '.claude/settings.json'), 'utf8')).hooks.PostToolUseFailure;
+    }
+
+    it('installs one Bash hook alongside user entries across re-init and force', async () => {
+      const userGroups = [
+        ...['Edit|Write', '^Read$', '['].map(matcher => ({ matcher, hooks: [{ type: 'command', command: old }] })),
+        { matcher: '', hooks: [
+          { type: 'command', command: 'npx tsx ./team/post-tool-use.ts' },
+          { type: 'command', command: `${command} --notify` },
+          { type: 'command', command: `PATH="$HOME/bin:$PATH" $HOME/bin/npx tsx ${script}` },
+          ...[
+            'npx tsx "$HOME/.claude/hooks/scripts/post-tool-use.ts"',
+            'npx tsx "${CLAUDE_PROJECT_DIR}/packages/api/.claude/hooks/scripts/post-tool-use.ts"',
+            'npx tsx "${CLAUDE_PROJECT_DIR}/.claude/hooks/scripts/post-tool-use.ts.bak"',
+            'npx tsx .claude/hooks/scripts/post-tool-use.ts',
+            `env TEAM_LOG=1 ${command}`, `./team/wrap.sh ${script} --notify`,
+            `PATH="/opt/node/bin:$PATH" /other/bin/npx tsx ${script}`,
+            `PATH="/opt/node-*/bin:$PATH" /opt/node-*/bin/npx tsx ${script}`,
+          ].map(command => ({ type: 'command', command })),
+          { type: 'prompt', command },
+        ] },
+        { matcher: 'Edit', command: 'npx tsx ./team/post-tool-use.ts' },
+      ];
+      seed(userGroups);
+      for (const force of [false, false, true]) {
+        await initCommand(tempDir, { force, exec });
+        expect(groups()).toEqual([...userGroups, { matcher: 'Bash', hooks: [{ type: 'command', command }] }]);
+      }
+      const nonArray = { matcher: 'Edit', command: 'custom.sh' };
+      seed(nonArray);
+      await initCommand(tempDir, { force: false, exec });
+      expect(groups()).toEqual(nonArray);
+    });
+
+    it('refreshes the launcher once and preserves hook options and sibling matchers', async () => {
+      const sibling = { type: 'command', command: 'notify.sh' };
+      const rig = { type: 'command', command: old, timeout: 30, if: 'Bash(npm *)' };
+      const plainCopy = { matcher: '', hooks: [{ type: 'command', command }] };
+      for (const matcher of [undefined, '', '*', 'Edit|Bash', 'Read, Bash', '^Ba.*', 'Bash']) {
+        const customized = { matcher, hooks: [sibling, rig] };
+        // #242 could append a plain group when the user's hook had a timeout.
+        seed(matcher === 'Bash' ? [plainCopy, customized] : [customized, plainCopy]);
+        await initCommand(tempDir, { force: false, exec });
+        const expected = matcher === 'Bash'
+          ? [{ matcher, hooks: [sibling, { ...rig, command }] }]
+          : [{ matcher, hooks: [sibling] }, { matcher: 'Bash', hooks: [{ ...rig, command }] }];
+        expect(groups(), String(matcher)).toEqual(expected);
+        await initCommand(tempDir, { force: true, exec });
+        expect(groups(), String(matcher)).toEqual(expected);
+      }
+      const priorLauncher = `PATH="/c/Program Files/nodejs:$PATH" /c/Program Files/nodejs/npx tsx ${script}`;
+      const other = { type: 'command', command: priorLauncher, if: 'Bash(go *)', shell: 'bash', async: true };
+      seed([{ matcher: '*', hooks: [sibling, rig] }, { matcher: '', hooks: [other] }, plainCopy]);
+      for (const force of [false, true]) {
+        await initCommand(tempDir, { force, exec });
+        expect(groups()).toEqual([
+          { matcher: '*', hooks: [sibling] },
+          { matcher: 'Bash', hooks: [{ ...other, command }] },
+          { matcher: 'Bash', hooks: [{ ...rig, command }] },
+        ]);
+      }
+    });
+  });
+
   it('creates verify-harness skill', async () => {
     await initCommand(tempDir, { force: false });
     expect(existsSync(join(tempDir, '.claude', 'skills', 'verify-harness', 'SKILL.md'))).toBe(true);
@@ -420,7 +494,7 @@ describe('initCommand', () => {
 
     const content = readFileSync(join(tempDir, '.claude', 'hooks', 'scripts', 'post-tool-use.ts'), 'utf-8');
     expect(content).toContain('additionalContext');
-    expect(content).toContain("hookEventName: 'PostToolUse'");
+    expect(content).toContain("hookEventName: isFailure ? 'PostToolUseFailure' : 'PostToolUse'");
     // Exit 2 must be gated on the structured result level, never on message
     // text (which can embed the literal '[BLOCK]' from tool output)
     expect(content).toContain("result.level === 'block'");

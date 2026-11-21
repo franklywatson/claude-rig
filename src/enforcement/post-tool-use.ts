@@ -4,7 +4,8 @@ import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests, staleSetKey } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
-import { checkZeroDefect } from './zero-defect.js';
+import { checkZeroDefect, clipDiagnostic, isNamedFailureLine } from './zero-defect.js';
+import { isSingleTestCommand } from './test-command.js';
 import {
   incrementMetric,
   captureExternalGraphifyStats,
@@ -68,6 +69,33 @@ export function handlePostToolUse(
   return cache.transaction(() =>
     runPostToolChecks(tool, args, tracker, cache, config, execFn, toolResponse),
   );
+}
+
+/** A failed Bash call carries its output in error. Only read session state here. */
+export function handlePostToolUseFailure(
+  tool: string,
+  args: Record<string, unknown>,
+  error: unknown,
+  cache: SessionCache,
+  config: HarnessConfig,
+): EnforcementViolation | null {
+  if (tool !== 'Bash' || typeof error !== 'string' ||
+      typeof args.command !== 'string' || !isSingleTestCommand(args.command)) return null;
+
+  const changed = cache.getChangedFiles();
+  const phase = cache.getCurrentPhase();
+  const violation = checkZeroDefect(error, config, changed.length ? changed : undefined, phase);
+  const lines = error.split('\n');
+  // A named but unrelated failure may intentionally be silent.
+  if (lines.some(isNamedFailureLine)) return violation;
+
+  const strict = (config.rules.zero_defect?.tolerance ?? 'strict') === 'strict';
+  const block = strict && !SCOPED_PHASES.includes(phase ?? '');
+  const tail = lines.map(line => line.trim()).filter(Boolean).slice(-5).map(clipDiagnostic);
+  return {
+    level: block ? 'block' : 'advise',
+    message: [`${block ? '[BLOCK]' : '[ADVISE]'} ZERO-DEFECT: test command exited non-zero`, ...tail].join('\n'),
+  };
 }
 
 function runPostToolChecks(

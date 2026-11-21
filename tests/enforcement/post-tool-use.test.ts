@@ -1,11 +1,61 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { resolve } from 'node:path';
-import { handlePostToolUse, isShellQuotablePath, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
+import { handlePostToolUse, handlePostToolUseFailure, isShellQuotablePath, SKILL_PHASE_MAP } from '../../src/enforcement/post-tool-use.js';
 import { SkillPhaseTracker } from '../../src/skills/phase-tracker.js';
 import { FileTracker } from '../../src/enforcement/file-tracker.js';
 import { SessionCache } from '../../src/session/cache.js';
 import type { HarnessConfig } from '../../src/types.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
+
+describe('handlePostToolUseFailure', () => {
+  it.each([['npm test', '1 failing'], ['bun test', '(fail)'], ['npx jest', 'No tests found'],
+    ['npx vitest run', '1 failed']])('reports an unnamed failure from %s: %s', (command, summary) => {
+    const tail = ['first', 'second', 'x'.repeat(1024 * 1024), 'fourth', summary];
+    const error = ['omit this line', ...tail, '  '].join('\n\n');
+    const cache = new SessionCache();
+    const check = () => handlePostToolUseFailure('Bash', { command }, error, cache, DEFAULT_CONFIG);
+    const result = check();
+    expect(result?.level).toBe('block');
+    expect(result?.message.split('\n')).toEqual([
+      expect.stringContaining('test command exited non-zero'), 'first', 'second', 'x'.repeat(299) + '…', 'fourth', summary,
+    ]);
+    for (const phase of ['tdd+', 'sdd+']) {
+      cache.setPhase(phase);
+      expect(check()?.level).toBe('advise');
+    }
+  });
+
+  it('honors permissive tolerance for a failure without output and ignores a non-string error', () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.rules.zero_defect!.tolerance = 'permissive';
+    const cache = new SessionCache();
+    expect(handlePostToolUseFailure('Bash', { command: 'npm t' }, '', cache, config)?.level).toBe('advise');
+    expect(handlePostToolUseFailure('Bash', { command: 'npm t' }, {}, cache, config)).toBeNull();
+    expect(handlePostToolUseFailure('Bash', {}, 'Exit code 1', cache, config)).toBeNull();
+  });
+
+  it('keeps the configured policy for named failures and clips each echoed line', () => {
+    const cache = new SessionCache();
+    const config = structuredClone(DEFAULT_CONFIG);
+    const name = 'tests/foo.test.ts';
+    const line = `FAIL ${name} > ${'x'.repeat(1024 * 1024)}`;
+    const check = () => handlePostToolUseFailure('Bash', { command: 'npm test' }, line, cache, config);
+    function expectClipped(heading: string) {
+      const message = check()?.message ?? '';
+      expect(message).toContain(heading);
+      expect(message).toContain(line.slice(0, 299) + '…');
+      expect(message.length).toBeLessThan(1000);
+    }
+    expectClipped('[BLOCK] ZERO-DEFECT');
+    cache.setChangedFiles([name]);
+    expectClipped('[BLOCK] REGRESSION');
+    cache.setChangedFiles(['src/other.ts']);
+    config.rules.zero_defect!.unrelated_errors = 'advise';
+    expectClipped('[ADVISE] PRE-EXISTING');
+    config.rules.zero_defect!.unrelated_errors = 'silent';
+    expect(check()).toBeNull();
+  });
+});
 
 describe('handlePostToolUse', () => {
   let tracker: FileTracker;
