@@ -7,6 +7,57 @@ import { SessionCache } from '../../src/session/cache.js';
 import type { HarnessConfig } from '../../src/types.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 
+describe('standalone test result metadata', () => {
+  const launchers = ['npm test', 'npx vitest run'];
+  const metadata = [
+    '\x1b[32m✓\x1b[0m handles error TS2322', '✔ quotes FAIL', '↓ skips ERROR', 'PASS tests/ERROR.test.ts',
+    '# Subtest: handles ERROR', 'ok 1 - handles 2 failed', '$ vitest -t ERROR', '> vitest run -t ERROR',
+    'stdout | red.test.ts > handles error TS2322', 'stderr | red.test.ts > handles error TS2322',
+    "    2| it('handles error TS2322', () => {",
+  ].join('\r\n');
+
+  function failed(command: string, output: string, cache = new SessionCache(), config = DEFAULT_CONFIG) {
+    return handlePostToolUseFailure('Bash', { command }, output, cache, config);
+  }
+  function succeeded(command: string, output: string) {
+    return handlePostToolUse('Bash', { command }, new FileTracker(), new SessionCache(), DEFAULT_CONFIG, undefined, output);
+  }
+
+  it.each(launchers)('ignores passing result metadata from %s', command => {
+    expect(succeeded(command, metadata)).toBeNull();
+  });
+
+  it.each(launchers)('keeps the named diagnostic from a failed %s', command => {
+    const output = [metadata, '× red.test.ts > handles error TS2322', '\x1b[31mFAIL\x1b[0m tests/red.test.ts'].join('\n');
+    const violation = failed(command, output);
+    expect(violation?.level).toBe('block');
+    expect(violation?.message).toContain('1 failure(s) found:\n  FAIL tests/red.test.ts');
+    expect(violation?.message).not.toContain('TS2322');
+  });
+
+  it('keeps fallback severity and the changed-file policy for both launchers', () => {
+    const cache = new SessionCache();
+    cache.setPhase('tdd+');
+    cache.setChangedFiles(['src/changed.ts']);
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.rules.zero_defect!.unrelated_errors = 'silent';
+    for (const command of launchers) {
+      const title = '× tests/widget.test.ts > reports error TS2322';
+      expect(failed(command, title)?.message.split('\n')).toEqual(['[BLOCK] ZERO-DEFECT: test command exited non-zero', title]);
+      const fallback = failed(command, '1 failing\n' + metadata, cache, config);
+      expect(fallback).toEqual({ level: 'advise', message: '[ADVISE] ZERO-DEFECT: test command exited non-zero\n1 failing' });
+      expect(failed(command, '× other.test.ts > handles error TS2322\nFAIL tests/other.test.ts', cache, config)).toBeNull();
+    }
+  });
+
+  it('preserves the existing success checks for output filters and other tools', () => {
+    expect(succeeded('npx vitest run | grep FAIL', 'FAIL tests/red.test.ts')?.level).toBe('block');
+    expect(succeeded('cargo test', 'test result: ok. 1 passed; 0 failed; 0 ignored')).toBeNull();
+    expect(succeeded('npm test', 'TAP version 13\n# FAIL src/fixture.ts\nok 1 - green\n# fail 0')).toBeNull();
+    expect(succeeded('npx vitest run', '\x1b[31mFAIL\x1b[0m src/printed.ts\nTests: 1 passed')).toBeNull();
+  });
+});
+
 describe('handlePostToolUseFailure', () => {
   it.each([['npm test', '1 failing'], ['bun test', '(fail)'], ['npx jest', 'No tests found'],
     ['npx vitest run', '1 failed']])('reports an unnamed failure from %s: %s', (command, summary) => {

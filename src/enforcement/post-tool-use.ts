@@ -4,7 +4,7 @@ import { SessionCache } from '../session/cache.js';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests, staleSetKey } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
-import { checkZeroDefect, clipDiagnostic, isNamedFailureLine } from './zero-defect.js';
+import { checkZeroDefect, clipDiagnostic, filterTestOutput, isNamedFailureLine } from './zero-defect.js';
 import { isSingleTestCommand } from './test-command.js';
 import {
   incrementMetric,
@@ -84,14 +84,14 @@ export function handlePostToolUseFailure(
 
   const changed = cache.getChangedFiles();
   const phase = cache.getCurrentPhase();
-  const violation = checkZeroDefect(error, config, changed.length ? changed : undefined, phase);
-  const lines = error.split('\n');
+  const { diagnostics, context } = filterTestOutput(error, 'failure');
+  const violation = checkZeroDefect(diagnostics.join('\n'), config, changed.length ? changed : undefined, phase);
   // A named but unrelated failure may intentionally be silent.
-  if (lines.some(isNamedFailureLine)) return violation;
+  if (diagnostics.some(isNamedFailureLine)) return violation;
 
   const strict = (config.rules.zero_defect?.tolerance ?? 'strict') === 'strict';
   const block = strict && !SCOPED_PHASES.includes(phase ?? '');
-  const tail = lines.map(line => line.trim()).filter(Boolean).slice(-5).map(clipDiagnostic);
+  const tail = context.map(line => line.trim()).filter(Boolean).slice(-5).map(clipDiagnostic);
   return {
     level: block ? 'block' : 'advise',
     message: [`${block ? '[BLOCK]' : '[ADVISE]'} ZERO-DEFECT: test command exited non-zero`, ...tail].join('\n'),
@@ -186,17 +186,14 @@ function runPostToolChecks(
   }
 
   // Zero-defect check on test command output
-  if (tool === 'Bash') {
-    const command = args.command as string;
-    const output = extractBashOutput(toolResponse, args);
-
-    if (command && output) {
-      // Check if this was a test run
-      const isTestCommand = /vitest|jest|pytest|mocha/.test(command);
-      if (isTestCommand) {
+  if (tool === 'Bash' && typeof args.command === 'string') {
+    const command = args.command;
+    if (/vitest|jest|pytest|mocha/.test(command)) {
+      const output = extractBashOutput(toolResponse, args);
+      if (output) {
         const changedFiles = cache.getChangedFiles();
         const zeroDefect = checkZeroDefect(
-          output,
+          isSingleTestCommand(command) ? filterTestOutput(output, 'success').diagnostics.join('\n') : output,
           config,
           changedFiles.length > 0 ? changedFiles : undefined,
           cache.getCurrentPhase(),

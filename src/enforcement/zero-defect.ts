@@ -1,4 +1,22 @@
+import { stripVTControlCharacters } from 'node:util';
 import type { EnforcementViolation, HarnessConfig } from '../types.js';
+
+// Reporter titles, source excerpts and command echoes can quote a diagnostic.
+const RESULT_METADATA = /^(?:[✓✔↓]\s|ok \d+\b|# Subtest: |PASS\s|[$>] |(?:stdout|stderr) \| |\d+\s*\|)/;
+const FAILED_CASE_TITLE = /^[✗×✕✖]\s/;
+
+export function filterTestOutput(output: string, event: 'success' | 'failure') {
+  const diagnostics: string[] = [];
+  const context: string[] = [];
+  for (const raw of output.split('\n')) {
+    const plain = stripVTControlCharacters(raw).trimStart();
+    if (RESULT_METADATA.test(plain)) continue;
+    // A failed case name is useful in the fallback, even when it quotes an error.
+    if (event === 'failure') context.push(plain);
+    if (!FAILED_CASE_TITLE.test(plain)) diagnostics.push(event === 'failure' ? plain : raw);
+  }
+  return { diagnostics, context };
+}
 
 const FAILURE_PATTERNS = [
   /\bFAIL(?:ED)?\b/,

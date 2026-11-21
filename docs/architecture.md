@@ -310,6 +310,12 @@ Parses test output (vitest, jest, pytest patterns) for failure indicators. Class
 or unknown. Supports pre-existing failure classification via `git diff` — failures in untouched
 files are reported separately from regressions based on `zero_defect.unrelated_errors` config.
 
+When rig checks a standalone test command, it filters reporter titles, command
+echoes and numbered source excerpts before looking for diagnostics. For example,
+a test titled `handles error TS2322` can pass without triggering zero-defect.
+Failed `npm test` and `npx vitest run` calls use the same filter and file policy.
+On successful calls, the existing hook checks commands that name a runner.
+
 The check is **phase-aware**, mirroring test scope control: during `tdd+`/`sdd+`
 a failing run is the expected RED step of red-green-refactor — indistinguishable
 from a regression to a pattern match — so a blocking violation is downgraded to
