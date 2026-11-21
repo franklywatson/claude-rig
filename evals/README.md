@@ -47,7 +47,7 @@ Exit code is 0 iff every scenario passed (suitable for a CI gate later).
 | `loop-fit-positive` | headless nightly ATS-scoring service | brain+ **fires** the loop opt-in |
 | `loop-fit-negative` | one-off local CSV-reformatting CLI | brain+ does **not** offer the loop trajectory |
 | `loop-optin-sections` | the positive brief + a scripted "yes" | the design carries the signal-stack, primary/loop-boundary, and autonomy-ceiling sections |
-| `divert-jcodemunch-used` | a fixture TypeScript router the agent is asked to grep | the agent **follows the Step 2.5 divert** and calls an `mcp__jcodemunch__` tool to locate the symbol |
+| `divert-jcodemunch-used` | a fixture TypeScript router the agent is asked to search | the agent **follows the Step 2.5 divert** and calls an `mcp__jcodemunch__` tool to locate the symbol |
 
 The `divert-jcodemunch-used` scenario is the first to scaffold a fixture
 codebase (`scenario.projectFiles` → materialized into the temp project before

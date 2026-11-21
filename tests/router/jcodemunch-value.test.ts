@@ -112,4 +112,35 @@ describe('scoreJcodemunchValue — Shape B (identifier grep symbol search)', () 
   it('still diverts an identifier search that carries a --type/-t filter', () => {
     expect(scoreJcodemunchValue('rg -t ts calculateScore src/', opts())).toMatchObject({ shape: 'symbol', target: 'calculateScore' });
   });
+
+  it('diverts a QUOTED single-identifier pattern (the natural agent form)', () => {
+    // Regression (live Opus run, 2026-11-22, divert-jcodemunch-used 0/3): the
+    // agent naturally quotes its pattern —
+    //   rg -n "routeRequest" <dir> -g '!node_modules'
+    //   grep -rn "routeRequest" <dir> --include='*.ts' --exclude-dir=node_modules
+    // Both are perfect symbol searches, but the quote characters rode along on
+    // the pattern token, failed IDENT, and silently dropped the divert down to
+    // rtk — the advisory never reached the agent.
+    expect(scoreJcodemunchValue('rg -n "routeRequest" /tmp/proj -g \'!node_modules\'', opts()))
+      .toMatchObject({ shape: 'symbol', target: 'routeRequest' });
+    expect(scoreJcodemunchValue('grep -rn "routeRequest" /tmp/proj --include=\'*.ts\' --exclude-dir=node_modules', opts()))
+      .toMatchObject({ shape: 'symbol', target: 'routeRequest' });
+    expect(scoreJcodemunchValue('grep "calculateScore" src/', opts()))
+      .toMatchObject({ shape: 'symbol', target: 'calculateScore' });
+    expect(scoreJcodemunchValue('grep -e \'parse_header\' .', opts()))
+      .toMatchObject({ shape: 'symbol', target: 'parse_header' });
+  });
+
+  it('still rejects quoted phrases, quoted regexes, quoted all-caps markers, and plain lowercase words after quote-stripping', () => {
+    expect(scoreJcodemunchValue('grep "some phrase" .', opts())).toBeNull();
+    expect(scoreJcodemunchValue('grep "foo.bar" src/', opts())).toBeNull();
+    expect(scoreJcodemunchValue('rg \'TODO\' .', opts())).toBeNull();
+    expect(scoreJcodemunchValue('rg \'*route*\' .', opts())).toBeNull();
+    // Plain lowercase words are word scans, not symbol lookups — quoted and
+    // unquoted behave identically, matching the routing evals' frozen
+    // todo/pattern vectors (rtk, not search_symbols).
+    expect(scoreJcodemunchValue('grep -rn "todo" src/', opts())).toBeNull();
+    expect(scoreJcodemunchValue('rg "pattern" src/', opts())).toBeNull();
+    expect(scoreJcodemunchValue('grep -r pattern src/', opts())).toBeNull();
+  });
 });

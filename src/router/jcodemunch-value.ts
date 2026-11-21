@@ -17,6 +17,24 @@ const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 /** Regex metacharacters — their presence means a literal/regex scan, not a symbol lookup. */
 const REGEX_METACHAR = /[.*+?^${}()|[\]\\/]/;
 
+/**
+ * Strip one layer of matched surrounding quotes ("x" / 'x') from a pattern
+ * token. The tokenizer is quote-naive by design (see parse), but a quoted
+ * single identifier is the most common way an agent types a search pattern —
+ * `grep -n "routeRequest"` — and the bare quote characters would fail IDENT
+ * and silently drop the divert down to rtk (observed live: both natural
+ * command shapes in an eval run missed the advisory solely because of the
+ * quotes). Stripping is safe: the unquoted content still passes the IDENT,
+ * metachar, and lowercase gates, so a quoted phrase or regex is rejected
+ * exactly as before.
+ */
+function stripMatchedQuotes(t: string): string {
+  if (t.length >= 2 && t[0] === t[t.length - 1] && (t[0] === '"' || t[0] === "'")) {
+    return t.slice(1, -1);
+  }
+  return t;
+}
+
 export interface DivertDecision {
   /** 'outline' = big-file structural read; 'symbol' = identifier search. */
   shape: 'outline' | 'symbol';
@@ -104,10 +122,10 @@ export function scoreJcodemunchValue(command: string, opts: DivertOptions): Dive
       const t = tokens[i];
       if (t === '-e' || t === '--regexp') {
         const v = tokens[i + 1];
-        if (v !== undefined && !v.startsWith('-')) patterns.push(v);
+        if (v !== undefined && !v.startsWith('-')) patterns.push(stripMatchedQuotes(v));
         i++; // consume the value so it isn't also treated as positional
       } else if (t.startsWith('--regexp=')) {
-        patterns.push(t.slice('--regexp='.length));
+        patterns.push(stripMatchedQuotes(t.slice('--regexp='.length)));
       } else if (t.startsWith('--') && t.includes('=')) {
         // other --flag=value (e.g. --include=*.ts): value is attached, not positional
       } else if (t.startsWith('-')) {
@@ -119,11 +137,15 @@ export function scoreJcodemunchValue(command: string, opts: DivertOptions): Dive
     // Multiple explicit patterns = an OR query search_symbols can't express → rtk.
     const pattern = patterns.length === 1
       ? patterns[0]
-      : (patterns.length === 0 ? positionalArgs[0] : undefined);
+      : (patterns.length === 0 ? stripMatchedQuotes(positionalArgs[0] ?? '') : undefined);
     if (!pattern) return null;                        // multi-pattern OR, or none → rtk
     if (REGEX_METACHAR.test(pattern)) return null;    // regex/literal scan → rtk
     if (!IDENT.test(pattern)) return null;            // multi-token / phrase → rtk
     if (!/[a-z]/.test(pattern)) return null;          // all-caps (TODO/FIXME/CONST) → rtk
+    if (!/[A-Z_]/.test(pattern)) return null;         // plain lowercase word (todo, pattern) — a word
+                                                      // scan, not the CamelCase/snake_case symbol name
+                                                      // this divert is for → rtk (frozen by the routing
+                                                      // evals' todo/pattern vectors)
     return {
       shape: 'symbol',
       jmTool: 'mcp__jcodemunch__search_symbols',

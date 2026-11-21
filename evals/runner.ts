@@ -81,7 +81,25 @@ export async function gradeTranscript(
 export async function runScenario(scenario: Scenario, deps: RunDeps): Promise<ScenarioResult> {
   const runs: RunResult[] = [];
   for (let i = 0; i < deps.runs; i++) {
-    const transcript = await deps.driveSession(scenario, deps.model);
+    let transcript: string;
+    try {
+      transcript = await deps.driveSession(scenario, deps.model);
+    } catch (raw) {
+      // One dead session (spawn error, timeout, crashed claude -p) is one
+      // failed run, not the end of the eval: the N-of-M majority already
+      // encodes tolerance for it. Contain it so a single slow session can't
+      // destroy the report for every other run (observed live: one Opus
+      // design session over the driver's wall took the whole eval down).
+      // The message is truncated: on the non-zero-exit path Node embeds the
+      // child's stderr in err.message, and with --verbose mirroring the
+      // stream that can be megabytes — the report line must stay one line.
+      const err = raw as Partial<Error> & { code?: unknown };
+      const code = typeof err.code === 'string' ? ` (${err.code})` : '';
+      const msg = String(err.message ?? raw);
+      const brief = msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
+      runs.push({ runIndex: i, pass: false, observed: `driver error${code}: ${brief}` });
+      continue;
+    }
     const { pass, observed } = await gradeTranscript(scenario, transcript, deps.judge);
     runs.push({ runIndex: i, pass, observed });
   }
@@ -159,6 +177,15 @@ async function main(): Promise<void> {
     const report = await runAll(deps);
     process.stdout.write(formatReport(report) + '\n');
     process.exitCode = report.passCount === report.totalScenarios ? 0 : 1;
+  } catch (err) {
+    // Hardening: runScenario contains per-session driver errors, so this only
+    // fires for orchestration-level failures (scaffold, rig init, report
+    // assembly). Print one bounded line — the raw error can carry a child
+    // process's stdout/stderr dump that would bury a plain rethrow.
+    const msg = err instanceof Error ? err.message : String(err);
+    const brief = msg.length > 200 ? `${msg.slice(0, 200)}…` : msg;
+    process.stderr.write(`[eval] fatal: ${brief}\n`);
+    process.exitCode = 1;
   } finally {
     reg.cleanup();
   }
