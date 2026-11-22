@@ -74,6 +74,36 @@ describe('runner: runScenario with injected driver', () => {
     expect(res.pass).toBe(true);
     expect(driveSession).toHaveBeenCalledTimes(3);
   });
+  it('contains a driver error as one failed run and continues (majority survives)', async () => {
+    // Regression (live Opus 4.8 run, 2026-11-21): one claude -p session hit the
+    // driver's timeout and the uncaught ETIMEDOUT took the whole eval down with
+    // no report. A dead session is one failed run; the N-of-M majority encodes
+    // the tolerance.
+    const driveSession = vi.fn()
+      .mockResolvedValueOnce(POS)
+      .mockRejectedValueOnce(new Error('spawnSync claude ETIMEDOUT'))
+      .mockResolvedValueOnce(POS);
+    const res = await runScenario(get('loop-fit-positive'), { driveSession, model: 'm', runs: 3, judge: judgeAlways(true) });
+    expect(res.runs).toHaveLength(3);
+    expect(driveSession).toHaveBeenCalledTimes(3);
+    const failed = res.runs.find((r) => !r.pass)!;
+    expect(failed.observed).toContain('driver error');
+    expect(failed.observed).toContain('ETIMEDOUT');
+    expect(res.pass).toBe(true); // 2-of-3 majority still passes
+  });
+  it('truncates megabyte driver-error messages to a bounded report line', async () => {
+    // On the non-zero-exit path Node embeds the child's stderr in err.message
+    // (--verbose mirrors the stream-json there) — buildReport copies observed
+    // into failures[].reason, so one crashed claude must not yield a
+    // megabyte-scale report line.
+    const big = Object.assign(new Error('x'.repeat(500_000)), { code: 'ENOENT' });
+    const driveSession = vi.fn().mockRejectedValueOnce(big).mockResolvedValue(POS);
+    const res = await runScenario(get('loop-fit-positive'), { driveSession, model: 'm', runs: 2, judge: judgeAlways(true) });
+    const failed = res.runs.find((r) => !r.pass)!;
+    expect(failed.observed.length).toBeLessThan(300);
+    expect(failed.observed).toContain('ENOENT');
+    expect(failed.observed).toContain('…');
+  });
 });
 
 describe('runner: TeardownRegistry deletes only tracked paths', () => {

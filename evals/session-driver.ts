@@ -81,7 +81,13 @@ function trackSessionFragments(dir: string, reg: TeardownRegistry): void {
   }
 }
 
-export function makeLiveDriver(reg: TeardownRegistry, timeoutMs = 300000): DriveSessionFn {
+/** Default per-session wall: 10 minutes. A single-turn Opus design session
+ *  under superpowers 7.0.x (which digs into project context before producing
+ *  output) was observed exceeding the old 300s cap (live run, 2026-11-21) —
+ *  a cap that tight biases results toward timeouts on legitimately long
+ *  design turns. Driver errors are contained per-run by runScenario, so a
+ *  timeout now degrades to one failed run, never a crash of the whole eval. */
+export function makeLiveDriver(reg: TeardownRegistry, timeoutMs = 600000): DriveSessionFn {
   return async (scenario: Scenario, model: string): Promise<string> => {
     const dir = mkdtempSync(join(tmpdir(), 'rig-eval-'));
     reg.track(dir);
@@ -90,17 +96,26 @@ export function makeLiveDriver(reg: TeardownRegistry, timeoutMs = 300000): Drive
     // orchestrator's repo (inherited from the parent env). This keeps the
     // nested fragment self-contained and reclaimable by cwd-ownership teardown.
     const env = { ...process.env, CLAUDE_PROJECT_DIR: dir };
-    execFileSync('rig', ['init'], { cwd: dir, stdio: 'ignore', env });
+    // Bound rig init too — an unbounded hang here stalls the eval forever
+    // (the same failure class the claude timeout guards against).
+    execFileSync('rig', ['init'], { cwd: dir, stdio: 'ignore', env, timeout: 120000 });
     writeFileSync(join(dir, 'BRIEF.md'), readFileSync(join(process.cwd(), scenario.briefFile), 'utf-8'));
     if (scenario.projectFiles) materializeProjectFiles(dir, scenario.projectFiles);
-    const out = execFileSync('claude', buildClaudeArgs(scenario.prompt, model), {
-      cwd: dir,
-      env,
-      encoding: 'utf-8',
-      timeout: timeoutMs,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    trackSessionFragments(dir, reg);
+    let out: string;
+    try {
+      out = execFileSync('claude', buildClaudeArgs(scenario.prompt, model), {
+        cwd: dir,
+        env,
+        encoding: 'utf-8',
+        timeout: timeoutMs,
+        maxBuffer: 64 * 1024 * 1024,
+      });
+    } finally {
+      // Track fragments on failure too: a killed or errored claude session
+      // still wrote a session-cache fragment keyed to the temp cwd, and a
+      // throw here would skip tracking and leak it past teardown.
+      trackSessionFragments(dir, reg);
+    }
     return out;
   };
 }

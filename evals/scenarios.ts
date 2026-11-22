@@ -66,9 +66,19 @@ export const SCENARIOS: Scenario[] = [
     id: 'divert-jcodemunch-used',
     mode: 'positive',
     briefFile: 'evals/fixtures/divert-positive.md',
+    // Tool-neutral on purpose. The v1 prompt said "Use grep or rg to find …",
+    // which contradicts the graded behavior: observed live (Opus 4.8,
+    // 2026-11-22), the agent SAW the divert advisory, explicitly reasoned that
+    // the user's tool mandate takes precedence over a hook advisory, and
+    // declined — correctly. Grading "follows the divert" while instructing
+    // "use grep" measured instruction-priority, not divert-following. The
+    // prompt now asks for a search without naming a tool; a text search is
+    // still the natural first move (Bash grep/rg → Step 2.5 divert, or the
+    // native Grep tool → native_grep advisory), and following the advisory no
+    // longer disobeys the user.
     prompt:
-      'A small TypeScript project is in this directory (see BRIEF.md). Use grep or rg ' +
-      'to find where the function `routeRequest` is defined, then state its parameter list.',
+      'A small TypeScript project is in this directory (see BRIEF.md). Search the project ' +
+      'for where the function `routeRequest` is defined, then state its parameter list.',
     invariants: [
       {
         kind: 'jcodemunch-tool-used',
