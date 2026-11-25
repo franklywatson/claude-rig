@@ -5,6 +5,7 @@ import type { EnforcementViolation, HarnessConfig } from '../types.js';
 import { checkStaleTests, staleSetKey } from './stale-test.js';
 import { checkConstitutional } from './constitutional.js';
 import { checkZeroDefect, clipDiagnostic, filterTestOutput, isNamedFailureLine } from './zero-defect.js';
+import { checkCompoundTestFailure } from './compound-test.js';
 import { isSingleTestCommand } from './test-command.js';
 import {
   incrementMetric,
@@ -80,7 +81,8 @@ export function handlePostToolUseFailure(
   config: HarnessConfig,
 ): EnforcementViolation | null {
   if (tool !== 'Bash' || typeof error !== 'string' ||
-      typeof args.command !== 'string' || !isSingleTestCommand(args.command)) return null;
+      typeof args.command !== 'string') return null;
+  if (!isSingleTestCommand(args.command)) return checkCompoundTestFailure(args.command, error, config);
 
   const changed = cache.getChangedFiles();
   const phase = cache.getCurrentPhase();
