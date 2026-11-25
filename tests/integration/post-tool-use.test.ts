@@ -63,6 +63,31 @@ describe('PostToolUse hook E2E', () => {
       expect(existsSync(sessionCachePath(tempDir, failedTest.session_id))).toBe(false);
     }, HOOK_TIMEOUT);
 
+    it('stays quiet for an explicitly interrupted npm test', async () => {
+      const input = {
+        ...failedTest,
+        tool_input: { command: 'npm test' },
+        error: 'Exit code 137\n RUN  v5.0.1 /repo',
+      };
+      const interrupted = await runHook(hookPath, { ...input, is_interrupt: true }, tempDir);
+      expect(interrupted).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
+
+      const unflagged = await runHook(hookPath, { ...input, is_interrupt: undefined }, tempDir);
+      expect(unflagged.exitCode).toBe(2);
+      expect(unflagged.stderr).toContain('test command exited non-zero');
+    }, HOOK_TIMEOUT);
+
+    it('stays quiet when an interrupted Bash test already printed a named failure', async () => {
+      const result = await runHook(hookPath, { ...failedTest, is_interrupt: true }, tempDir);
+      expect(result).toMatchObject({ exitCode: 0, stdout: '', stderr: '' });
+    }, HOOK_TIMEOUT);
+
+    it.each(['true', 1])('reports the named failure for is_interrupt=%j', async flag => {
+      const result = await runHook(hookPath, { ...failedTest, is_interrupt: flag }, tempDir);
+      expect(result).toMatchObject({ exitCode: 2, stdout: '' });
+      expect(result.stderr).toContain('FAIL tests/foo.test.ts');
+    }, HOOK_TIMEOUT);
+
     it.each([
       ['Bash', { command: 'npm run build && npm test' }, 'ERROR src/build.ts'],
       ['Bash', { command: 'npm test && npm run lint' }, 'ERROR src/lint.ts'],
@@ -169,6 +194,7 @@ describe('PostToolUse hook E2E', () => {
     const result = await runHook(hookPath, {
       session_id: SESSION_ID,
       hook_event_name: 'PostToolUse',
+      is_interrupt: true,
       tool_name: 'Bash',
       tool_input: {
         command: 'npx vitest run tests/foo.test.ts',

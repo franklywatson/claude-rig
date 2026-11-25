@@ -271,7 +271,8 @@ error. A fourth check, **test scope**, runs in the PreToolUse hook: during
 suggestion before it executes.
 
 A Bash command that exits non-zero reaches the same script through the
-`PostToolUseFailure` event. For that event only the zero-defect check runs.
+`PostToolUseFailure` event. An explicit `is_interrupt: true` skips enforcement.
+For other Bash failures, only the zero-defect check runs.
 
 ### Session Start: Auto-indexing
 
