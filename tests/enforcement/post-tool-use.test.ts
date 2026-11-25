@@ -7,6 +7,129 @@ import { SessionCache } from '../../src/session/cache.js';
 import type { HarnessConfig } from '../../src/types.js';
 import { DEFAULT_CONFIG } from '../../src/config.js';
 
+describe('compound Bash failure advisories', () => {
+  const bt = 'npm run build && npm test';
+  const tl = 'npm test && npm run lint';
+  const direct = 'npx vitest run && npm run lint';
+  const build = '> @scope/app@1.0.0 build\n> tsc\n';
+  const test = '> @scope/app@1.0.0 test\n> vitest run\n';
+  const short = '> test\n> vitest run\n';
+  const run = ' RUN  v5.1.1 /repo\n';
+  const files = ' Test Files  1 failed (1)\n';
+  const rows = files + '      Tests  1 failed (1)';
+  const red = run + rows;
+  const green = red.replaceAll('failed', 'passed');
+  const advice = {
+    level: 'advise',
+    message: 'The combined command failed and its output contains a Vitest summary reporting a failure. ' +
+      'Run the test step separately to confirm its own exit status.',
+  };
+  const check = (command: string, body: string, status = 'Exit code 1\n') =>
+    handlePostToolUseFailure('Bash', { command }, status + body, new SessionCache(), DEFAULT_CONFIG);
+
+  it('reads only the test section after a successful build', () => {
+    const command = ' \tnpm\t run build&&npm test\t';
+    expect(check(command, build + red + '\n' + test + red)).toEqual(advice);
+    expect(check(command, build + red + '\n' + test)).toBeNull();
+  });
+
+  it.each([
+    ['npm warning', tl, 'npm warn Unknown project config "totally-unknown-key".\n\n' + test + red],
+    ['green preamble', tl, green + '\n' + test + red],
+    ['tilde package name', bt, (build + test).replaceAll('@scope/app', 'widget~tools') + red],
+    ['short test banner', tl, short + red],
+    ['short build and test banners', bt, '> build\n> tsc\n\n' + short + red],
+    ['quoted line in error body', tl, test + run + 'Error: message:\n> text\n\n' + rows],
+    ['unclaimed angle lines', direct, run + '>\n>text\n  > lint\n> quoted\n' + rows],
+    ['import or syntax failure', tl, test + run + files + '      Tests  no tests'],
+    ['150 failures', tl, test + run + 'AssertionError: mismatch\n\n'.repeat(1500) + files + ' Tests  150 failed (150)'],
+    ['3000 log lines', tl, test + run + 'log\n'.repeat(3000) + rows],
+    ['wide assertion', tl, test + run + 'Received: ' + 'a'.repeat(5000) + '\n' + rows],
+    ['Errors log', tl, test + run + 'Errors: none so far\n' + rows],
+    ['ordinary truncation prose', direct, run + '  Truncated output\n' + rows],
+    ['failed file after a passing file', direct, red.replace('1 failed (1)', '1 passed | 1 failed (2)')],
+    ['colored CRLF teardown', direct, (run + ' Test Files  \x1b[38:5:1m1 failed\x1b[0m (1)\n Tests  1 passed (1)').replaceAll('\n', '\r\n')],
+    ['prerelease header', direct, red.replace('v5.1.1', 'v5.1.1-beta.1+build.2')],
+    ['similarly named log', direct, 'Testsuite started\n' + red],
+  ])('advises on %s', (_name, command, body) => expect(check(command, body)).toEqual(advice));
+
+  it.each(['npm test && npm run lint --fix', 'npm test || npm run lint', 'cd app && npm test && npm run lint',
+    'npm test &&\nnpm run lint', 'npm test && npm run lint\n', 'npm test && npm run lint | tail',
+    'CI=1 npm test && npm run lint', 'npm test && npm run "lint"'])('ignores command %j', command => {
+    expect(check(command, test + red)).toBeNull();
+  });
+
+  it.each([
+    ['custom diagnostics after Vitest found no files', tl, '> app@1.0.0 test\n> vitest run && node manifest.cjs\n' +
+      run + 'No test files found, exiting with code 0\nTest Files 1 failed checksum verification\nTests were not started'],
+    ['wrapped direct run', direct, test + red],
+    ['missing banner', tl, red],
+    ['reversed scripts', bt, test + build + red],
+    ['different package', bt, build + test.replace('@scope/app', 'other') + red],
+    ['mixed identity', bt, '> build\n> tsc\n' + test + red],
+    ['pretest', tl, test.replace(' test\n', ' pretest\n') + test + red],
+    ['posttest', tl, test + red + '\n' + test.replace(' test\n', ' posttest\n')],
+    ['other short script', tl, test + red + '\n> task:other\n> check'],
+    ['repeated test', tl, test + test + red],
+    ['later lint', tl, test + red + '\n> lint\n> eslint .'],
+    ['direct short lint', direct, '> lint\n> vitest run\n' + red],
+    ['missing echo', tl, test.replace('> vitest run', '>   ') + red],
+    ['unpaired versioned banner', direct, red + '\n> pkg@1.0.0 other'],
+    ['unpaired short pretest', direct, red + '\n> pretest'], ['unpaired short posttest', direct, red + '\n> posttest'],
+    ['unpaired short lint', direct, red + '\n> lint'],
+    ['banner as echo', tl, test.replace('> vitest run', '> app@1.0.0 lint') + red],
+    ['short banner as echo', tl, short.replace('> vitest run', '> lint') + red],
+    ['green selected section', tl, red + '\n' + test + green],
+  ])('rejects %s', (_name, command, body) => expect(check(command, body)).toBeNull());
+
+  it.each([
+    ['malformed version', red.replace('v5.1.1', 'v5.1.1oops')],
+    ['second run', run + red], ['extra Tests row', red + '\nTests: 1 failed'],
+    ['header after rows', rows + '\n' + run], ['separated rows', run + files + '\nTests  no tests'],
+    ['wrong file label', red.replace('Test Files', 'Tests')], ['wrong test label', red.replace('      Tests', 'Test Files')],
+    ['no failed file', red.replace('1 failed (1)', '1 passed (1)')], ['zero failed files', red.replace('1 failed', '0 failed')],
+    ['negative failed files', red.replace('1 failed', '-1 failed')],
+    ['failed label prefix', red.replace('1 failed', '1 failed-over')], ['empty Tests row', run + files + ' Tests  '],
+    ['file total followed by prose', red.replace('1 failed (1)', '1 failed (1) checksum errors')],
+    ['nondecimal file total', red.replace('1 failed (1)', '1 failed (one)')],
+    ['prose after no tests', run + files + ' Tests  no tests were started'],
+    ['wrong Tests delimiter', red.replace('      Tests ', 'Tests:')],
+    ['bracketed marker', red + '\n[123 characters truncated]'], ['token marker', red + '\n... 120 tokens truncated ...'],
+    ['collapsed lines', red + '\n… +16 lines (ctrl+o to expand)'],
+    ['byte marker', red + '\nWarning: output truncated to 1024 bytes'], ['persisted output', red + '\n<persisted-output>'],
+    ['bare carriage return', red + '\nprogress\rupdated'], ['cursor control', red + '\n\x1b[2K'],
+    ['NUL', red + '\n\0'], ['DEL', red + '\n\x7f'], ['C1', red + '\n\x9b'],
+    ['line separator', red + '\n\u2028'], ['paragraph separator', red + '\n\u2029'],
+  ])('rejects %s', (_name, body) => expect(check(direct, body)).toBeNull());
+
+  it.each(['Exit code 0\n', 'Exit code 1 (signal)\n', 'log\nExit code 1\n', 'Exit code -1\n'])('rejects status %j', prefix => {
+    expect(check(direct, red, prefix)).toBeNull();
+  });
+
+  it('accepts exactly 128 Ki UTF-16 units and rejects one more', () => {
+    const prefix = 'Exit code 137 \t\n';
+    const limit = (red + '\n').padEnd(128 * 1024 - prefix.length, 'é');
+    expect(check(direct, limit, prefix)).toEqual(advice);
+    expect(check(direct, limit + 'x', prefix)).toBeNull();
+  });
+
+  it('ignores non-Bash failures with the same transcript', () => {
+    expect(handlePostToolUseFailure('Edit', { command: direct }, 'Exit code 1\n' + red, new SessionCache(), DEFAULT_CONFIG)).toBeNull();
+  });
+
+  it('keeps these three chains quiet under silent', () => {
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.rules.zero_defect!.unrelated_errors = 'silent';
+    const cache = new SessionCache();
+    cache.setChangedFiles(['tests/changed.test.js']);
+    const body = run + 'FAIL tests/changed.test.js > x\n' + rows;
+    for (const [command, banners] of [[bt, build + test], [tl, short], [direct, '']]) {
+      expect(handlePostToolUseFailure('Bash', { command }, 'Exit code 1\n' + banners + body, cache, config)).toBeNull();
+    }
+    expect(handlePostToolUseFailure('Bash', { command: 'cd app && npm test' }, 'Exit code 1\n' + body, cache, config)?.level).toBe('block');
+  });
+});
+
 describe('standalone test result metadata', () => {
   const launchers = ['npm test', 'npx vitest run'];
   const metadata = [

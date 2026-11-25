@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtempSync, rmSync, existsSync, readFileSync, writeFileSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { initCommand } from '../../src/cli/init.js';
 import { runHook } from '../helpers/hook-runner.js';
-import { sessionCachePath } from '../../src/session/cache.js';
+import { SessionCache, sessionCachePath } from '../../src/session/cache.js';
 
 // FIXTURE REALISM PRINCIPLE: e2e fixtures must mimic the harness, not the
 // implementation's assumptions. Claude Code's PostToolUse payload carries
@@ -42,7 +42,7 @@ describe('PostToolUse hook E2E', () => {
     // (tempDir, SESSION_ID) — remove the exact paths so /tmp doesn't
     // accumulate fixtures. Never glob-delete: real sessions own sibling
     // cache files.
-    for (const path of [SESSION_ID, undefined, 'failed-tdd'].map(id => sessionCachePath(tempDir, id))) {
+    for (const path of [SESSION_ID, undefined, 'failed-tdd', 'failed-compound'].map(id => sessionCachePath(tempDir, id))) {
       if (existsSync(path)) unlinkSync(path);
     }
     rmSync(tempDir, { recursive: true, force: true });
@@ -54,6 +54,49 @@ describe('PostToolUse hook E2E', () => {
       tool_name: 'Bash', tool_input: { command: 'npx vitest run' },
       error: 'Exit code 1\nFAIL tests/foo.test.ts\nTests: 1 failed',
     };
+
+    const build = '> app@1.0.0 build\n> tsc\n';
+    const test = '> app@1.0.0 test\n> vitest run\n';
+    const lint = '> app@1.0.0 lint\n> tsc --noEmit\n';
+    const compiler = 'src/a.ts(3,5): error TS2322';
+    const red = '\n RUN  v5.1.1 /repo\n\n ❯ tests/add.test.ts (1 test | 1 failed) 4ms\n' +
+      '   × adds 3ms\n\n FAIL  tests/add.test.ts > adds\nAssertionError: expected 1 to be 2\n\n' +
+      ' Test Files  1 failed (1)\n      Tests  1 failed (1)\n';
+    const green = '\n RUN  v5.1.1 /repo\n ✓ reports error TS2322\n Test Files  1 passed (1)\n Tests  1 passed (1)\n';
+    const bt = 'npm run build && npm test';
+    const tl = 'npm test && npm run lint';
+    const direct = 'npx vitest run && npm run lint';
+    const advice = JSON.stringify({ hookSpecificOutput: {
+      hookEventName: 'PostToolUseFailure',
+      additionalContext: 'The combined command failed and its output contains a Vitest summary reporting a failure. ' +
+        'Run the test step separately to confirm its own exit status.',
+    } }) + '\n';
+
+    it.each([
+      ['F1 build failure', bt, build + compiler, ''],
+      ['F2 build then red', bt, build + test + red, advice],
+      ['F4 red before lint', tl, test + red, advice],
+      ['F5 lint after green', tl, test + green + lint + compiler, ''],
+      ['F7 direct Vitest failure', direct, red, advice],
+      ['green title quoting a compiler error', tl, test + green, ''],
+      ['1 MiB line', direct, red + 'x'.repeat(1024 * 1024), ''],
+    ])('handles %s without creating a cache', async (_name, command, body, stdout) => {
+      const payload = { ...failedTest, tool_input: { command }, error: 'Exit code 1\n' + body };
+      expect(await runHook(hookPath, payload, tempDir)).toMatchObject({ exitCode: 0, stdout, stderr: '' });
+      expect(existsSync(sessionCachePath(tempDir, failedTest.session_id))).toBe(false);
+    }, HOOK_TIMEOUT);
+
+    // A physical seed needs the directory used by SessionCache on this platform.
+    const hasCacheDir = existsSync(dirname(sessionCachePath('.')));
+    it.runIf(hasCacheDir)('preserves seeded cache bytes when advising', async () => {
+      const session_id = 'failed-compound';
+      new SessionCache(tempDir, session_id).setPhase('tdd+');
+      const path = sessionCachePath(tempDir, session_id);
+      const before = readFileSync(path);
+      const payload = { ...failedTest, session_id, tool_input: { command: tl }, error: 'Exit code 1\n' + test + red };
+      expect(await runHook(hookPath, payload, tempDir)).toMatchObject({ exitCode: 0, stdout: advice, stderr: '' });
+      expect(readFileSync(path)).toEqual(before);
+    }, HOOK_TIMEOUT);
 
     it.each(['npx vitest run', 'npm test'])('blocks a failed %s', async command => {
       const result = await runHook(hookPath, { ...failedTest, tool_input: { command } }, tempDir);
